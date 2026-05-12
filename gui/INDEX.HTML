@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QUBE Signal Identifier — ESP32</title>
+<style>
+  /* ── Reset & base ─────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:      #0d0d1a;
+    --panel:   #13132b;
+    --card:    #1a1a35;
+    --border:  #2a2a55;
+    --accent:  #0f3460;
+    --text:    #d8d8f0;
+    --dim:     #8888aa;
+    --green:   #4caf50;
+    --red:     #f44336;
+    --yellow:  #ffc107;
+    --cyan:    #00c8ff;
+    --gold:    #ffd700;
+    --orange:  #ff9f40;
+    --violet:  #bf7fff;
+    --lime:    #7fff7f;
+    --errclr:  #ff6060;
+    --font:    'Consolas', 'Courier New', monospace;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── Topbar ────────────────────────────────────────────────────────── */
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--panel);
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  #topbar label { color: var(--dim); }
+  #topbar input[type=text] {
+    width: 120px; padding: 3px 6px;
+    background: var(--accent); border: 1px solid var(--border);
+    color: var(--text); border-radius: 4px; font-family: var(--font);
+  }
+  #topbar input[type=number] {
+    width: 62px; padding: 3px 6px;
+    background: var(--accent); border: 1px solid var(--border);
+    color: var(--text); border-radius: 4px; font-family: var(--font);
+  }
+  .btn {
+    padding: 4px 12px; border: none; border-radius: 4px;
+    cursor: pointer; font-family: var(--font); font-size: 12px;
+    font-weight: bold; transition: opacity .15s;
+  }
+  .btn:hover { opacity: .85; }
+  .btn-green  { background: var(--green);  color: #fff; }
+  .btn-red    { background: var(--red);    color: #fff; }
+  .btn-yellow { background: var(--yellow); color: #111; }
+  .btn-dim    { background: var(--accent); color: var(--text); }
+  #status-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--red); display: inline-block; margin-right: 4px;
+  }
+  #status-text { color: var(--red); font-weight: bold; }
+  #latency { color: var(--dim); font-size: 11px; }
+
+  /* ── Body layout ───────────────────────────────────────────────────── */
+  #body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Charts area ───────────────────────────────────────────────────── */
+  #charts {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px;
+    overflow: hidden;
+  }
+  .chart-card {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .chart-title {
+    padding: 3px 10px;
+    font-size: 11px;
+    color: var(--dim);
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex-shrink: 0;
+  }
+  canvas.plot { flex: 1; width: 100%; display: block; }
+
+  /* ── Right panel ───────────────────────────────────────────────────── */
+  #sidebar {
+    width: 260px;
+    min-width: 240px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding-bottom: 12px;
+  }
+  .section-title {
+    background: var(--accent);
+    color: var(--text);
+    font-weight: bold;
+    font-size: 11px;
+    padding: 5px 10px;
+    margin-top: 8px;
+    letter-spacing: .5px;
+  }
+  .kv-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .kv-key { color: var(--dim); }
+  .kv-val { color: var(--text); font-weight: bold; }
+  .kv-val.pos { color: var(--cyan); }
+  .kv-val.err { color: var(--errclr); }
+  .kv-val.pwr { color: var(--orange); }
+
+  /* mode buttons */
+  .mode-group { display: flex; gap: 4px; padding: 6px 10px; flex-wrap: wrap; }
+  .mode-btn {
+    flex: 1; padding: 5px 4px; border: 1px solid var(--border);
+    background: var(--card); color: var(--dim);
+    border-radius: 4px; cursor: pointer; font-family: var(--font);
+    font-size: 11px; text-align: center; transition: all .15s;
+  }
+  .mode-btn.active { background: var(--accent); color: var(--text); border-color: var(--cyan); }
+
+  /* control rows */
+  .ctrl-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px;
+  }
+  .ctrl-row label { color: var(--dim); min-width: 36px; }
+  .ctrl-row input[type=text],
+  .ctrl-row input[type=number] {
+    flex: 1; padding: 3px 6px;
+    background: var(--accent); border: 1px solid var(--border);
+    color: var(--text); border-radius: 4px; font-family: var(--font); font-size: 12px;
+  }
+  .ctrl-row input[type=range] {
+    flex: 1; accent-color: var(--lime);
+  }
+  #pwm-val { min-width: 30px; text-align: right; color: var(--lime); }
+
+  /* quick setpoints */
+  .quick-group { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px 10px; }
+  .quick-btn {
+    padding: 3px 8px; background: var(--card); border: 1px solid var(--border);
+    color: var(--text); border-radius: 4px; cursor: pointer;
+    font-family: var(--font); font-size: 11px;
+  }
+  .quick-btn:hover { background: var(--accent); }
+
+  /* signal toggles */
+  .sig-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 12px;
+  }
+  .sig-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  }
+  .sig-row label { cursor: pointer; }
+  input[type=checkbox] { accent-color: var(--cyan); }
+
+  /* window */
+  #win-input { width: 56px; }
+</style>
+</head>
+<body>
+
+<!-- ── TOP BAR ─────────────────────────────────────────────────────────── -->
+<div id="topbar">
+  <label>IP ESP32:</label>
+  <input type="text" id="ip-input" value="192.168.4.1">
+  <label>Poll:</label>
+  <input type="number" id="poll-input" value="100" min="50" max="2000"> ms
+  <button class="btn btn-green" id="btn-connect" onclick="toggleConnect()">⚡ Conectar</button>
+  <span><span id="status-dot"></span><span id="status-text">Sin conexión</span></span>
+  <span id="latency">latencia: —</span>
+  <span style="flex:1"></span>
+  <button class="btn btn-dim" onclick="clearBuffer()">⬛ Limpiar</button>
+  <button class="btn btn-dim" onclick="exportCSV()">💾 CSV</button>
+  <button class="btn btn-red" style="font-size:13px" onclick="emergencyStop()">■ STOP</button>
+</div>
+
+<!-- ── MAIN BODY ────────────────────────────────────────────────────────── -->
+<div id="body">
+
+  <!-- Charts -->
+  <div id="charts">
+    <div class="chart-card">
+      <div class="chart-title">📐 Posición angular (°) — Posición · Setpoint · Error</div>
+      <canvas class="plot" id="c-pos"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">🔌 Señal PWM (−255 … +255)</div>
+      <canvas class="plot" id="c-pwm"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">⚡ Corriente (mA) · Voltaje bus (V) — INA219</div>
+      <canvas class="plot" id="c-pwr"></canvas>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+
+    <div class="section-title">ESTADO ACTUAL</div>
+    <div class="kv-row"><span class="kv-key">Modo</span>      <span class="kv-val" id="d-mode">STOP</span></div>
+    <div class="kv-row"><span class="kv-key">Posición</span>  <span class="kv-val pos" id="d-pos">—°</span></div>
+    <div class="kv-row"><span class="kv-key">Setpoint</span>  <span class="kv-val" id="d-sp">—°</span></div>
+    <div class="kv-row"><span class="kv-key">Error</span>     <span class="kv-val err" id="d-err">—°</span></div>
+    <div class="kv-row"><span class="kv-key">PWM</span>       <span class="kv-val" id="d-pwm">—</span></div>
+    <div class="kv-row"><span class="kv-key">Corriente</span> <span class="kv-val pwr" id="d-ima">— mA</span></div>
+    <div class="kv-row"><span class="kv-key">V bus</span>     <span class="kv-val" id="d-vb">— V</span></div>
+    <div class="kv-row"><span class="kv-key">Potencia</span>  <span class="kv-val" id="d-pw">— mW</span></div>
+    <div class="kv-row"><span class="kv-key">Enc A/B</span>   <span class="kv-val" id="d-enc">— / —</span></div>
+    <div class="kv-row"><span class="kv-key">Counts</span>    <span class="kv-val" id="d-cnt">—</span></div>
+
+    <div class="section-title">MODO DE OPERACIÓN</div>
+    <div class="mode-group">
+      <div class="mode-btn active" id="mode-0" onclick="setMode(0)">STOP</div>
+      <div class="mode-btn"       id="mode-1" onclick="setMode(1)">PWM Manual</div>
+      <div class="mode-btn"       id="mode-2" onclick="setMode(2)">PID Pos.</div>
+    </div>
+
+    <div class="section-title">PWM MANUAL (modo 1)</div>
+    <div class="ctrl-row">
+      <label>PWM</label>
+      <input type="range" id="pwm-range" min="-255" max="255" value="0" oninput="onPWMSlider(this.value)">
+      <span id="pwm-val">0</span>
+    </div>
+
+    <div class="section-title">SETPOINT PID (modo 2)</div>
+    <div class="ctrl-row">
+      <label>Grados</label>
+      <input type="number" id="sp-input" value="0" step="1"> °
+      <button class="btn btn-green" style="padding:3px 8px" onclick="sendSetpoint()">↵</button>
+    </div>
+    <div class="quick-group">
+      <button class="quick-btn" onclick="quickSP(-180)">-180°</button>
+      <button class="quick-btn" onclick="quickSP(-90)">-90°</button>
+      <button class="quick-btn" onclick="quickSP(-45)">-45°</button>
+      <button class="quick-btn" onclick="quickSP(0)">0°</button>
+      <button class="quick-btn" onclick="quickSP(45)">45°</button>
+      <button class="quick-btn" onclick="quickSP(90)">90°</button>
+      <button class="quick-btn" onclick="quickSP(180)">180°</button>
+    </div>
+
+    <div class="section-title">GANANCIAS PID</div>
+    <div class="ctrl-row"><label>Kp</label><input type="number" id="kp-in" value="0.75" step="0.01"></div>
+    <div class="ctrl-row"><label>Ki</label><input type="number" id="ki-in" value="0.0"  step="0.001"></div>
+    <div class="ctrl-row"><label>Kd</label><input type="number" id="kd-in" value="0.06" step="0.001"></div>
+    <div style="padding:4px 10px">
+      <button class="btn btn-yellow" style="width:100%" onclick="sendPID()">Aplicar PID</button>
+    </div>
+
+    <div class="section-title">ENCODER</div>
+    <div class="ctrl-row">
+      <label>CPR</label>
+      <input type="number" id="cpr-in" value="2048" step="1">
+      <button class="btn btn-dim" style="padding:3px 8px" onclick="sendCPR()">Set</button>
+    </div>
+    <div class="ctrl-row">
+      <label>Dir</label>
+      <button class="btn btn-dim" id="dir-btn" onclick="toggleDir()">+1</button>
+      <button class="btn btn-dim" onclick="zeroHere()">Zero aquí</button>
+    </div>
+
+    <div class="section-title">VISUALIZACIÓN</div>
+    <div class="ctrl-row">
+      <label>Ventana</label>
+      <input type="number" id="win-input" value="30" min="5" max="300"> s
+    </div>
+    <div class="sig-row">
+      <input type="checkbox" id="show-pos" checked onchange="redrawAll()">
+      <span class="sig-dot" style="background:#00c8ff"></span>
+      <label for="show-pos">Posición</label>
+    </div>
+    <div class="sig-row">
+      <input type="checkbox" id="show-sp" checked onchange="redrawAll()">
+      <span class="sig-dot" style="background:#ffd700"></span>
+      <label for="show-sp">Setpoint</label>
+    </div>
+    <div class="sig-row">
+      <input type="checkbox" id="show-err" checked onchange="redrawAll()">
+      <span class="sig-dot" style="background:#ff6060"></span>
+      <label for="show-err">Error</label>
+    </div>
+    <div class="sig-row">
+      <input type="checkbox" id="show-ima" checked onchange="redrawAll()">
+      <span class="sig-dot" style="background:#ff9f40"></span>
+      <label for="show-ima">Corriente</label>
+    </div>
+    <div class="sig-row">
+      <input type="checkbox" id="show-vb" checked onchange="redrawAll()">
+      <span class="sig-dot" style="background:#bf7fff"></span>
+      <label for="show-vb">V bus</label>
+    </div>
+
+  </div><!-- /sidebar -->
+</div><!-- /body -->
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+//  Config & state
+// ─────────────────────────────────────────────────────────────────────────────
+const MAX_SAMPLES = 3000;
+const COLORS = {
+  pos:'#00c8ff', sp:'#ffd700', err:'#ff6060',
+  pwm:'#7fff7f', ima:'#ff9f40', vb:'#bf7fff',
+  bg:'#1a1a35', grid:'#2a2a55', text:'#d8d8f0', dim:'#8888aa'
+};
+
+let polling     = false;
+let pollTimer   = null;
+let t0          = null;
+let encoderDir  = 1;
+
+// Circular data buffers
+const buf = {
+  t:   [], pos: [], sp:  [], err: [],
+  pwm: [], ima: [], vb:  [], pmw: []
+};
+
+function pushSample(s) {
+  if (t0 === null) t0 = s.ts;
+  const t = s.ts - t0;
+  const keys = ['t','pos','sp','err','pwm','ima','vb','pmw'];
+  const vals = [t, s.position_deg, s.setpoint_deg, s.error_deg,
+                s.pwm, s.i_ma, s.v_bus, s.p_mw];
+  keys.forEach((k,i)=> {
+    buf[k].push(vals[i]);
+    if (buf[k].length > MAX_SAMPLES) buf[k].shift();
+  });
+}
+
+function clearBuffer() {
+  Object.keys(buf).forEach(k => buf[k] = []);
+  t0 = null;
+  redrawAll();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Connection
+// ─────────────────────────────────────────────────────────────────────────────
+function getIP()   { return document.getElementById('ip-input').value.trim(); }
+function getPoll() { return parseInt(document.getElementById('poll-input').value) || 100; }
+
+function toggleConnect() {
+  if (polling) {
+    stopPolling();
+    document.getElementById('btn-connect').textContent = '⚡ Conectar';
+    document.getElementById('btn-connect').className = 'btn btn-green';
+    setStatus(false, 'Desconectado');
+  } else {
+    startPolling();
+    document.getElementById('btn-connect').textContent = '✕ Desconectar';
+    document.getElementById('btn-connect').className = 'btn btn-red';
+    setStatus(false, 'Conectando…');
+  }
+}
+
+function startPolling() {
+  polling = true;
+  schedulePoll();
+}
+
+function stopPolling() {
+  polling = false;
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+}
+
+function schedulePoll() {
+  if (!polling) return;
+  const t0p = performance.now();
+  fetch(`http://${getIP()}/state`)
+    .then(r => r.json())
+    .then(d => {
+      const latency = Math.round(performance.now() - t0p);
+      d.ts = Date.now() / 1000;
+      updateUI(d, latency);
+      pushSample(d);
+      redrawAll();
+      if (polling) pollTimer = setTimeout(schedulePoll, Math.max(0, getPoll() - latency));
+    })
+    .catch(e => {
+      setStatus(false, 'Sin conexión — ¿WiFi QUBE-ESP32?');
+      if (polling) pollTimer = setTimeout(schedulePoll, getPoll());
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  UI state display
+// ─────────────────────────────────────────────────────────────────────────────
+const MODES = {0:'STOP', 1:'PWM Manual', 2:'PID Posición'};
+
+function setStatus(ok, msg) {
+  const dot  = document.getElementById('status-dot');
+  const txt  = document.getElementById('status-text');
+  dot.style.background = ok ? '#4caf50' : '#f44336';
+  txt.style.color      = ok ? '#4caf50' : '#f44336';
+  txt.textContent      = msg;
+}
+
+function updateUI(s, latency) {
+  setStatus(true, 'Conectado');
+  document.getElementById('latency').textContent = `latencia: ${latency} ms`;
+  document.getElementById('d-mode').textContent  = MODES[s.mode] ?? s.mode;
+  document.getElementById('d-pos').textContent   = `${s.position_deg?.toFixed(2)}°`;
+  document.getElementById('d-sp').textContent    = `${s.setpoint_deg?.toFixed(2)}°`;
+  document.getElementById('d-err').textContent   = `${s.error_deg?.toFixed(2)}°`;
+  document.getElementById('d-pwm').textContent   = s.pwm;
+  document.getElementById('d-ima').textContent   = `${s.i_ma?.toFixed(1)} mA`;
+  document.getElementById('d-vb').textContent    = `${s.v_bus?.toFixed(2)} V`;
+  document.getElementById('d-pw').textContent    = `${s.p_mw?.toFixed(1)} mW`;
+  document.getElementById('d-enc').textContent   = `${s.enc_a} / ${s.enc_b}`;
+  document.getElementById('d-cnt').textContent   = s.count;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Commands
+// ─────────────────────────────────────────────────────────────────────────────
+function sendCmd(params) {
+  const qs = Object.entries(params).map(([k,v])=>`${k}=${encodeURIComponent(v)}`).join('&');
+  fetch(`http://${getIP()}/cmd?${qs}`).catch(()=>{});
+}
+
+function setMode(m) {
+  sendCmd({m});
+  [0,1,2].forEach(i => {
+    const el = document.getElementById(`mode-${i}`);
+    el.className = 'mode-btn' + (i===m ? ' active' : '');
+  });
+  if (m !== 1) {
+    document.getElementById('pwm-range').value = 0;
+    document.getElementById('pwm-val').textContent = 0;
+  }
+}
+
+function onPWMSlider(val) {
+  document.getElementById('pwm-val').textContent = val;
+  const mode = [...document.querySelectorAll('.mode-btn.active')]
+    .map(el => parseInt(el.id.split('-')[1]))[0];
+  if (mode === 1) sendCmd({p: val});
+}
+
+function sendSetpoint() {
+  const deg = parseFloat(document.getElementById('sp-input').value);
+  if (!isNaN(deg)) sendCmd({s: deg.toFixed(2)});
+}
+
+function quickSP(deg) {
+  document.getElementById('sp-input').value = deg;
+  sendCmd({s: deg});
+}
+
+function sendPID() {
+  const kp = parseFloat(document.getElementById('kp-in').value);
+  const ki = parseFloat(document.getElementById('ki-in').value);
+  const kd = parseFloat(document.getElementById('kd-in').value);
+  if (![kp,ki,kd].some(isNaN)) sendCmd({kp, ki, kd});
+}
+
+function sendCPR() {
+  const cpr = parseFloat(document.getElementById('cpr-in').value);
+  if (!isNaN(cpr) && cpr >= 1) sendCmd({cpr: cpr.toFixed(1)});
+}
+
+function toggleDir() {
+  encoderDir = -encoderDir;
+  document.getElementById('dir-btn').textContent = encoderDir > 0 ? '+1' : '−1';
+  sendCmd({ed: encoderDir});
+}
+
+function zeroHere() { sendCmd({z: 1}); }
+
+function emergencyStop() {
+  sendCmd({x: 1});
+  setMode(0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CSV Export
+// ─────────────────────────────────────────────────────────────────────────────
+function exportCSV() {
+  if (!buf.t.length) { alert('No hay datos aún.'); return; }
+  const headers = ['t_s','position_deg','setpoint_deg','error_deg','pwm','current_ma','voltage_v','power_mw'];
+  const rows = buf.t.map((_,i) =>
+    [buf.t[i], buf.pos[i], buf.sp[i], buf.err[i],
+     buf.pwm[i], buf.ima[i], buf.vb[i], buf.pmw[i]
+    ].map(v => typeof v === 'number' ? v.toFixed(4) : v).join(',')
+  );
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const d = new Date();
+  a.download = `qube_${d.toISOString().replace(/[:.]/g,'_').slice(0,19)}.csv`;
+  a.click();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Canvas Plotter
+// ─────────────────────────────────────────────────────────────────────────────
+function windowedData(tBuf, valBuf, winS) {
+  if (!tBuf.length) return { t:[], v:[] };
+  const tMax = tBuf[tBuf.length - 1];
+  const tMin = tMax - winS;
+  const t = [], v = [];
+  for (let i = 0; i < tBuf.length; i++) {
+    if (tBuf[i] >= tMin) { t.push(tBuf[i]); v.push(valBuf[i]); }
+  }
+  return { t, v };
+}
+
+function drawChart(canvasId, series, yLabel, winS, yFixed) {
+  const cvs = document.getElementById(canvasId);
+  if (!cvs) return;
+  const W = cvs.offsetWidth;
+  const H = cvs.offsetHeight;
+  if (W < 10 || H < 10) return;
+  if (cvs.width !== W || cvs.height !== H) { cvs.width = W; cvs.height = H; }
+  const ctx = cvs.getContext('2d');
+  const PAD = { top:12, right:12, bottom:24, left:50 };
+  const pw = W - PAD.left - PAD.right;
+  const ph = H - PAD.top  - PAD.bottom;
+
+  ctx.fillStyle = COLORS.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Collect all visible data for Y range
+  let yMin = Infinity, yMax = -Infinity;
+  let tMin_ = Infinity, tMax_ = -Infinity;
+  const drawn = [];
+  for (const s of series) {
+    if (!s.show) continue;
+    const { t, v } = windowedData(buf.t, s.data, winS);
+    if (!t.length) continue;
+    drawn.push({ t, v, color: s.color, label: s.label, dashed: s.dashed });
+    v.forEach(x => { if (x < yMin) yMin=x; if (x > yMax) yMax=x; });
+    t.forEach(x => { if (x < tMin_) tMin_=x; if (x > tMax_) tMax_=x; });
+  }
+
+  if (yFixed) { yMin = yFixed[0]; yMax = yFixed[1]; }
+  if (!isFinite(yMin)) { yMin = -1; yMax = 1; }
+  if (yMax === yMin)   { yMin -= 1; yMax += 1; }
+  const yRange = yMax - yMin;
+  if (!isFinite(tMin_)) { tMin_ = 0; tMax_ = winS; }
+  if (tMax_ === tMin_)  { tMax_ = tMin_ + 1; }
+  const tRange = tMax_ - tMin_;
+
+  const toX = t => PAD.left + ((t - tMin_) / tRange) * pw;
+  const toY = v => PAD.top  + (1 - (v - yMin) / yRange) * ph;
+
+  // Grid
+  ctx.strokeStyle = COLORS.grid;
+  ctx.lineWidth = 0.5;
+  const NY = 4, NX = 5;
+  ctx.setLineDash([3, 4]);
+  for (let i = 0; i <= NY; i++) {
+    const y = PAD.top + (ph / NY) * i;
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + pw, y); ctx.stroke();
+  }
+  for (let i = 0; i <= NX; i++) {
+    const x = PAD.left + (pw / NX) * i;
+    ctx.beginPath(); ctx.moveTo(x, PAD.top); ctx.lineTo(x, PAD.top + ph); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Y axis labels
+  ctx.fillStyle = COLORS.dim;
+  ctx.font = '10px Consolas, monospace';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= NY; i++) {
+    const val = yMax - (yRange / NY) * i;
+    const y   = PAD.top + (ph / NY) * i;
+    ctx.fillText(val.toFixed(1), PAD.left - 4, y + 4);
+  }
+
+  // X axis labels
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= NX; i++) {
+    const t = tMin_ + (tRange / NX) * i;
+    const x = PAD.left + (pw / NX) * i;
+    ctx.fillText(t.toFixed(1) + 's', x, PAD.top + ph + 16);
+  }
+
+  // Zero line
+  if (yMin < 0 && yMax > 0) {
+    ctx.strokeStyle = '#3a3a6a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, toY(0));
+    ctx.lineTo(PAD.left + pw, toY(0));
+    ctx.stroke();
+  }
+
+  // Series
+  for (const s of drawn) {
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = s.dashed ? 1.2 : 1.8;
+    ctx.setLineDash(s.dashed ? [6, 4] : []);
+    ctx.beginPath();
+    let first = true;
+    for (let i = 0; i < s.t.length; i++) {
+      const x = toX(s.t[i]);
+      const y = toY(s.v[i]);
+      if (first) { ctx.moveTo(x, y); first = false; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Legend dot + label
+    const li = drawn.indexOf(s);
+    const lx = PAD.left + 8 + li * 90;
+    ctx.fillStyle = s.color;
+    ctx.beginPath(); ctx.arc(lx + 4, PAD.top + 6, 4, 0, 2*Math.PI); ctx.fill();
+    ctx.fillStyle = COLORS.text;
+    ctx.textAlign = 'left';
+    ctx.font = '10px Consolas, monospace';
+    ctx.fillText(s.label, lx + 12, PAD.top + 10);
+  }
+}
+
+function redrawAll() {
+  const win = parseFloat(document.getElementById('win-input').value) || 30;
+  const showPos = document.getElementById('show-pos').checked;
+  const showSP  = document.getElementById('show-sp').checked;
+  const showErr = document.getElementById('show-err').checked;
+  const showIma = document.getElementById('show-ima').checked;
+  const showVb  = document.getElementById('show-vb').checked;
+
+  drawChart('c-pos', [
+    { data: buf.pos, color: COLORS.pos, label: 'Posición', show: showPos },
+    { data: buf.sp,  color: COLORS.sp,  label: 'Setpoint', show: showSP, dashed: true },
+    { data: buf.err, color: COLORS.err, label: 'Error',    show: showErr },
+  ], '°', win);
+
+  drawChart('c-pwm', [
+    { data: buf.pwm, color: COLORS.pwm, label: 'PWM', show: true },
+  ], 'duty', win, [-270, 270]);
+
+  drawChart('c-pwr', [
+    { data: buf.ima, color: COLORS.ima, label: 'Corriente (mA)', show: showIma },
+    { data: buf.vb,  color: COLORS.vb,  label: 'V bus',          show: showVb },
+  ], '', win);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Init
+// ─────────────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', redrawAll);
+setInterval(redrawAll, 200);   // redibuja incluso si no hay datos nuevos
+redrawAll();                   // estado inicial
+
+// Enter key on setpoint field
+document.getElementById('sp-input')
+  .addEventListener('keydown', e => { if (e.key === 'Enter') sendSetpoint(); });
+</script>
+</body>
+</html>
