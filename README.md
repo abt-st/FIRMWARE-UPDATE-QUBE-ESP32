@@ -102,7 +102,7 @@ L298N (PWM) ◄─────────────┘
 
 ## Pinout y Conexiones
 
-### Tabla completa pin por pin
+### Tabla completa pin por pin (común a ambos modos)
 
 | Subsistema | Origen | Destino | Notas |
 |---|---|---|---|
@@ -111,9 +111,9 @@ L298N (PWM) ◄─────────────┘
 | Lógica L298N | LM2596 5V | L298N 5V | Según jumper del módulo |
 | Motor DC | L298N OUT1 | Motor terminal (+) | Salida de potencia |
 | Motor DC | L298N OUT2 | Motor terminal (−) | Salida de potencia |
-| Control motor | ESP32 GPIO26 | L298N IN1 | Dirección + PWM |
-| Control motor | ESP32 GPIO27 | L298N IN2 | Dirección + PWM |
-| Control motor | Jumper ENA | L298N ENA | Siempre habilitado |
+| Control motor | ESP32 GPIO26 | L298N IN1 | Señal de control canal A |
+| Control motor | ESP32 GPIO27 | L298N IN2 | Señal de control canal A |
+| Control motor | ENB (canal B) | L298N ENB | Segundo enable del módulo; no usado en configuración de un motor |
 | Encoder servo | Pin A | 4.7 kΩ pull-up a 3.3V → GPIO34 | Open-drain |
 | Encoder servo | Pin B | 4.7 kΩ pull-up a 3.3V → GPIO35 | Open-drain |
 | Encoder servo | GND | GND común | Referencia compartida |
@@ -130,6 +130,15 @@ L298N (PWM) ◄─────────────┘
 | INA219 | L298N VS (pin 8) | INA219 VIN− | Después del shunt |
 | Debug serial | USB ESP32 | PC / monitor serie | UART0 por USB |
 
+### Cableado de ENA (elige una sola opción)
+
+| Opción | Qué hacer con jumper ENA | Conexión ENA (pin señal) | Cuándo usar |
+|---|---|---|---|
+| A (recomendada, simple) | Dejar puesto | No conectar al ESP32 | Si controlas el motor por IN1/IN2 |
+| B (alternativa) | Retirar jumper | ESP32 GPIO25 → ENA (señal) | Si quieres PWM directo por ENA |
+
+> **Importante:** El bloque ENA tiene 2 pines físicos: ENA (señal) y +5V. Con jumper puesto quedan puenteados. Si retiras el jumper, conecta GPIO25 solo al pin ENA (señal), nunca al pin +5V.
+
 ### Configuración de pines ESP32
 
 ```
@@ -137,8 +146,10 @@ Pin     │ Función              │ Tipo         │ Notas
 ────────┼──────────────────────┼──────────────┼───────────────────────
 GPIO21  │ I2C SDA              │ Bidireccional │ Pull-up interno
 GPIO22  │ I2C SCL              │ Salida       │ Pull-up interno
-GPIO26  │ L298N IN1 (PWM)      │ Salida       │ Canal LEDC 1
-GPIO27  │ L298N IN2 (PWM)      │ Salida       │ Canal LEDC 2
+GPIO25  │ L298N ENA (PWM)      │ Salida       │ Solo en opción B (jumper ENA retirado)
+NC      │ L298N ENB            │ N/A          │ Segundo canal del L298N, no usado en este montaje
+GPIO26  │ L298N IN1            │ Salida       │ Control canal A
+GPIO27  │ L298N IN2            │ Salida       │ Control canal A
 GPIO32  │ Encoder péndulo A    │ Entrada      │ Pull-up externo 4.7kΩ
 GPIO33  │ Encoder péndulo B    │ Entrada      │ Pull-up externo 4.7kΩ
 GPIO34  │ Encoder servo A      │ Entrada      │ Pull-up externo 4.7kΩ (input-only)
@@ -146,6 +157,7 @@ GPIO35  │ Encoder servo B      │ Entrada      │ Pull-up externo 4.7kΩ (in
 ```
 
 > **Nota:** GPIO34 y GPIO35 son pines input-only en el ESP32-WROOM-32. No soportan `INPUT_PULLUP` por firmware — los pull-ups deben ser externos.
+> **Nota ENA/ENB:** El L298N tiene dos pines enable: ENA (canal A, OUT1/OUT2) y ENB (canal B, OUT3/OUT4).
 
 ---
 

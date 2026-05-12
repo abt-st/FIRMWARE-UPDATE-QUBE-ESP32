@@ -12,7 +12,7 @@ lot: true
 geometry: margin=2.5cm
 ---
 
-   hispagestyle{empty}
+\thispagestyle{empty}
 \begin{center}
 {\LARGE Investigación Comprehensive: Modernización de Plataformas QUBE Servo\\}
 \vspace{0.8cm}
