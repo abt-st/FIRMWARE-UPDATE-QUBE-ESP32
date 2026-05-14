@@ -156,12 +156,14 @@ Se detecto lectura no confiable del encoder de base:
 
 ### 6.2 Causa raiz
 
-El encoder opera como open-drain. El esquema inicial con level shifter de alta impedancia y luego divisor resistivo fue inadecuado para ese tipo de salida.
+Hipotesis inicial: encoder servo open-drain. El esquema inicial con level shifter de alta impedancia y luego divisor resistivo fue inadecuado en esa etapa de pruebas.
+
+> **Actualizacion 2026-05-13:** en nuevas pruebas de banco, el encoder del servo se valida como comportamiento compatible con **push-pull 5V** en el punto de toma actual. En reposo se midio hasta **4.7V** y con divisor **10k/10k** se obtuvo ~**2.5V** estable en GPIO.
 
 ### 6.3 Solucion validada
 
 - Eliminar level shifter inadecuado
-- Pull-up externo de 4.7k ohm a 3.3V en A y B
+- Adaptar A/B del encoder servo a ESP32 con divisor 10k/10k
 - Mantener entradas GPIO34/GPIO35 como INPUT
 
 ### 6.4 Resultado
@@ -193,7 +195,8 @@ El encoder opera como open-drain. El esquema inicial con level shifter de alta i
 - Bypass local en ESP32, INA219 y L298N
 
 3. Capa de entrada encoder:
-- Pull-up correcto segun topologia open-drain
+- Encoder servo: divisor 10k/10k para 5V -> ~2.5V en GPIO
+- Encoder pendulo: definir topologia en banco (open-drain o push-pull)
 - RC moderado cerca del microcontrolador si hay picos
 - Opcion recomendada para revision futura: buffer Schmitt trigger
 

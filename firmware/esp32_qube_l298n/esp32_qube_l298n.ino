@@ -58,6 +58,9 @@
 // Fallback: permite compilar sin la libreria INA219 instalada.
 class Adafruit_INA219 {
 public:
+  Adafruit_INA219(uint8_t addr = 0x40) {
+    (void)addr;
+  }
   bool begin() {
     return false;
   }
@@ -165,12 +168,52 @@ const char* STA_PASS = "Azulito2020_";              // <-- coloca aqui la clave 
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000;
 WebServer server(80);
 
-Adafruit_INA219 ina219;
+Adafruit_INA219 ina219(0x40);
 bool inaOk = false;
+uint8_t inaAddr = 0x40;
 float busVoltageV = 0.0f;
 float shuntVoltagemV = 0.0f;
 float currentmA = 0.0f;
 float powermW = 0.0f;
+
+void scanI2CBus() {
+  Serial.println("I2C scan: inicio");
+  int found = 0;
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    const uint8_t err = Wire.endTransmission();
+    if (err == 0) {
+      Serial.print("I2C dispositivo @ 0x");
+      if (addr < 16) {
+        Serial.print("0");
+      }
+      Serial.println(addr, HEX);
+      found++;
+    }
+  }
+  if (found == 0) {
+    Serial.println("I2C scan: sin dispositivos");
+  }
+}
+
+bool initIna219() {
+  const uint8_t candidates[] = {0x40, 0x41, 0x44, 0x45};
+  for (size_t i = 0; i < (sizeof(candidates) / sizeof(candidates[0])); i++) {
+    const uint8_t addr = candidates[i];
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() != 0) {
+      continue;
+    }
+
+    ina219 = Adafruit_INA219(addr);
+    if (ina219.begin()) {
+      ina219.setCalibration_32V_2A();
+      inaAddr = addr;
+      return true;
+    }
+  }
+  return false;
+}
 
 void IRAM_ATTR isrEncoderA() {
   if (digitalRead(PIN_ENC_A) == digitalRead(PIN_ENC_B)) {
@@ -493,7 +536,7 @@ void printNetworkInfo() {
 }
 
 void printHelp() {
-  Serial.println("Comandos: m0/m1/m2, p-255..255, s<deg>, kp<val>, ki<val>, kd<val>, o<deg>, z, ed<1|-1>, cpr<val>, r, x, i(IP), ?");
+  Serial.println("Comandos: m0/m1/m2, p-255..255, s<deg>, kp<val>, ki<val>, kd<val>, o<deg>, z, ed<1|-1>, cpr<val>, r, x, i(IP), n(ina scan), ?");
 }
 
 void processSerialCommand() {
@@ -628,6 +671,23 @@ void processSerialCommand() {
         break;
       }
 
+    case 'n':
+      {
+        scanI2CBus();
+        inaOk = initIna219();
+        Serial.print("INA219: ");
+        if (inaOk) {
+          Serial.print("OK @ 0x");
+          if (inaAddr < 16) {
+            Serial.print("0");
+          }
+          Serial.println(inaAddr, HEX);
+        } else {
+          Serial.println("NO DETECTADO");
+        }
+        break;
+      }
+
     case 'h':
       {
         printHelp();
@@ -667,10 +727,9 @@ void setup() {
   }
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-  inaOk = ina219.begin();
-  if (inaOk) {
-    ina219.setCalibration_32V_2A();
-  }
+  delay(50);
+  scanI2CBus();
+  inaOk = initIna219();
 
   WiFi.mode(ENABLE_STA ? WIFI_AP_STA : WIFI_AP);
   WiFi.softAP(AP_SSID, AP_PASS, 6, false, 4);  // canal 6, SSID visible, max 4 clientes
@@ -697,7 +756,15 @@ void setup() {
     Serial.println(WiFi.localIP());
   }
   Serial.print("INA219: ");
-  Serial.println(inaOk ? "OK" : "NO DETECTADO");
+  if (inaOk) {
+    Serial.print("OK @ 0x");
+    if (inaAddr < 16) {
+      Serial.print("0");
+    }
+    Serial.println(inaAddr, HEX);
+  } else {
+    Serial.println("NO DETECTADO");
+  }
   printHelp();
 }
 

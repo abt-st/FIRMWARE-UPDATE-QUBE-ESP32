@@ -4,6 +4,90 @@ Registro de cambios del firmware `esp32_qube_l298n.ino` para la modernización d
 
 ---
 
+## [1.17.3] — 2026-05-13
+
+### Diagnóstico y autodetección de INA219 por I2C
+
+#### Problema identificado
+- En arranque aparecía `INA219: NO DETECTADO` aun con hardware aparentemente conectado.
+- Causa probable: dirección I2C distinta a la esperada o problema de bus no visible en logs.
+
+#### Cambios aplicados
+
+**1. Escaneo I2C en arranque y bajo demanda**
+- Se agrega `scanI2CBus()` para listar dispositivos detectados en direcciones `0x01..0x7E`.
+- Se ejecuta automáticamente en `setup()` y también por comando serial `n`.
+
+**2. Inicialización INA219 con direcciones candidatas**
+- Se agrega `initIna219()` que prueba `0x40`, `0x41`, `0x44`, `0x45` y aplica calibración al detectar el sensor.
+- Se registra dirección activa en `inaAddr` y se imprime en serial (`INA219: OK @ 0x..`).
+
+**3. Mejoras de diagnóstico por serial**
+- `printHelp()` ahora incluye `n(ina scan)` para relanzar detección sin reiniciar.
+- El mensaje final de arranque muestra estado y dirección detectada cuando corresponde.
+
+#### Cambios de firmware
+```cpp
+void scanI2CBus() { ... }                // Escaneo I2C para diagnóstico
+bool initIna219() { ... }                // Detección INA219 en varias direcciones
+case 'n': { scanI2CBus(); ... }          // Comando serial para reintentar detección
+```
+
+#### Notas
+- Si el scan no lista ningún dispositivo, el problema es eléctrico (SDA/SCL, GND común, alimentación o pull-ups).
+- Si aparece una dirección diferente a las candidatas, se puede extender la lista en `initIna219()`.
+
+---
+
+## [1.17.2] — 2026-05-13
+
+### Confirmación experimental del encoder servo y ajuste de acondicionamiento
+
+#### Problema identificado
+- Persistía incertidumbre sobre el tipo de salida del encoder del servo durante pruebas de banco.
+- Medición validada por el usuario: en estado abierto el canal alcanza hasta **4.7 V**, y con adaptación resistiva se observa nivel alto de **~2.5 V** en GPIO.
+
+#### Cambios aplicados
+
+**1. Confirmación de comportamiento eléctrico (servo)**
+- Se registra el encoder servo como salida compatible con **push-pull a 5 V** en el punto de prueba actual.
+- Nivel alto en reposo: ~4.7 V (línea original del encoder).
+
+**2. Adaptación segura a ESP32**
+- Topología adoptada para canales A/B del servo: **divisor 10 kΩ / 10 kΩ** hacia GPIO34/GPIO35.
+- Nivel alto esperado en ESP32: ~2.5 V (dentro de umbral lógico y seguro para 3.3 V).
+
+#### Notas
+- Se mantiene GND común entre fuente, encoder, L298N, INA219 y ESP32.
+- Esta entrada documenta validación de hardware y actualización de criterio de cableado; no implica cambios de código en `esp32_qube_l298n.ino`.
+
+---
+
+## [1.17.1] — 2026-05-13
+
+### Reconexión de hardware para recuperar INA219 y diagnóstico de señal de encoder
+
+#### Problema identificado
+- Se requirió reconectar el sistema completo para restablecer telemetría del INA219 (bus, corriente y potencia).
+- Durante el diagnóstico del encoder, la etapa con divisor resistivo entregó solo **35–40 mV** al GPIO del ESP32 en estado alto.
+- Ese nivel queda muy por debajo del umbral lógico de entrada digital, por lo que la ESP32 no detecta flancos y no mide `CNT/POS`.
+
+#### Cambios aplicados
+
+**1. Reconexión integral del cableado de medición (INA219)**
+- Se volvió a cablear la ruta de potencia/sensado para recuperar lectura estable del INA219 en telemetría.
+- Se validó retorno de variables `v_bus`, `i_ma` y `p_mw` en `GET /state` y salida serial.
+
+**2. Registro del incidente de encoder por nivel lógico insuficiente**
+- Se documenta que la topología con divisor resistivo usada en esta prueba no permitió nivel alto válido para ESP32.
+- Hallazgo de banco: alto en A/B de 35–40 mV (indetectable), consistente con comportamiento de salida tipo open-drain cuando falta pull-up efectivo.
+
+#### Notas
+- Este registro corresponde a reconexión/diagnóstico de hardware; no requiere cambios adicionales de firmware en esta entrada.
+- Acción recomendada para encoder: pull-up externo por canal a 3.3 V y evitar divisor a GND cuando la salida sea open-drain.
+
+---
+
 ## [1.17.0] — 2026-05-07
 
 ### Corrección de Error en Régimen Permanente — Habilitación de Acción Integral

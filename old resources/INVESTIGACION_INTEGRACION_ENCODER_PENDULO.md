@@ -94,11 +94,13 @@ Justificacion:
 
 Primero identificar tipo de salida del encoder del pendulo (open-drain o push-pull).
 
+> **Actualizacion 2026-05-13:** el encoder del servo (base) se valido en banco como compatible con push-pull 5V (alto en reposo ~4.7V). Esta conclusion **no** se extrapola automaticamente al encoder del pendulo; el pendulo debe medirse por separado.
+
 Regla practica:
 - Si en estado alto sin carga la linea no sube de forma firme -> open-drain.
 - Si entrega alto activo claramente (cercano a VCC encoder) -> push-pull.
 
-### Caso 1: Open-drain (muy probable por experiencia en este proyecto)
+### Caso 1: Open-drain (posible segun medicion)
 
 Topologia por canal (A y B):
 
