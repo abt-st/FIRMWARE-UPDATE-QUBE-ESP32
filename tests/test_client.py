@@ -30,7 +30,7 @@ class TestQubeState:
         assert state.v_shunt_mv == 45.0
         assert state.i_ma == 380.5
         assert state.p_mw == 4490.0
-        assert state.t == 1234567
+        assert state.timestamp > 0  # timestamp is set to current time
 
     def test_from_json_empty(self) -> None:
         """Test creating QubeState from empty dict."""

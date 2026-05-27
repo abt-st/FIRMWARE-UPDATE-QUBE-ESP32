@@ -69,8 +69,7 @@ Este repositorio cuenta con un ecosistema de **agentes, skills, instrucciones y 
 - Generación de gráficos con Python, matplotlib, pandas y numpy
 
 **Ejemplos de uso:**
-- _"Analiza el archivo Data/qube_2026-05-13T23_32_49.csv y dime si el control PID está bien ajustado."_
-- _"Grafica la respuesta al escalón y calcula el overshoot."_
+- _"Analiza el archivo experiments/2026-05-07_pid_tuning/data/qube_2026-05-07T00_32_35.csv y dime si el control PID está bien ajustado."_- _"Grafica la respuesta al escalón y calcula el overshoot."_
 - _"¿Qué parámetros PID debería ajustar para mejorar el tiempo de establecimiento?"_
 
 ---
@@ -184,7 +183,7 @@ Procedimiento completo para investigar componentes o arquitecturas de hardware a
 | `firmware/CHANGELOG.md` | Historial de versiones del firmware |
 | `gui/app.py` | Interfaz Tkinter para monitoreo y control |
 | `gui/esp32_client.py` | Cliente HTTP (`/state`, `/cmd`) para ESP32 |
-| `Data/` | Capturas CSV de sesiones experimentales |
+| `experiments/` | Datos CSV organizados por experimento |
 | `INVESTIGACION_ARQUITECTURA_MODERNIZACION_QUBE.md` | Documento principal de investigación (PARTE 1–9) |
 | `RESUMEN_HALLAZGOS.md` | Resumen ejecutivo de hallazgos de investigación |
 | `SIGNAL_STABILIZATION_INVESTIGATION.md` | Análisis de ruido y filtrado de señal |

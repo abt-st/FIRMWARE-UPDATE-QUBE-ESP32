@@ -52,10 +52,8 @@ def plot_response(
     # Position subplot
     ax = axes_list[0]
     ax.plot(t, position, color=colors["position"], linewidth=1.5, label="Posición")
-    ax.plot(t, setpoint, color=colors["setpoint"], linewidth=1.2, linestyle="--",
-            label="Setpoint")
-    ax.plot(t, setpoint - position, color=colors["error"], linewidth=1.0,
-            alpha=0.6, label="Error")
+    ax.plot(t, setpoint, color=colors["setpoint"], linewidth=1.2, linestyle="--", label="Setpoint")
+    ax.plot(t, setpoint - position, color=colors["error"], linewidth=1.0, alpha=0.6, label="Error")
     ax.set_ylabel("Ángulo (°)")
     ax.legend(loc="upper right", fontsize=9)
     ax.grid(True, alpha=0.3)

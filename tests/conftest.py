@@ -28,5 +28,4 @@ def sample_state_json() -> dict[str, Any]:
         "v_shunt_mv": 45.0,
         "i_ma": 380.5,
         "p_mw": 4490.0,
-        "t": 1234567,
     }

@@ -8,3 +8,10 @@ __all__ = [
     "QubeState",
     "SignalBuffer",
 ]
+
+
+def launch() -> None:
+    """Launch the QUBE UI application."""
+    from .app import main
+
+    main()

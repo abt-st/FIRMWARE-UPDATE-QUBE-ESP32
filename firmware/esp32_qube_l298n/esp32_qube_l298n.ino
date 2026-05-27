@@ -34,6 +34,9 @@
 // r                    -> reset encoder y PID
 // x                    -> paro inmediato
 // ?                    -> imprime estado
+// wifi_ssid<TuRed>     -> configurar SSID WiFi (guarda en EEPROM)
+// wifi_pass<TuClave>   -> configurar password WiFi (guarda en EEPROM)
+// wifi_info            -> mostrar configuracion WiFi actual
 //
 // Endpoints HTTP:
 // GET /state
@@ -46,6 +49,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Wire.h>
+#include <Preferences.h>
 
 #if defined(__has_include)
 #if __has_include(<Adafruit_INA219.h>)
@@ -160,11 +164,13 @@ unsigned long lastControlUs = 0;
 unsigned long lastTelemetryMs = 0;
 unsigned long lastCommandMs = 0;
 
+// ── WiFi Configuration (stored in NVS/Preferences) ──────────────────────────
+Preferences preferences;
 const char* AP_SSID = "QUBE-ESP32";
 const char* AP_PASS = "qube1234";
-const bool ENABLE_STA = true;            // true: conecta tambien a tu router LAN
-const char* STA_SSID = "Guaifai";              // <-- coloca aqui el SSID de tu red local
-const char* STA_PASS = "Azulito2020_";              // <-- coloca aqui la clave de tu red local
+const bool ENABLE_STA = true;  // true: conecta tambien a tu router LAN
+char staSsid[33] = "";         // Max 32 chars + null
+char staPass[65] = "";         // Max 64 chars + null
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000;
 WebServer server(80);
 
@@ -494,14 +500,14 @@ void connectStaIfConfigured() {
     return;
   }
 
-  if (STA_SSID[0] == '\0') {
+  if (staSsid[0] == '\0') {
     Serial.println("STA: deshabilitado (sin credenciales)");
     return;
   }
 
   Serial.print("STA: conectando a ");
-  Serial.println(STA_SSID);
-  WiFi.begin(STA_SSID, STA_PASS);
+  Serial.println(staSsid);
+  WiFi.begin(staSsid, staPass);
 
   const unsigned long startMs = millis();
   while (WiFi.status() != WL_CONNECTED && (millis() - startMs) < WIFI_CONNECT_TIMEOUT_MS) {
@@ -516,6 +522,58 @@ void connectStaIfConfigured() {
   } else {
     Serial.println("STA: no se pudo conectar (timeout)");
   }
+}
+
+// ── WiFi credential management (NVS/Preferences) ────────────────────────────
+
+void loadWifiCredentials() {
+  preferences.begin("qube-wifi", true);  // Read-only
+  preferences.getString("ssid", staSsid, sizeof(staSsid));
+  preferences.getString("pass", staPass, sizeof(staPass));
+  preferences.end();
+  
+  if (staSsid[0] != '\0') {
+    Serial.print("WiFi: SSID cargado desde NVS: ");
+    Serial.println(staSsid);
+  } else {
+    Serial.println("WiFi: sin credenciales guardadas (usar AP directo)");
+  }
+}
+
+void saveWifiCredentials(const char* ssid, const char* pass) {
+  preferences.begin("qube-wifi", false);  // Read-write
+  preferences.putString("ssid", ssid);
+  preferences.putString("pass", pass);
+  preferences.end();
+  
+  // Update runtime variables
+  strncpy(staSsid, ssid, sizeof(staSsid) - 1);
+  staSsid[sizeof(staSsid) - 1] = '\0';
+  strncpy(staPass, pass, sizeof(staPass) - 1);
+  staPass[sizeof(staPass) - 1] = '\0';
+  
+  Serial.print("WiFi: Credenciales guardadas. SSID=");
+  Serial.println(staSsid);
+  Serial.println("WiFi: Reiniciar para conectar con nuevas credenciales");
+}
+
+void printWifiInfo() {
+  Serial.println("=== WiFi Configuration ===");
+  Serial.print("AP SSID: ");
+  Serial.println(AP_SSID);
+  Serial.print("AP IP:   ");
+  Serial.println(WiFi.softAPIP());
+  Serial.print("STA SSID: ");
+  Serial.println(staSsid[0] != '\0' ? staSsid : "(no configurado)");
+  Serial.print("STA PASS: ");
+  Serial.println(staPass[0] != '\0' ? "****" : "(no configurado)");
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("LAN IP:  ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("LAN: no conectado");
+  }
+  Serial.println("==========================");
 }
 
 void printNetworkInfo() {
@@ -537,6 +595,7 @@ void printNetworkInfo() {
 
 void printHelp() {
   Serial.println("Comandos: m0/m1/m2, p-255..255, s<deg>, kp<val>, ki<val>, kd<val>, o<deg>, z, ed<1|-1>, cpr<val>, r, x, i(IP), n(ina scan), ?");
+  Serial.println("WiFi: wifi_ssid<TuRed>, wifi_pass<TuClave>, wifi_info");
 }
 
 void processSerialCommand() {
@@ -688,6 +747,31 @@ void processSerialCommand() {
         break;
       }
 
+    case 'w':
+      {
+        // WiFi commands: wifi_ssid, wifi_pass, wifi_info
+        if (cmd.length() > 9 && cmd.startsWith("wifi_ssid")) {
+          const String ssid = cmd.substring(9);
+          if (ssid.length() > 0 && ssid.length() < 33) {
+            saveWifiCredentials(ssid.c_str(), staPass);
+          } else {
+            Serial.println("Error: SSID debe tener 1-32 caracteres");
+          }
+        } else if (cmd.length() > 9 && cmd.startsWith("wifi_pass")) {
+          const String pass = cmd.substring(9);
+          if (pass.length() >= 8) {
+            saveWifiCredentials(staSsid, pass.c_str());
+          } else {
+            Serial.println("Error: Password debe tener al menos 8 caracteres");
+          }
+        } else if (cmd == "wifi_info") {
+          printWifiInfo();
+        } else {
+          Serial.println("Comandos WiFi: wifi_ssid<TuRed>, wifi_pass<TuClave>, wifi_info");
+        }
+        break;
+      }
+
     case 'h':
       {
         printHelp();
@@ -730,6 +814,9 @@ void setup() {
   delay(50);
   scanI2CBus();
   inaOk = initIna219();
+
+  // Load WiFi credentials from NVS
+  loadWifiCredentials();
 
   WiFi.mode(ENABLE_STA ? WIFI_AP_STA : WIFI_AP);
   WiFi.softAP(AP_SSID, AP_PASS, 6, false, 4);  // canal 6, SSID visible, max 4 clientes
