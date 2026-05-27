@@ -5,14 +5,16 @@ Maneja polling de /state y envío de comandos a /cmd.
 
 import threading
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
+
 import requests
-from dataclasses import dataclass, field
-from typing import Optional, Callable
 
 
 @dataclass
 class QubeState:
     """Snapshot del estado del sistema tal como viene del JSON /state."""
+
     timestamp: float = 0.0
     mode: int = 0
     count: int = 0
@@ -33,7 +35,7 @@ class QubeState:
     p_mw: float = 0.0
 
     @staticmethod
-    def from_dict(d: dict, ts: float) -> "QubeState":
+    def from_dict(d: dict, ts: float) -> QubeState:
         s = QubeState()
         s.timestamp = ts
         s.mode = int(d.get("mode", 0))
@@ -64,21 +66,21 @@ class ESP32Client:
     """
 
     DEFAULT_IP = "192.168.4.1"
-    DEFAULT_POLL_MS = 100   # 10 Hz; bajar a 50 para 20 Hz si la red lo permite
+    DEFAULT_POLL_MS = 100  # 10 Hz; bajar a 50 para 20 Hz si la red lo permite
 
     def __init__(
         self,
         ip: str = DEFAULT_IP,
         poll_ms: int = DEFAULT_POLL_MS,
-        on_update: Optional[Callable[[QubeState], None]] = None,
-        on_error: Optional[Callable[[str], None]] = None,
+        on_update: Callable[[QubeState], None] | None = None,
+        on_error: Callable[[str], None] | None = None,
     ):
         self.ip = ip
         self.poll_ms = poll_ms
         self.on_update = on_update
         self.on_error = on_error
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self.connected = False
         self.last_latency_ms: float = 0.0
 

@@ -202,6 +202,46 @@ Procedimiento completo para investigar componentes o arquitecturas de hardware a
 5. **Citar siempre la fuente** — URL de repositorio, DOI de paper, nombre de archivo
 6. **Actualizar CHANGELOG del firmware** — cada modificación a `*.ino` requiere entrada en CHANGELOG
 
+### 🐍 Reglas estrictas de calidad para Python
+
+1. **Usar `uv` como gestor de paquetes y ejecutor** — siempre usar `uv run python`, `uv run ruff`, `uv sync`, etc. No usar `pip install` ni `python` directamente.
+2. **Ejecutar `ruff check` y `ruff format` en cada cambio** — antes de dar por terminada cualquier modificación a archivos `.py`, ejecutar:
+   ```bash
+   uv run ruff check .
+   uv run ruff format .
+   ```
+   Y resolver todos los errores antes de continuar.
+3. **Tipado obligatorio** — todas las funciones, métodos y variables deben tener anotaciones de tipo (`def fn(x: int) -> str:`) siguiendo PEP 484. No se aceptan funciones sin anotaciones.
+4. **Opcional: usar pyright/pyrefly** — se recomienda ejecutar `uv run pyright .` para verificar tipos estáticamente. Si el agente tiene acceso a pyright, debe usarlo en cada cambio.
+5. **No usar `from module import *`** — todas las importaciones deben ser explícitas.
+6. **Docstrings** — todas las funciones públicas y clases deben tener docstring (estilo Google o reStructuredText).
+
+### 🧰 Herramientas de calidad de código recomendadas por lenguaje
+
+| Lenguaje | Herramienta | Comando / Uso |
+|----------|-------------|---------------|
+| **Python** | [Ruff](https://docs.astral.sh/ruff/) | `uv run ruff check .` + `uv run ruff format .` |
+| **Python (tipado)** | [Pyright](https://github.com/microsoft/pyright) | `uv run pyright .` |
+| **Python (tests)** | [pytest](https://docs.pytest.org/) | `uv run pytest -v` |
+| **HTML / JS / CSS / JSON / Markdown** | [Biome](https://biomejs.dev/) | `npx @biomejs/biome check --write .` |
+| **JavaScript / TypeScript** | [Biome](https://biomejs.dev/) | `npx @biomejs/biome check --write .` |
+| **Markdown** | [markdownlint](https://github.com/DavidAnson/markdownlint) | `npx markdownlint-cli "**/*.md" --fix` |
+| **C / C++ (firmware)** | [clang-format](https://clang.llvm.org/docs/ClangFormat.html) | `clang-format -i firmware/esp32_qube_l298n/*.ino` |
+| **C / C++ (firmware)** | [clang-tidy](https://clang.llvm.org/extra/clang-tidy/) | `clang-tidy firmware/esp32_qube_l298n/*.ino` |
+| **TOML** | [taplo](https://taplo.tamasfe.dev/) | `taplo format pyproject.toml` |
+| **PowerShell** | [PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer) | `Invoke-ScriptAnalyzer -Path script.ps1` |
+
+### 📦 Gestión de dependencias con `uv`
+
+- **Instalar todo** → `uv sync`
+- **Agregar una dependencia** → `uv add <package>` (actualiza `pyproject.toml` + `uv.lock`)
+- **Agregar dependencia dev** → `uv add --dev <package>`
+- **Ejecutar un script** → `uv run python gui/app.py`
+- **Ejecutar una herramienta** → `uv run ruff check .`
+- **Actualizar lockfile** → `uv lock`
+
+> ⚠️ No usar `pip install` bajo ninguna circunstancia. `uv` reemplaza por completo a `pip`, `pip-tools` y `virtualenv`.
+
 ### Pitfalls conocidos
 
 - `gui/esp32_client.py` usa por defecto la IP `192.168.4.1` (modo AP del ESP32)
@@ -223,10 +263,13 @@ Procedimiento completo para investigar componentes o arquitecturas de hardware a
 
 ## 🚀 Comandos de Trabajo Frecuentes
 
-### GUI (Python)
-```powershell
-python -m pip install -r gui/requirements.txt
-python gui/app.py
+### GUI (Python) — usando uv
+```bash
+uv sync                          # Instalar dependencias
+uv run python gui/app.py         # Ejecutar GUI
+uv run ruff check .              # Linter
+uv run ruff format .             # Formatear código
+uv run pyright .                 # Verificación de tipos
 ```
 
 ### Compilar PDF de investigación
@@ -235,6 +278,19 @@ cd Referencias
 .\build_pdf.ps1 -InputFile "..\INVESTIGACION_ARQUITECTURA_MODERNIZACION_QUBE.md" -OutputFile "Investigacion_QUBE_Servo_Emulacion_ESP32_v2.pdf"
 ```
 
+### Makefile (atajos disponibles)
+```bash
+make install     # uv sync
+make lint        # uv run ruff check .
+make format      # uv run ruff format .
+make check       # lint + format check (CI)
+make typecheck   # uv run pyright .
+make run         # uv run python gui/app.py
+make test        # uv run pytest -v
+make clean       # Limpiar __pycache__, .pyc, etc.
+make help        # Mostrar todos los goals
+```
+
 ---
 
-> Este archivo es el punto de entrada para cualquier agente AI que trabaje en el repositorio. Revisar antes de comenzar cualquier tarea para entender el ecosistema completo de herramientas disponibles.
+
