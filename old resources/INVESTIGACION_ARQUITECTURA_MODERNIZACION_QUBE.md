@@ -182,8 +182,6 @@ geometry: margin=2.5cm
 
 ## PARTE 2.5: DIAGNÓSTICO E IMPLEMENTACIÓN REAL — HW-FIX-1 (Encoder Signal Conditioning)
 
-> **Actualizacion de criterio (2026-05-13):** esta seccion conserva el diagnostico historico de la etapa 2026-04-29. En pruebas posteriores del banco actual, el encoder del servo mostro comportamiento compatible con **push-pull 5V** (alto en reposo ~4.7V), por lo que el criterio vigente de conexion para servo es **divisor 10k/10k** hacia GPIO34/GPIO35.
-
 ### 2.5.1 Problema de Campo Identificado
 
 Durante las pruebas de hardware (2026-04-27 a 2026-04-29), se observó que **el encoder del servo (Premotec 990412016913) no proporcionaba lecturas confiables**, a pesar de que el firmware y motor funcionaban correctamente. Los síntomas fueron:
@@ -595,8 +593,6 @@ COSTO CON BATERÍA: $70-120 USD
 | Debug serial | USB ESP32 | PC | UART0 por USB, sin pines extra |
 
 ### 6.2.2 Acondicionamiento de señal del encoder (open-drain — confirmado 2026-05-07)
-
-> **Nota de vigencia (2026-05-13):** esta subseccion documenta la conclusion de una iteracion previa. La validacion mas reciente en banco para encoder servo indica salida compatible con **push-pull 5V** y adaptacion a ESP32 mediante **divisor 10k/10k**. Mantener esta seccion como referencia historica.
 
 El encoder del servo Premotec 990412016913 tiene salida **open-drain**: el transistor NPN interno conduce a GND en estado bajo; en estado alto la línea **flota** (Hi-Z). La tensión en estado alto la define únicamente la resistencia de pull-up externa.
 
@@ -1373,8 +1369,6 @@ ESP32 VIN (5V desde LM2596) -------> Alimentación lógica ESP32
 ```
 
 ### C.3 Diagrama eléctrico del encoder open-drain (implementación validada)
-
-> **Actualizacion 2026-05-13 (configuracion vigente en banco):** para encoder servo, usar divisor 10k/10k por canal hacia GPIO34/GPIO35 cuando el alto en reposo sea ~4.7V.
 
 ```
           ESP32 3V3

@@ -55,8 +55,8 @@ El resultado es una plataforma funcional por **$40–$70 USD** (sin batería), d
 │                         │                                            │
 │               GPIO21 ───┤── INA219 SDA                               │
 │               GPIO22 ───┤── INA219 SCL                               │
-│               GPIO34 ───┤──[10k/10k divisor]────── Encoder Servo A    │
-│               GPIO35 ───┤──[10k/10k divisor]────── Encoder Servo B    │
+│               GPIO34 ───┤──[100Ω]──[4.7kΩ↑3.3V]── Encoder Servo A    │
+│               GPIO35 ───┤──[100Ω]──[4.7kΩ↑3.3V]── Encoder Servo B    │
 │               GPIO32 ───┤──[100Ω]──[4.7kΩ↑3.3V]── Encoder Péndulo A  │
 │               GPIO33 ───┤──[100Ω]──[4.7kΩ↑3.3V]── Encoder Péndulo B  │
 │                                                                      │
@@ -87,9 +87,8 @@ L298N (PWM) ◄─────────────┘
 | **INA219** | Monitor I2C, 0–26V, ±3.2A | 1 | $2–4 USD |
 | **LM2596** | Buck converter ajustable, 3A | 1 | $1–3 USD |
 | **Motor DC + reductor** | 12V, 25W, 100–300 RPM | 1 | $15–30 USD |
-| **Encoder servo** | Incremental, push-pull 5V, ≥200 CPR | 1 | Incluido en motor |
-| **Encoder péndulo** | Incremental, validar topología en banco, ≥200 CPR | 1 | $5–15 USD |
-| **Resistores 10 kΩ** | Divisor para encoder servo (10k/10k, ×4) | 4 | < $0.10 USD |
+| **Encoder servo** | Incremental, open-drain, ≥200 CPR | 1 | Incluido en motor |
+| **Encoder péndulo** | Incremental, open-drain, ≥200 CPR | 1 | $5–15 USD |
 | **Resistores 4.7 kΩ** | Pull-up para encoders (×4) | 4 | < $0.10 USD |
 | **Resistores 100 Ω** | Filtro RC encoders (×4) | 4 | < $0.10 USD |
 | **Capacitores 10 nF** | Filtro RC encoders (×4) | 4 | < $0.10 USD |
@@ -115,8 +114,8 @@ L298N (PWM) ◄─────────────┘
 | Control motor | ESP32 GPIO26 | L298N IN1 | Señal de control canal A |
 | Control motor | ESP32 GPIO27 | L298N IN2 | Señal de control canal A |
 | Control motor | ENB (canal B) | L298N ENB | Segundo enable del módulo; no usado en configuración de un motor |
-| Encoder servo | Pin A | Divisor 10k/10k a GPIO34 | Push-pull 5V (alto adaptado a ~2.5V) |
-| Encoder servo | Pin B | Divisor 10k/10k a GPIO35 | Push-pull 5V (alto adaptado a ~2.5V) |
+| Encoder servo | Pin A | 4.7 kΩ pull-up a 3.3V → GPIO34 | Open-drain |
+| Encoder servo | Pin B | 4.7 kΩ pull-up a 3.3V → GPIO35 | Open-drain |
 | Encoder servo | GND | GND común | Referencia compartida |
 | Encoder servo | +5V | Alimentación encoder | Cable del conector original |
 | Encoder péndulo | Pin A | 4.7 kΩ pull-up a 3.3V → GPIO32 | Open-drain |
@@ -153,8 +152,8 @@ GPIO26  │ L298N IN1            │ Salida       │ Control canal A
 GPIO27  │ L298N IN2            │ Salida       │ Control canal A
 GPIO32  │ Encoder péndulo A    │ Entrada      │ Pull-up externo 4.7kΩ
 GPIO33  │ Encoder péndulo B    │ Entrada      │ Pull-up externo 4.7kΩ
-GPIO34  │ Encoder servo A      │ Entrada      │ Divisor 10k/10k desde 5V (input-only)
-GPIO35  │ Encoder servo B      │ Entrada      │ Divisor 10k/10k desde 5V (input-only)
+GPIO34  │ Encoder servo A      │ Entrada      │ Pull-up externo 4.7kΩ (input-only)
+GPIO35  │ Encoder servo B      │ Entrada      │ Pull-up externo 4.7kΩ (input-only)
 ```
 
 > **Nota:** GPIO34 y GPIO35 son pines input-only en el ESP32-WROOM-32. No soportan `INPUT_PULLUP` por firmware — los pull-ups deben ser externos.
@@ -223,14 +222,14 @@ const int8_t QUAD_LUT[16] = {
 
 ## Acondicionamiento de Señal
 
-### Validación de salida del encoder servo (2026-05-13)
+### Problema: encoders open-drain
 
-En pruebas de banco del encoder servo se confirmó comportamiento compatible con **push-pull a 5 V** en el punto de toma actual:
+Los encoders de tipo incremental (y específicamente el Premotec 990412016913 usado en el QUBE Servo original) tienen salida **open-drain (NPN)**:
 
-- En reposo (sin adaptación): nivel alto estable cercano a **4.7 V**.
-- Con divisor resistivo: nivel alto en GPIO de **~2.5 V**.
+- Estado bajo (activo): transistor interno conduce → 0 V en la línea
+- Estado alto (inactivo): transistor corta → línea flota (Hi-Z)
 
-Esto descarta conexión directa al ESP32 y exige adaptación de nivel para proteger GPIO34/GPIO35.
+Sin pull-up externo, la línea queda en tensión indeterminada (~1.5 V con capacitancia parasita), lo que impide al ESP32 discriminar entre "0" y "1".
 
 ### Soluciones evaluadas
 
@@ -238,27 +237,31 @@ Esto descarta conexión directa al ESP32 y exige adaptación de nivel para prote
 |---|---|---|
 | Level shifter 5V→3.3V (7 MΩ) | ~1.5 V (indeterminado) | ❌ RC demasiado lento |
 | Divisor 4.7kΩ / 8.2kΩ | 15–40 mV (open-drain Hi-Z) | ❌ Confirma open-drain |
-| **Divisor 10kΩ / 10kΩ (servo)** | **~2.5 V en GPIO** | **✅ Implementado para servo (push-pull 5V)** |
+| **Pull-up 4.7 kΩ a 3.3 V** | **3.3 V (limpio)** | **✅ Implementado** |
 
 ### Esquema de acondicionamiento final (por canal, ×4)
 
 ```
-Encoder canal (5V push-pull)
+ESP32 3V3
     │
-  [10kΩ]
+  [4.7kΩ]  ← pull-up externo
+    │
+    ├──── Encoder canal (open-drain)
+    │          │
+  [100Ω]       └── conduce a GND en estado bajo; Hi-Z en alto
     │
     ├──── GPIOxx (ESP32 INPUT)
     │
-  [10kΩ]
+  [10nF]   ← filtro RC (fc ≈ 159 kHz)
     │
    GND
 ```
 
-**Nivel alto esperado en GPIO con divisor 10k/10k:**
+**Frecuencia de corte del filtro:**
 
-$$V_{GPIO} = 5\,\text{V} \cdot \frac{10k}{10k+10k} = 2.5\,\text{V}$$
+$$f_c = \frac{1}{2\pi \cdot 100\,\Omega \cdot 10\,\text{nF}} \approx 159\,\text{kHz}$$
 
-Este nivel es seguro para ESP32 y suficiente para detección digital estable.
+Esta frecuencia es suficientemente alta para no degradar señales de encoder a velocidades normales de operación (< 10 kHz), y suficientemente baja para eliminar glitches de RF y switching del L298N (~40 kHz).
 
 ---
 
