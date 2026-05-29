@@ -10,7 +10,7 @@ Esta carpeta contiene la investigación académica y técnica consolidada del pr
 | `RESUMEN_HALLAZGOS.md` | Síntesis ejecutiva de hallazgos de investigación en GitHub | `old resources/RESUMEN_HALLAZGOS.md` |
 | `SIGNAL_STABILIZATION.md` | Análisis detallado de estabilización de señales, ruido y filtrado | `old resources/SIGNAL_STABILIZATION_INVESTIGATION.md` |
 | `PENDULO_ENCODER.md` | Investigación sobre integración del encoder del péndulo | `old resources/INVESTIGACION_INTEGRACION_ENCODER_PENDULO.md` |
-| `referencias/` | PDFs, datasheets y papers de referencia | `Referencias/` |
+| `../../Referencias/` | PDFs, datasheets y papers de referencia | Directorio raíz |
 
 ## Historial de cambios
 

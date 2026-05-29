@@ -222,7 +222,7 @@ Topología a definir según tipo de salida:
 |------|------|-----------|---------|---------|----------------|
 | `task_control` | 1 | 5 | 5ms (200Hz) | Leer encoders, PID, PWM | ~30% |
 | `task_ina219` | 0 | 3 | 10ms (100Hz) | Leer INA219, filtrar | ~8% |
-| `task_telemetry` | 0 | 2 | 50ms (20Hz) | JSON serial, HTTP | ~5% |
+| `task_telemetry` | 0 | 2 | 100ms (10Hz) | JSON serial, HTTP | ~5% |
 | `task_wifi` | 0 | 1 | Event-driven | Servidor WebSocket | <5% |
 
 **Margen de seguridad:** ~45% para expansión (LQR, logging SD)
@@ -234,7 +234,7 @@ Topología a definir según tipo de salida:
 | Parámetro | Valor |
 |-----------|-------|
 | Frecuencia de control | 200 Hz (5ms) |
-| Frecuencia de telemetría | 20 Hz (50ms) |
+| Frecuencia de telemetría | 10 Hz (100ms) |
 | Frecuencia INA219 | 100 Hz (10ms) |
 | Resolución encoder | 2048 CPR × 4 (cuadratura X4) |
 | Rango PWM | -255 a +255 (8-bit signed) |

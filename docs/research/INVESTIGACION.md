@@ -315,16 +315,18 @@ float pid_compute(float setpoint, float measured, float dt) {
 
 ### 7.1 Configuración I2C
 
+> **Nota:** Desde v1.19.0, la librería se migró de `Adafruit_INA219` a `INA219_WE` (activamente mantenida, compatible con ESP32 Core 2.x y 3.x).
+
 ```cpp
 #include <Wire.h>
-#include <Adafruit_INA219.h>
+#include <INA219_WE.h>
 
-Adafruit_INA219 ina219(0x40);  // A0=GND, A1=GND → 0x40
+INA219_WE ina219(&Wire, 0x40);  // A0=GND, A1=GND → 0x40
 
 void setup() {
     Wire.begin(21, 22);   // SDA=GPIO21, SCL=GPIO22
-    ina219.begin();
-    ina219.setCalibration_32V_2A();
+    ina219.init();         // INA219_WE calibra automáticamente
+    ina219.setMeasureMode(INA219_CONTINUOUS);
 }
 ```
 

@@ -26,6 +26,7 @@ class QubeState:
 
     timestamp: float = 0.0
     mode: int = 0
+    # Servo encoder
     count: int = 0
     enc_a: int = 0
     enc_b: int = 0
@@ -36,6 +37,14 @@ class QubeState:
     offset_deg: float = 0.0
     setpoint_deg: float = 0.0
     error_deg: float = 0.0
+    # Pendulum encoder
+    pend_count: int = 0
+    pend_raw_position_deg: float = 0.0
+    pend_position_deg: float = 0.0
+    pend_offset_deg: float = 0.0
+    pend_setpoint_deg: float = 0.0
+    pend_error_deg: float = 0.0
+    # Motor & power
     pwm: int = 0
     ina_ok: bool = False
     v_bus: float = 0.0
@@ -49,6 +58,7 @@ class QubeState:
         """Create QubeState from a JSON dict."""
         known_fields = {
             "mode",
+            # Servo
             "count",
             "enc_a",
             "enc_b",
@@ -59,6 +69,14 @@ class QubeState:
             "offset_deg",
             "setpoint_deg",
             "error_deg",
+            # Pendulum
+            "pend_count",
+            "pend_raw_position_deg",
+            "pend_position_deg",
+            "pend_offset_deg",
+            "pend_setpoint_deg",
+            "pend_error_deg",
+            # Motor & power
             "pwm",
             "ina_ok",
             "v_bus",
@@ -82,6 +100,7 @@ class ESP32Client:
     Supports both direct calls and background polling.
     """
 
+    DEFAULT_IP = "192.168.4.1"
     DEFAULT_POLL_MS = 100  # 10 Hz
 
     def __init__(
@@ -213,3 +232,25 @@ class ESP32Client:
     def emergency_stop(self) -> bool:
         """Emergency stop (alias for stop_motor)."""
         return self.stop_motor()
+
+    # ── Pendulum commands ────────────────────────────────────────────
+
+    def set_pendulum_setpoint(self, degrees: float) -> bool:
+        """Set pendulum PID setpoint in degrees."""
+        return self.send_cmd(sp=f"{degrees:.2f}")
+
+    def set_pendulum_pid(self, kp: float, ki: float, kd: float) -> bool:
+        """Set pendulum PID gains."""
+        return self.send_cmd(kpp=kp, kip=ki, kdp=kd)
+
+    def zero_pendulum(self) -> bool:
+        """Zero the pendulum position."""
+        return self.send_cmd(zp=1)
+
+    def set_lqr_gains(self, k1: float, k2: float, k3: float, k4: float) -> bool:
+        """Set LQR gains for inverted pendulum mode."""
+        return self.send_cmd(lqr1=k1, lqr2=k2, lqr3=k3, lqr4=k4)
+
+    def set_swing_up_params(self, ke: float, balance_threshold: float) -> bool:
+        """Set swing-up controller parameters."""
+        return self.send_cmd(ke=ke, bt=balance_threshold)

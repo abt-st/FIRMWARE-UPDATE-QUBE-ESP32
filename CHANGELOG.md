@@ -1,6 +1,264 @@
-# CHANGELOG — Firmware QUBE Servo ESP32 + L298N
+# CHANGELOG — QUBE ESP32 (Firmware + Documentación)
 
-Registro de cambios del firmware `esp32_qube_l298n.ino` para la modernización de la plataforma QUBE Servo en el marco de la tesis.
+Registro de cambios del firmware `esp32_qube_l298n.ino` y documentación del proyecto para la modernización de la plataforma QUBE Servo en el marco de la tesis.
+
+---
+
+## [1.21.0] — 2026-05-29
+
+### Swing-up (Modo 5), WiFi STA no-bloqueante y credenciales gitignored
+
+#### Problema identificado
+- No existía modo de swing-up para levantar el péndulo desde la posición colgante hasta la vertical invertida.
+- La conexión WiFi STA bloqueaba el arranque del ESP32 durante 15 segundos si la red no estaba disponible.
+- Las credenciales WiFi estaban hardcodeadas o requerían NVS, sin opción de configuración desde GUI.
+- El AP solo era accesible en 192.168.4.1,requiriendo desconectarse de la red local.
+
+#### Cambios aplicados
+
+**1. Modo 5: Swing-up por energía (Quanser)**
+- Control basado en energía: `E = 0.5*J*α'² + mgl*(1-cos(α))`, `Er = 2*mgl`.
+- Dirección de torque: `sign(α' * cos(α))` para agregar energía al péndulo.
+- Kick constante cuando el péndulo está quieto (`|α'| < 0.1`) para iniciarlo.
+- Transición automática a LQR (modo 4) cuando `|α|` está cerca de 180° (vertical arriba).
+- Corregido bug: la transición a LQR solo se activa cerca de la vertical ARRIBA (180°), no abajo (0°).
+- Ganancia ajustable vía HTTP: `/cmd?ke=0.5&bt=20` (ke = ganancia energía, bt = umbral transición LQR).
+
+**2. WiFi STA no-bloqueante**
+- `connectStaIfConfigured()` ya no usa `while()` con timeout — `WiFi.begin()` conecta en background.
+- El AP `QUBE-ESP32` está disponible inmediatamente al arrancar, sin esperar al STA.
+
+**3. Credenciales WiFi gitignored (`credentials.h`)**
+- Nuevo archivo `credentials.h` con `DEFAULT_STA_SSID` y `DEFAULT_STA_PASS`.
+- Agregado a `.gitignore` — nunca se sube al repositorio.
+- `loadWifiCredentials()` usa credenciales de `credentials.h` cuando NVS está vacío.
+- El usuario edita `credentials.h` con sus datos reales y compila.
+
+**4. HTTP endpoints para WiFi**
+- `/cmd?wifi_ssid=Red&wifi_pass=Clave` — guardar credenciales en NVS.
+- `/cmd?wifi_reconnect=1` — reconectar WiFi sin reiniciar.
+
+**5. GUI actualizada (`src/qube_ui/app.py`)**
+- Nuevo radio button "Swing-up" en modos de operación.
+- Sección "SWING-UP" con parámetros `ke` (gain) y `threshold` (umbral LQR).
+- Método `_send_swing_up()` para enviar parámetros.
+
+**6. Cliente actualizado (`src/qube_ui/client.py`)**
+- Nuevo método `set_swing_up_params(ke, balance_threshold)`.
+
+**7. MCP server actualizado (`mcp/esp32_qube_server.py`)**
+- `qube_set_mode()` actualizado: modos 0-5 documentados.
+- Nueva herramienta `qube_set_swing_up(ke, balance_threshold)`.
+- Nuevas herramientas `qube_set_wifi(ssid, password)` y `qube_wifi_reconnect()`.
+
+#### Cambios de firmware
+```cpp
+// Swing-up (modo 5)
+float ke_gain = 0.5f;           // Ganancia energía
+float balance_threshold = 20.0f; // Umbral transición LQR
+int swingPhase = 0;             // 0=excitacion, 1=bombeo
+unsigned long exciteStartMs = 0;
+
+// WiFi credentials (gitignored)
+#include "credentials.h"
+#define DEFAULT_STA_SSID "TuRed"
+#define DEFAULT_STA_PASS "TuClave"
+```
+
+#### Notas
+- Para probar swing-up: conectar péndulo abajo, ejecutar `zp=1` (zero péndulo), luego activar modo 5.
+- El péndulo debe estar colgado hacia abajo (0°) antes de activar swing-up.
+- RAM: 13.6% (44,684 / 327,680 bytes), Flash: 62.5% (818,545 / 1,310,720 bytes).
+
+## [1.20.0] — 2026-05-29
+
+### Encoder de Péndulo, Modo PID Péndulo y LQR Péndulo Invertido
+
+#### Problema identificado
+- El firmware solo soportaba el encoder del servo (GPIO34/35), sin lectura del encoder del péndulo (GPIO32/33).
+- No existía modo de control para posicionar el péndulo ni para estabilizarlo en posición vertical (invertido).
+- La GUI no mostraba datos del péndulo ni permitía controlar los nuevos modos.
+
+#### Cambios aplicados
+
+**1. Encoder del péndulo (GPIO32/33)**
+- Agregadas variables `pendulumCount`, `pendCountsPerRev`, `pendulumDir` para el segundo encoder.
+- Implementada decodificación cuadratura X4 por polling (`updatePendulumPolling()`) idéntica al encoder servo.
+- Funciones: `getPendulumPositionDeg()`, `zeroPendulumHere()`, `resetPendulumPid()`.
+
+**2. Modo 3: PID Posición Péndulo**
+- Control PID del motor basado en el ángulo del péndulo (no del servo).
+- Ganancias por defecto: `Kp_pend=15.0`, `Ki_pend=0.5`, `Kd_pend=2.0`.
+- Setpoint vía HTTP: `/cmd?m=3&sp=0` (sp = setpoint péndulo).
+- Anti-windup y deadband independientes del PID servo.
+
+**3. Modo 4: LQR Péndulo Invertido**
+- Control en espacio de estados: `u = -(K1*θ + K2*α + K3*θ' + K4*α')`.
+- Estado: `[theta_servo, alpha_pendulo, vel_servo, vel_pendulo]`.
+- Ganancias por defecto: `K1=1.0`, `K2=25.0`, `K3=0.5`, `K4=3.0`.
+- Protección: si `|α| > 150°` (péndulo caído), PWM = 0 para evitar daño.
+- Ganancias ajustables vía HTTP: `/cmd?lqr1=1&lqr2=25&lqr3=0.5&lqr4=3`.
+
+**4. Estado JSON expandido (`/state`)**
+- Nuevos campos: `pend_count`, `pend_raw_position_deg`, `pend_position_deg`, `pend_offset_deg`, `pend_setpoint_deg`, `pend_error_deg`.
+
+**5. Nuevos comandos HTTP**
+- `sp` — setpoint péndulo (modo 3).
+- `zp` — zero encoder péndulo.
+- `op` — offset péndulo.
+- `edp` — dirección encoder péndulo (+1/-1).
+- `cprp` — counts per revolution encoder péndulo.
+- `kpp`, `kip`, `kdp` — ganancias PID péndulo.
+- `lqr1`, `lqr2`, `lqr3`, `lqr4` — ganancias LQR.
+
+**6. Serial: comandos actualizados**
+- `m0..m4` — modos extendidos (antes `m0..m2`).
+- `sp<deg>`, `zp`, `op<deg>`, `edp<1|-1>`, `cprp<val>` — péndulo.
+- `kpp<val>`, `kip<val>`, `kdp<val>` — PID péndulo.
+
+**7. GUI (`src/qube_ui/app.py`) actualizada**
+- 4 subplots: Servo, Péndulo, PWM, Potencia.
+- Panel de control: setpoint péndulo, PID péndulo, LQR ganancias.
+- Botón "Zero Péndulo" en acciones.
+- Estado muestra servo y péndulo simultáneamente.
+- Modos de operación: STOP, PWM Manual, PID Servo, PID Péndulo, LQR Invertido.
+
+**8. Cliente (`src/qube_ui/client.py`, `gui/esp32_client.py`) actualizado**
+- `QubeState` incluye campos de péndulo.
+- Nuevos métodos: `set_pendulum_setpoint()`, `set_pendulum_pid()`, `zero_pendulum()`, `set_lqr_gains()`.
+
+**9. MCP server (`mcp/esp32_qube_server.py`) corregido**
+- `DATA_DIR` corregido: apuntaba a `./data/` (no existe) → `./experiments/`.
+- Herramientas CSV (`qube_list_experiments`, `qube_read_csv`, `qube_analyze_csv`) ahora buscan recursivamente en `experiments/*/data/`.
+
+#### Cambios de firmware
+```cpp
+// Encoder péndulo (GPIO32/33)
+static const int PIN_PEND_A = 32;
+static const int PIN_PEND_B = 33;
+volatile long pendulumCount = 0;
+
+// PID Péndulo (modo 3)
+float Kp_pend = 15.0f;
+float Ki_pend = 0.5f;
+float Kd_pend = 2.0f;
+
+// LQR (modo 4)
+float lqr_K1 = 1.0f;   // θ servo
+float lqr_K2 = 25.0f;  // α péndulo
+float lqr_K3 = 0.5f;   // θ' velocidad servo
+float lqr_K4 = 3.0f;   // α' velocidad péndulo
+```
+
+#### Notas
+- RAM: 13.6% (44,672 / 327,680 bytes), Flash: 62.0% (812,193 / 1,310,720 bytes).
+- Para modo LQR, el péndulo debe estar cerca de la vertical antes de activar (swing-up manual o desde modo 3).
+- Los 36 tests del proyecto pasan correctamente.
+
+## [1.19.0] — 2026-05-28
+
+### Migración de Adafruit_INA219 a INA219_WE + fix de compilación PlatformIO
+
+#### Problema identificado
+- `Adafruit_INA219` (v1.2.3) no compila con ESP32 Arduino Core 3.x: `'Serial' was not declared in this scope` en Adafruit BusIO.
+- La librería lleva 3 años sin actualización y causa core panic + boot loop en ESP32 Core 3.x ([adafruit/Adafruit_INA219#58](https://github.com/adafruit/Adafruit_INA219/issues/58)).
+- Flags `ARDUINO_USB_MODE=1` + `ARDUINO_USB_CDC_ON_BOOT=1` causan que `Serial` no se declare correctamente con PlatformIO + `src_dir`.
+
+#### Cambios aplicados
+
+**1. Librería INA219 reemplazada**
+- `adafruit/Adafruit INA219 @ ^1.2.0` → `wollewald/INA219_WE @ ^1.4.1`
+- INA219_WE está activamente mantenido (v1.4.1, dic 2025) y compatible con ESP32 Core 2.x y 3.x.
+
+**2. Plataforma fijada a ESP32 Core 2.x**
+- `platform = espressif32` (v7.0.1, Core 3.x) → `platform = espressif32@5.4.0` (Core 2.x, framework 3.20006).
+- Core 2.x declara `Serial` correctamente sin necesidad de `USB.h`.
+
+**3. Flags USB eliminados**
+- Eliminados `-DARDUINO_USB_MODE=1` y `-DARDUINO_USB_CDC_ON_BOOT=1` de `build_flags`.
+- Con Core 2.x + sin flags USB, `Serial` = UART0 (GPIO1/3) — funciona para flashing y monitor serial.
+
+**4. API INA219_WE actualizada en firmware**
+- `Adafruit_INA219 ina219(addr)` → `INA219_WE ina219(&Wire, addr)`
+- `ina219.begin()` → `ina219.init()`
+- `ina219.setCalibration_32V_2A()` → eliminado (INA219_WE calibra automáticamente en `init()`)
+- `ina219.getPower_mW()` → `ina219.getBusPower()`
+- Agregado `ina219.setMeasureMode(INA219_CONTINUOUS)` después de `init()`
+
+**5. Fallback class actualizada**
+- Clase stub `Adafruit_INA219` reemplazada por `INA219_WE` con API compatible.
+
+**6. `#include <Arduino.h>` agregado**
+- Necesario para que `Serial` se declare en el scope global con PlatformIO + `src_dir`.
+
+**7. platformio.ini corregido**
+- Agregado `[platformio] src_dir = esp32_qube_l298n`
+- Corregido `check_tool = clang-tidy` → `clangtidy`
+
+#### Cambios de firmware
+```cpp
+// platformio.ini
+platform = espressif32@5.4.0          // antes: espressif32 (sin versión)
+lib_deps = wollewald/INA219_WE @ ^1.4.1  // antes: adafruit/Adafruit INA219
+build_flags = -DCORE_DEBUG_LEVEL=3    // eliminados ARDUINO_USB_MODE y CDC_ON_BOOT
+
+// esp32_qube_l298n.ino
+#include <Arduino.h>                   // agregado al inicio
+INA219_WE ina219(&Wire, 0x40);        // antes: Adafruit_INA219 ina219(0x40)
+ina219.init();                        // antes: ina219.begin()
+ina219.setMeasureMode(INA219_CONTINUOUS); // nuevo
+powermW = ina219.getBusPower();       // antes: ina219.getPower_mW()
+```
+
+#### Notas
+- **UART0** (GPIO1/3) se usa para Serial (USB CDC deshabilitado). Para monitoreo, usar `pio device monitor`.
+- RAM: 13.6% (44,584 / 327,680 bytes), Flash: 61.6% (807,609 / 1,310,720 bytes).
+- Referencia: [INA219_WE GitHub](https://github.com/wollewald/INA219_WE), [Adafruit_INA219 Issue #58](https://github.com/adafruit/Adafruit_INA219/issues/58)
+
+---
+
+## [1.18.0] — 2026-05-27
+
+### Reescritura y ampliación del README.md
+
+#### Cambios aplicados
+
+**1. Instructivo de Uso completo (nuevo)**
+- Guía paso a paso de 11 secciones: prerrequisitos, clonar, LM2596, firmware, WiFi, modos, GUI, HTTP, flujo de trabajo, tests, troubleshooting.
+- Incluye diagrama de flujo visual del proceso completo (preparar → ajustar → flashear → verificar → calibrar → monitorear).
+- Tabla de troubleshooting con 7 síntomas, causas y soluciones.
+
+**2. Diagramas de arquitectura reescritos**
+- Diagrama de conexión general con INA219 en serie (bloques separados: fuente → INA219 → L298N → motor).
+- Diagrama detallado de conexión del INA219 (VIN+/VIN− en serie, I2C, alimentación 3.3V).
+- Diagrama de flujo de datos con FreeRTOS tasks (control 200 Hz, INA219 100 Hz, telemetry 20 Hz, WiFi event-driven).
+
+**3. Sección Schmitt Trigger CD40106BE documentada**
+- Investigación completa: CD40106BE hex inversor Schmitt Trigger, pinout DIP-14, umbrales VT+/VT−, histéresis.
+- Circuito de acondicionamiento con doble inversión (INV1+INV2 → GPIO34, INV3+INV4 → GPIO35).
+- Protección de entrada: R_series 2.2kΩ + R_pd 10kΩ + C 100nF.
+- Alimentación a 3.3V con bypass 100nF (explicación de por qué se necesita).
+- Uso de los 6 inversores: 4 para encoders + 2 reservados.
+- Nota sobre voltaje de salida: pin 3V3 del ESP32 entrega ~3.5V, seguro para GPIO (máx 3.6V).
+- Comparativa: divisor 10kΩ/10kΩ (1.75V, marginal) vs Schmitt trigger (3.5V, limpio).
+- Costo total: ~$0.73 USD.
+- Estado: implementado en protoboard para encoders servo (GPIO34/35).
+
+**4. Circuito de encoders actualizado**
+- Se documentó el circuito actual real: divisor resistivo 10kΩ/10kΩ (3.5V → 1.75V) + Schmitt trigger CD40106BE.
+- Se aclaró que 1.75V es marginal para el ESP32 y el Schmitt regenera a 3.5V.
+
+**5. Estructura del README reorganizada**
+- 14 secciones numeradas en tabla de contenidos.
+- Hardware requerido con tabla de componentes incluyendo CD40106BE.
+- Pinout completo con tabla pin por pin, cableado ENA, configuración ESP32.
+- Control PID, firmware (FreeRTOS tasks, comandos), calibración, resultados.
+- Roadmap actualizado con Schmitt trigger como completado.
+
+#### Notas
+- No se modificó el firmware (`esp32_qube_l298n.ino`) en esta entrada.
+- Todos los cambios son de documentación.
+- Referencia: `docs/research/ai_research/CD40106BE_INVESTIGATION.md`
 
 ---
 
@@ -518,8 +776,8 @@ Con `Kd=0.45` a 200 Hz, el ruido de ±1-2 counts del encoder cuadratura generaba
 |-------|-----------|-------------|
 | L298N IN1 | GPIO26 | PWM dirección + |
 | L298N IN2 | GPIO27 | PWM dirección − |
-| Encoder A | GPIO34 | Vía level shifter 5V→3.3V, pull-up 4.7 kΩ en HV |
-| Encoder B | GPIO35 | Vía level shifter 5V→3.3V, pull-up 4.7 kΩ en HV |
+| Encoder A | GPIO34 | Vía Schmitt trigger CD40106BE (doble inversión), Vcc=3.3V |
+| Encoder B | GPIO35 | Vía Schmitt trigger CD40106BE (doble inversión), Vcc=3.3V |
 | INA219 SDA | GPIO21 | I2C |
 | INA219 SCL | GPIO22 | I2C |
 | ENA L298N | Jumper | Sin cable al ESP32 |

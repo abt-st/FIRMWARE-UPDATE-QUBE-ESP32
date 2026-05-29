@@ -21,6 +21,7 @@ Este repositorio cuenta con un ecosistema de **agentes, skills, instrucciones y 
 |--------|---------|-----------|----------|
 | **Analista de Investigación QUBE** | `.github/agents/analista-investigacion.agent.md` | Analiza PDFs/papers académicos y extrae puntos relevantes para la tesis de modernización del QUBE Servo | "analiza el pdf", "extrae puntos del paper", "puntos relevantes del paper", "revisar referencias" |
 | **Analista PID QUBE** | `.github/agents/analista-pid-qube.agent.md` | Analiza datos CSV de control PID, identifica desempeño, overshoot, oscilaciones y sugiere ajustes | "analiza los datos del PID", "explica el desempeño del control", "grafica la respuesta del sistema", "sugiere ajustes PID" |
+| **Changelog Manager** | `.github/agents/changelog-manager.agent.md` | Mantiene el CHANGELOG.md sincronizado con cambios reales del proyecto, clasifica por SemVer y genera entradas con formato correcto | "actualiza el changelog", "mantén el changelog actualizado", "revisa el changelog", "changelog", "qué falta en el changelog", "versiona el proyecto" |
 
 ### Analista de Investigación QUBE
 
@@ -71,6 +72,54 @@ Este repositorio cuenta con un ecosistema de **agentes, skills, instrucciones y 
 **Ejemplos de uso:**
 - _"Analiza el archivo experiments/2026-05-07_pid_tuning/data/qube_2026-05-07T00_32_35.csv y dime si el control PID está bien ajustado."_- _"Grafica la respuesta al escalón y calcula el overshoot."_
 - _"¿Qué parámetros PID debería ajustar para mejorar el tiempo de establecimiento?"_
+
+---
+
+### Changelog Manager
+
+**Archivo:** `.github/agents/changelog-manager.agent.md`
+**Rol:** Gestor de documentación de cambios, experto en versionado semántico (SemVer).
+
+**Capacidades:**
+- Detección de cambios pendientes entre código actual y último registro del CHANGELOG
+- Clasificación automática de cambios por tipo: MAJOR (arquitectura/pines), MINOR (nuevas funcionalidades), PATCH (correcciones/ajustes)
+- Generación de entradas de changelog con el formato correcto del proyecto
+- Verificación de integridad: versiones incrementales, fechas correctas, sin duplicados
+- Registro de cambios en firmware, documentación, dependencias y configuración
+
+**Archivos monitoreados:**
+- `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` — siempre
+- `firmware/platformio.ini` — dependencias, flags, plataforma
+- `gui/app.py`, `gui/esp32_client.py` — interfaz
+- `pyproject.toml` — dependencias Python
+- `mcp/esp32_qube_server.py` — herramientas MCP
+
+**Formato de salida:**
+```markdown
+## [X.Y.Z] — YYYY-MM-DD
+
+### <Título descriptivo>
+
+#### Problema identificado (si aplica)
+- Descripción y causa raíz.
+
+#### Cambios aplicados
+**1. <Cambio específico>**
+- Detalle técnico.
+
+#### Cambios de firmware
+\`\`\`cpp
+// Código modificado
+\`\`\`
+
+#### Notas
+- Impacto, comandos relevantes.
+```
+
+**Ejemplos de uso:**
+- _"Actualiza el changelog con los cambios que hicimos hoy."_
+- _"Revisa si el changelog refleja todos los cambios recientes."_
+- _"¿Falta documentar algún cambio en el CHANGELOG?"_
 
 ---
 
@@ -164,7 +213,8 @@ Procedimiento completo para investigar componentes o arquitecturas de hardware a
 ├── AGENTS.md                    ← Este archivo (índice general)
 ├── agents/                      ← Definiciones de agentes AI
 │   ├── analista-investigacion.agent.md
-│   └── analista-pid-qube.agent.md
+│   ├── analista-pid-qube.agent.md
+│   └── changelog-manager.agent.md
 ├── instructions/                ← Instrucciones para agentes
 │   └── firmware-changelog.instructions.md
 ├── prompts/                     ← Prompts y scripts reutilizables

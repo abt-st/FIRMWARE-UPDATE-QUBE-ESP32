@@ -1,22 +1,13 @@
 """
-QUBE Signal Identifier — Launcher
-Arquitectura: ESP32 + L298N + INA219
+QUBE Signal Identifier — Launcher wrapper.
 
-Uso:
-    python gui/app.py
-
-Este archivo es un wrapper delgado. La implementacion completa
-se encuentra en src/qube_ui/app.py.
-
-Requiere:
-    uv sync (instala todas las dependencias)
+Ejecutar con: uv run python gui/app.py
 """
 
 import sys
 from pathlib import Path
 
-# Agregar src/ al path para importar qube_ui
-src_dir = str(Path(__file__).parent.parent / "src")
+src_dir = str(Path(__file__).resolve().parent.parent / "src")
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 

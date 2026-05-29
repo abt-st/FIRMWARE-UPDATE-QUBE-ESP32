@@ -67,4 +67,5 @@ dev = [
     "ruff>=0.15.14",
     "pytest>=8.0.0",
     "pyright>=1.1.380",
+    "pyserial>=3.5",
 ]

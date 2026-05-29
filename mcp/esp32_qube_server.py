@@ -28,7 +28,7 @@ except ImportError as e:
 # ── Configuración global ──────────────────────────────────────────────────────
 
 FIRMWARE_DIR = Path(__file__).resolve().parent.parent / "firmware"
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+EXPERIMENTS_DIR = Path(__file__).resolve().parent.parent / "experiments"
 INOTEO_FILE = FIRMWARE_DIR / "esp32_qube_l298n" / "esp32_qube_l298n.ino"
 PLATFORMIO_INI = FIRMWARE_DIR / "platformio.ini"
 
@@ -338,24 +338,76 @@ def qube_stop_motor() -> str:
     except Exception as e:
         return f"❌ Error deteniendo motor: {e}"
 
+@mcp.tool()
+def qube_set_wifi(ssid: str, password: str) -> str:
+    """Guarda credenciales WiFi en NVS del ESP32 (no se suben al repo).
+
+    Args:
+        ssid: Nombre de la red WiFi (1-32 caracteres).
+        password: Contraseña de la red (mínimo 8 caracteres).
+
+    Returns:
+        Confirmación de que las credenciales fueron guardadas.
+    """
+    if len(ssid) == 0 or len(ssid) > 32:
+        return "❌ SSID debe tener 1-32 caracteres"
+    if len(password) < 8:
+        return "❌ Password debe tener al menos 8 caracteres"
+    try:
+        _http_get("cmd", params={"wifi_ssid": ssid, "wifi_pass": password})
+        return f"✅ Credenciales WiFi guardadas para '{ssid}'. Reinicie el ESP32 para conectar."
+    except Exception as e:
+        return f"❌ Error guardando WiFi: {e}"
+
+
+@mcp.tool()
+def qube_wifi_reconnect() -> str:
+    """Reconecta el ESP32 a la red WiFi (usa credenciales previamente guardadas).
+
+    Returns:
+        Estado de la reconexión.
+    """
+    try:
+        _http_get("cmd", params={"wifi_reconnect": 1})
+        return "✅ Reconexión WiFi iniciada"
+    except Exception as e:
+        return f"❌ Error reconectando: {e}"
+
 
 @mcp.tool()
 def qube_set_mode(mode: int) -> str:
     """Cambia el modo de operación del QUBE.
 
     Args:
-        mode: 0=idle, 1=open-loop, 2=closed-loop (PID), 3=open-loop-voltage.
+        mode: 0=STOP, 1=PWM Manual, 2=PID Servo, 3=PID Péndulo, 4=LQR Invertido, 5=Swing-up.
 
     Returns:
         Confirmación del cambio de modo.
     """
-    mode_names = {0: "Idle", 1: "Open-loop", 2: "Closed-loop (PID)", 3: "Open-loop voltage"}
+    mode_names = {0: "STOP", 1: "PWM Manual", 2: "PID Servo", 3: "PID Péndulo", 4: "LQR Invertido", 5: "Swing-up"}
     try:
         _http_get("cmd", params={"m": mode})
         return f"✅ Modo cambiado a: {mode_names.get(mode, f'Modo {mode}')}"
     except Exception as e:
         return f"❌ Error cambiando modo: {e}"
 
+
+@mcp.tool()
+def qube_set_swing_up(ke: float = 0.5, balance_threshold: float = 20.0) -> str:
+    """Configura los parámetros del controlador de swing-up.
+
+    Args:
+        ke: Ganancia del controlador de energía (0.1-2.0). Mayor = swing-up más agresivo.
+        balance_threshold: Umbral en grados para cambiar de swing-up a LQR (5-40°).
+
+    Returns:
+        Confirmación de los parámetros configurados.
+    """
+    try:
+        _http_get("cmd", params={"ke": ke, "bt": balance_threshold})
+        return f"✅ Swing-up configurado: ke={ke}, threshold={balance_threshold}°"
+    except Exception as e:
+        return f"❌ Error configurando swing-up: {e}"
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  HERRAMIENTAS — Análisis de datos CSV
@@ -367,20 +419,21 @@ def qube_list_experiments() -> str:
     """Lista todos los archivos CSV de datos experimentales disponibles.
 
     Returns:
-        Lista de archivos CSV con su fecha y tamaño.
+        Lista de archivos CSV con su fecha, experimento y tamaño.
     """
-    if not DATA_DIR.exists():
-        return f"Directorio de datos no encontrado: {DATA_DIR}"
+    if not EXPERIMENTS_DIR.exists():
+        return f"Directorio de experimentos no encontrado: {EXPERIMENTS_DIR}"
 
-    csv_files = sorted(DATA_DIR.glob("*.csv"), key=lambda f: f.stat().st_mtime, reverse=True)
+    csv_files = sorted(EXPERIMENTS_DIR.rglob("*.csv"), key=lambda f: f.stat().st_mtime, reverse=True)
     if not csv_files:
-        return f"No hay archivos CSV en {DATA_DIR}"
+        return f"No hay archivos CSV en {EXPERIMENTS_DIR}"
 
-    lines = [f"📁 {DATA_DIR}\n"]
+    lines: list[str] = [f"📁 {EXPERIMENTS_DIR}\n"]
     for f in csv_files:
+        rel = f.relative_to(EXPERIMENTS_DIR)
         size_kb = f.stat().st_size / 1024
         mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-        lines.append(f"  📊 {f.name} ({size_kb:.1f} KB) — {mtime}")
+        lines.append(f"  📊 {rel} ({size_kb:.1f} KB) — {mtime}")
     return "\n".join(lines)
 
 
@@ -395,14 +448,14 @@ def qube_read_csv(filename: str, max_rows: int = 100) -> str:
     Returns:
         Contenido del CSV con header y primeras filas, o resumen si es muy grande.
     """
-    csv_path = DATA_DIR / filename
+    csv_path = EXPERIMENTS_DIR / filename
     if not csv_path.exists():
-        # Buscar parcialmente
-        matches = list(DATA_DIR.glob(f"*{filename}*"))
+        # Buscar parcialmente en todos los subdirectorios
+        matches = sorted(EXPERIMENTS_DIR.rglob(f"*{filename}*"), key=lambda f: f.stat().st_mtime, reverse=True)
         if matches:
             csv_path = matches[0]
         else:
-            return f"❌ No se encontró '{filename}' en {DATA_DIR}"
+            return f"❌ No se encontró '{filename}' en {EXPERIMENTS_DIR}"
 
     content = csv_path.read_text(encoding="utf-8")
     lines = content.strip().split("\n")
@@ -429,13 +482,13 @@ def qube_analyze_csv(filename: str) -> str:
     Returns:
         Resumen analítico con métricas clave del experimento.
     """
-    csv_path = DATA_DIR / filename
+    csv_path = EXPERIMENTS_DIR / filename
     if not csv_path.exists():
-        matches = list(DATA_DIR.glob(f"*{filename}*"))
+        matches = sorted(EXPERIMENTS_DIR.rglob(f"*{filename}*"), key=lambda f: f.stat().st_mtime, reverse=True)
         if matches:
             csv_path = matches[0]
         else:
-            return f"❌ No se encontró '{filename}' en {DATA_DIR}"
+            return f"❌ No se encontró '{filename}' en {EXPERIMENTS_DIR}"
 
     content = csv_path.read_text(encoding="utf-8")
     lines = content.strip().split("\n")
