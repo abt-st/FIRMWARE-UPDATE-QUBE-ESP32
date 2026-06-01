@@ -63,3 +63,5 @@ logs/
 *.orig
 # ── Credenciales WiFi (nunca commitear) ─────────────────────────────────────
 credentials.h
+# ── Notas personales / docs internos ─────────────────────────────────────────
+docs/mine/

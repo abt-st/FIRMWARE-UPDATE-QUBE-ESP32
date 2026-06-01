@@ -51,10 +51,13 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WebServer.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
 #include <Wire.h>
 #include "credentials.h"
+#include <SPIFFS.h>
 #include <Preferences.h>
+#include "driver/pcnt.h"
 
 #if defined(__has_include)
 #if __has_include(<INA219_WE.h>)
@@ -135,15 +138,10 @@ void pwmWriteCompat(int pin, int channel, int duty) {
 #endif
 }
 
-volatile long encoderCount = 0;
-volatile long pendulumCount = 0;
-
 float countsPerRev = 2048.0f;               // Ajustable en runtime con cpr<val>
 int encoderDir = 1;                         // Ajustable en runtime con ed<1|-1>
 float pendCountsPerRev = 2048.0f;           // CPR encoder péndulo
 int pendulumDir = 1;                        // Dirección encoder péndulo
-const bool USE_ENCODER_INTERRUPTS = false;  // true: ISR en A/B
-const bool USE_ENCODER_POLLING = true;      // true: decodificacion por sondeo en loop
 
 int mode = 0;
 int lastPwmCmd = 0;
@@ -160,6 +158,20 @@ float prevPos = 0.0f;
 float filteredVel = 0.0f;
 const float VEL_ALPHA = 0.12f;
 float positionOffsetDeg = 0.0f;
+// ── Gain Scheduling: Modo Fino vs Modo Grueso (modo 2) ──────────────────────
+// Cuando |error| <= threshold -> usa gains finos (movimientos suaves)
+// Cuando |error| > threshold  -> usa gains gruesos (respuesta rápida)
+// Histéresis de ±hysteresis sobre el umbral para evitar chattering entre modos.
+float Kp_fine = 2.0f;       // Ganancia proporcional modo fino
+float Ki_fine = 0.8f;       // Ganancia integral modo fino
+float Kd_fine = 0.2f;       // Ganancia derivativa modo fino
+float Kp_coarse = 4.0f;     // Ganancia proporcional modo grueso
+float Ki_coarse = 0.2f;     // Ganancia integral modo grueso
+float Kd_coarse = 0.1f;     // Ganancia derivativa modo grueso
+const float GAIN_THRESHOLD_DEG = 10.0f;  // Umbral para cambiar de modo (grados)
+const float GAIN_HYSTERESIS_DEG = 2.0f;  // Histérisis sobre el umbral (grados)
+int gainMode = 0;           // 0=fino, 1=grueso (estado actual, para telemetría)
+bool useGainScheduling = false;  // true=activa dual-mode, false=PID clásico con gains Kp/Ki/Kd
 
 // PID Péndulo (modo 3)
 float Kp_pend = 15.0f;
@@ -169,22 +181,20 @@ float integralTermPend = 0.0f;
 float prevErrorPend = 0.0f;
 float prevPosPend = 0.0f;
 float filteredVelPend = 0.0f;
-const float VEL_ALPHA_PEND = 0.15f;
+const float VEL_ALPHA_PEND = 0.30f;  // Filtro velocidad péndulo (era 0.15, demasiado lento para LQR)
 float pendulumOffsetDeg = 0.0f;
 
 // LQR Péndulo Invertido (modo 4)
 // Ganancias LQR: u = -(K1*theta + K2*alpha + K3*theta_dot + K4*alpha_dot)
-float lqr_K1 = 1.0f;    // Ganancia posición servo
+float lqr_K1 = 1.5f;    // Ganancia posición servo (la que atrapó a 0.2°)
 float lqr_K2 = 25.0f;   // Ganancia ángulo péndulo
-float lqr_K3 = 0.5f;    // Ganancia velocidad servo
-float lqr_K4 = 3.0f;    // Ganancia velocidad péndulo
+float lqr_K3 = 1.0f;    // Ganancia velocidad servo
+float lqr_K4 = 10.0f;   // Ganancia velocidad péndulo
 float lqr_prevTheta = 0.0f;
 float lqr_prevAlpha = 0.0f;
 float lqr_filteredVelTheta = 0.0f;
 float lqr_filteredVelAlpha = 0.0f;
-
-volatile uint8_t encoderLastState = 0;
-volatile uint8_t pendulumLastState = 0;
+unsigned long lqr_fallbackMs = 0;  // Timestamp para fallback automático LQR→swing-up
 
 // Si el motor gira en direccion opuesta al encoder (feedback positivo),
 // cambiar MOTOR_DIR a -1 para invertir la salida del PID.
@@ -200,13 +210,13 @@ const float PEND_LENGTH = 0.065f;    // Distancia pivot-centro de masa (m) - aju
 const float PEND_INERTIA = 0.00002f; // Momento de inercia (kg*m^2) - ajustar
 const float GRAVITY = 9.81f;         // Gravedad (m/s^2)
 float ke_gain = 0.5f;               // Ganancia del controlador de energia (ke) - ajustable
-float balance_threshold = 20.0f;    // Umbral para cambiar a LQR (grados desde vertical) - ajustable
+float balance_threshold = 12.0f;    // Umbral para cambiar a LQR (grados desde vertical) - ajustable
 // Swing-up fase (modo 5)
 int swingPhase = 0;              // 0=excitacion, 1=bombeo de energia
 unsigned long exciteStartMs = 0;
 void resetSwingUp() { swingPhase = 0; exciteStartMs = 0; }
 
-const unsigned long CONTROL_PERIOD_US = 5000;  // 200 Hz
+const unsigned long CONTROL_PERIOD_US = 2000;  // 500 Hz (era 5000 = 200 Hz)
 const unsigned long TELEMETRY_PERIOD_MS = 100;
 const unsigned long COMMAND_TIMEOUT_MS = 10000;
 const bool ENABLE_COMMAND_TIMEOUT = false;  // true para seguridad en operacion, false para ajuste en banco
@@ -223,8 +233,8 @@ const bool ENABLE_STA = true;  // true: conecta tambien a tu router LAN
 char staSsid[33] = "";         // Max 32 chars + null
 char staPass[65] = "";         // Max 64 chars + null
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000;
-WebServer server(80);
-
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
 INA219_WE ina219(&Wire, 0x40);
 bool inaOk = false;
 uint8_t inaAddr = 0x40;
@@ -271,95 +281,65 @@ bool initIna219() {
   }
   return false;
 }
+// ══════════════════════════════════════════════════════════════════════════════
+// PCNT (Pulse Counter) — decodificación de encoder en hardware
+// Cuenta cada transición de GPIO sin intervención de CPU.
+// X4 cuadratura: 4 conteos por ciclo eléctrico completo.
+// ══════════════════════════════════════════════════════════════════════════════
 
-void IRAM_ATTR isrEncoderA() {
-  if (digitalRead(PIN_ENC_A) == digitalRead(PIN_ENC_B)) {
-    encoderCount++;
-  } else {
-    encoderCount--;
-  }
-}
+static pcnt_unit_t pcnt_servo_unit = PCNT_UNIT_0;
+static pcnt_unit_t pcnt_pendulum_unit = PCNT_UNIT_1;
 
-void IRAM_ATTR isrEncoderB() {
-  if (digitalRead(PIN_ENC_A) != digitalRead(PIN_ENC_B)) {
-    encoderCount++;
-  } else {
-    encoderCount--;
-  }
-}
-
-void resetEncoderStateTracker() {
-  const uint8_t a = (uint8_t)digitalRead(PIN_ENC_A);
-  const uint8_t b = (uint8_t)digitalRead(PIN_ENC_B);
-  encoderLastState = (a << 1) | b;
-}
-
-void updateEncoderPolling() {
-  if (!USE_ENCODER_POLLING) {
-    return;
-  }
-
-  const uint8_t a = (uint8_t)digitalRead(PIN_ENC_A);
-  const uint8_t b = (uint8_t)digitalRead(PIN_ENC_B);
-  const uint8_t state = (a << 1) | b;
-  const uint8_t idx = (encoderLastState << 2) | state;
-
-  // Tabla de transicion cuadratura (X4): +1, -1, 0 (invalida/sin cambio)
-  static const int8_t QUAD_LUT[16] = {
-    0, -1, +1, 0,
-    +1, 0, 0, -1,
-    -1, 0, 0, +1,
-    0, +1, -1, 0
+void initPcntUnit(pcnt_unit_t unit, int pinA, int pinB) {
+  // Channel 0: pulse=A, ctrl=B — X4 cuadratura
+  pcnt_config_t ch0 = {
+    .pulse_gpio_num = (gpio_num_t)pinA,
+    .ctrl_gpio_num = (gpio_num_t)pinB,
+    .lctrl_mode = PCNT_MODE_KEEP,    // B=0 → mantener dirección
+    .hctrl_mode = PCNT_MODE_REVERSE, // B=1 → invertir dirección
+    .pos_mode = PCNT_COUNT_INC,      // A↑ → +1 por defecto
+    .neg_mode = PCNT_COUNT_DEC,      // A↓ → -1 por defecto
+    .counter_h_lim = 32767,
+    .counter_l_lim = -32768,
+    .unit = unit,
+    .channel = PCNT_CHANNEL_0,
   };
+  pcnt_unit_config(&ch0);
 
-  const int8_t delta = QUAD_LUT[idx];
-  if (delta != 0) {
-    noInterrupts();
-    encoderCount += delta;
-    interrupts();
-  }
-
-  encoderLastState = state;
-}
-
-void resetPendulumStateTracker() {
-  const uint8_t a = (uint8_t)digitalRead(PIN_PEND_A);
-  const uint8_t b = (uint8_t)digitalRead(PIN_PEND_B);
-  pendulumLastState = (a << 1) | b;
-}
-
-void updatePendulumPolling() {
-  if (!USE_ENCODER_POLLING) {
-    return;
-  }
-
-  const uint8_t a = (uint8_t)digitalRead(PIN_PEND_A);
-  const uint8_t b = (uint8_t)digitalRead(PIN_PEND_B);
-  const uint8_t state = (a << 1) | b;
-  const uint8_t idx = (pendulumLastState << 2) | state;
-
-  static const int8_t QUAD_LUT[16] = {
-    0, -1, +1, 0,
-    +1, 0, 0, -1,
-    -1, 0, 0, +1,
-    0, +1, -1, 0
+  // Channel 1: pulse=B, ctrl=A — X4 cuadratura
+  pcnt_config_t ch1 = {
+    .pulse_gpio_num = (gpio_num_t)pinB,
+    .ctrl_gpio_num = (gpio_num_t)pinA,
+    .lctrl_mode = PCNT_MODE_REVERSE, // A=0 → invertir dirección
+    .hctrl_mode = PCNT_MODE_KEEP,    // A=1 → mantener dirección
+    .pos_mode = PCNT_COUNT_INC,      // B↑ → +1 por defecto
+    .neg_mode = PCNT_COUNT_DEC,      // B↓ → -1 por defecto
+    .counter_h_lim = 32767,
+    .counter_l_lim = -32768,
+    .unit = unit,
+    .channel = PCNT_CHANNEL_1,
   };
+  pcnt_unit_config(&ch1);
 
-  const int8_t delta = QUAD_LUT[idx];
-  if (delta != 0) {
-    noInterrupts();
-    pendulumCount += delta;
-    interrupts();
-  }
+  pcnt_counter_pause(unit);
+  pcnt_counter_clear(unit);
+  pcnt_counter_resume(unit);
+}
 
-  pendulumLastState = state;
+long readPcnt(pcnt_unit_t unit) {
+  int16_t count = 0;
+  pcnt_get_counter_value(unit, &count);
+  return (long)count;
+}
+
+void resetPcnt(pcnt_unit_t unit) {
+  pcnt_counter_pause(unit);
+  pcnt_counter_clear(unit);
+  pcnt_counter_resume(unit);
 }
 
 long getPendulumCountAtomic() {
-  noInterrupts();
-  long c = pendulumCount;
-  interrupts();
-  return c;
+  return readPcnt(pcnt_pendulum_unit);
 }
 
 float getPendulumDegPerCount() {
@@ -394,12 +374,16 @@ void resetLqr() {
   lqr_filteredVelTheta = 0.0f;
   lqr_filteredVelAlpha = 0.0f;
 }
+// Normaliza ángulo a [-180, 180]
+float normalizeAngle(float deg) {
+  deg = fmodf(deg, 360.0f);
+  if (deg > 180.0f) deg -= 360.0f;
+  else if (deg < -180.0f) deg += 360.0f;
+  return deg;
+}
 
 long getEncoderCountAtomic() {
-  noInterrupts();
-  long c = encoderCount;
-  interrupts();
-  return c;
+  return readPcnt(pcnt_servo_unit);
 }
 
 float getDegPerCount() {
@@ -525,6 +509,8 @@ String getStateJson() {
   json += "\"pend_error_deg\":" + String(pendErr, 3) + ",";
   // Motor & power
   json += "\"pwm\":" + String(lastPwmCmd) + ",";
+  json += "\"gain_scheduling\":" + String(useGainScheduling ? "true" : "false") + ",";
+  json += "\"gain_mode\":" + String(gainMode) + ",";
   json += "\"ina_ok\":" + String(inaOk ? "true" : "false") + ",";
   json += "\"v_bus\":" + String(busVoltageV, 3) + ",";
   json += "\"v_shunt_mv\":" + String(shuntVoltagemV, 3) + ",";
@@ -534,117 +520,87 @@ String getStateJson() {
   return json;
 }
 
-void addCorsHeaders() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  server.sendHeader("Access-Control-Allow-Headers", "*");
+void handleOptions(AsyncWebServerRequest *request) {
+  AsyncWebServerResponse *response = request->beginResponse(204);
+  response->addHeader("Access-Control-Allow-Origin", "*");
+  response->addHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  response->addHeader("Access-Control-Allow-Headers", "*");
+  request->send(response);
 }
 
-void handleOptions() {
-  addCorsHeaders();
-  server.send(204);
+
+void handleState(AsyncWebServerRequest *request) {
+  request->send(200, "application/json", getStateJson());
 }
 
-void handleRoot() {
-  addCorsHeaders();
-  String html = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
-  html += "<title>QUBE ESP32 L298N INA219</title></head><body>";
-  html += "<h2>QUBE ESP32 + L298N + INA219</h2>";
-  html += "<p>GET /state — JSON de telemetria (servo + pendulo)</p>";
-  html += "<p>GET /cmd?m=0..5 — Modo (0=stop, 1=PWM, 2=PID servo, 3=PID pendulo, 4=LQR, 5=Swing-up)</p>";
-  html += "<p>GET /cmd?s=45 — Setpoint servo</p>";
-  html += "<p>GET /cmd?sp=0 — Setpoint pendulo</p>";
-  html += "<p>GET /cmd?x=1 — Paro de emergencia</p>";
-  html += "<p>GET /cmd?z=1 / zp=1 — Zero servo / pendulo</p>";
-  html += "<p>GET /cmd?wifi_ssid=TuRed&wifi_pass=TuClave — Guardar WiFi (NVS)</p>";
-  html += "<p>GET /cmd?wifi_reconnect=1 — Reconectar WiFi</p>";
-  html += "</body></html>";
-  server.send(200, "text/html", html);
-}
-
-void handleState() {
-  addCorsHeaders();
-  server.send(200, "application/json", getStateJson());
-}
-
-void handleCmd() {
-  addCorsHeaders();
-  if (server.hasArg("m")) {
-    const int m = server.arg("m").toInt();
+void handleCmd(AsyncWebServerRequest *request) {
+  if (request->hasParam("m")) {
+    const int m = request->getParam("m")->value().toInt();
     if (m >= 0 && m <= 5) {
       mode = m;
       resetPid();
       resetPendulumPid();
       if (mode == 4) resetLqr();
-      if (mode == 5) resetSwingUp();  // Reset fase de excitacion
+      if (mode == 5) resetSwingUp();
       if (mode == 0) setMotor(0);
       lastCommandMs = millis();
     }
   }
 
-  // Servo setpoint (modo 2)
-  if (server.hasArg("s")) {
-    setpoint_deg = server.arg("s").toFloat();
+  if (request->hasParam("s")) {
+    setpoint_deg = request->getParam("s")->value().toFloat();
     resetPid();
     lastCommandMs = millis();
   }
 
-  // Pendulum setpoint (modo 3)
-  if (server.hasArg("sp")) {
-    pendulum_setpoint_deg = server.arg("sp").toFloat();
+  if (request->hasParam("sp")) {
+    pendulum_setpoint_deg = request->getParam("sp")->value().toFloat();
     resetPendulumPid();
     lastCommandMs = millis();
   }
 
-  // Zero servo
-  if (server.hasArg("z")) {
+  if (request->hasParam("z")) {
     zeroPositionHere();
     setpoint_deg = 0.0f;
     resetPid();
     lastCommandMs = millis();
   }
 
-  // Zero pendulum
-  if (server.hasArg("zp")) {
+  if (request->hasParam("zp")) {
     zeroPendulumHere();
     pendulum_setpoint_deg = 0.0f;
     resetPendulumPid();
     lastCommandMs = millis();
   }
 
-  // Servo offset
-  if (server.hasArg("o")) {
-    positionOffsetDeg = server.arg("o").toFloat();
+  if (request->hasParam("o")) {
+    positionOffsetDeg = request->getParam("o")->value().toFloat();
     resetPid();
     lastCommandMs = millis();
   }
 
-  // Pendulum offset
-  if (server.hasArg("op")) {
-    pendulumOffsetDeg = server.arg("op").toFloat();
+  if (request->hasParam("op")) {
+    pendulumOffsetDeg = request->getParam("op")->value().toFloat();
     resetPendulumPid();
     lastCommandMs = millis();
   }
 
-  // Servo encoder direction
-  if (server.hasArg("ed")) {
-    const int v = server.arg("ed").toInt();
+  if (request->hasParam("ed")) {
+    const int v = request->getParam("ed")->value().toInt();
     encoderDir = (v >= 0) ? 1 : -1;
     resetPid();
     lastCommandMs = millis();
   }
 
-  // Pendulum encoder direction
-  if (server.hasArg("edp")) {
-    const int v = server.arg("edp").toInt();
+  if (request->hasParam("edp")) {
+    const int v = request->getParam("edp")->value().toInt();
     pendulumDir = (v >= 0) ? 1 : -1;
     resetPendulumPid();
     lastCommandMs = millis();
   }
 
-  // Servo CPR
-  if (server.hasArg("cpr")) {
-    const float v = server.arg("cpr").toFloat();
+  if (request->hasParam("cpr")) {
+    const float v = request->getParam("cpr")->value().toFloat();
     if (v >= 1.0f) {
       countsPerRev = v;
       resetPid();
@@ -652,59 +608,50 @@ void handleCmd() {
     }
   }
 
-  // Pendulum CPR
-  if (server.hasArg("cprp")) {
-    const float v = server.arg("cprp").toFloat();
+  if (request->hasParam("cprp")) {
+    const float v = request->getParam("cprp")->value().toFloat();
     if (v >= 1.0f) {
       pendCountsPerRev = v;
       resetPendulumPid();
       lastCommandMs = millis();
     }
   }
-  // WiFi credentials (save to NVS)
-  if (server.hasArg("wifi_ssid")) {
-    const String ssid = server.arg("wifi_ssid");
+
+  if (request->hasParam("wifi_ssid")) {
+    const String ssid = request->getParam("wifi_ssid")->value();
     if (ssid.length() > 0 && ssid.length() < 33) {
       saveWifiCredentials(ssid.c_str(), staPass);
     }
     lastCommandMs = millis();
   }
-  if (server.hasArg("wifi_pass")) {
-    const String pass = server.arg("wifi_pass");
+  if (request->hasParam("wifi_pass")) {
+    const String pass = request->getParam("wifi_pass")->value();
     if (pass.length() >= 8) {
       saveWifiCredentials(staSsid, pass.c_str());
     }
     lastCommandMs = millis();
   }
-  // WiFi reconnect (after saving credentials)
-  if (server.hasArg("wifi_reconnect")) {
+  if (request->hasParam("wifi_reconnect")) {
     WiFi.disconnect();
     delay(100);
     connectStaIfConfigured();
     lastCommandMs = millis();
   }
 
-  // Manual PWM (mode 1)
-  if (server.hasArg("p") && mode == 1) {
-    const int pwm = constrain(server.arg("p").toInt(), -255, 255);
+  if (request->hasParam("p") && mode == 1) {
+    const int pwm = constrain(request->getParam("p")->value().toInt(), -255, 255);
     setMotor(pwm);
     lastCommandMs = millis();
   }
 
-  // Emergency stop
-  if (server.hasArg("x")) {
+  if (request->hasParam("x")) {
     safeStop();
     lastCommandMs = millis();
   }
 
-  // Reset encoders (servo + pendulum)
-  if (server.hasArg("r")) {
-    noInterrupts();
-    encoderCount = 0;
-    pendulumCount = 0;
-    interrupts();
-    resetEncoderStateTracker();
-    resetPendulumStateTracker();
+  if (request->hasParam("r")) {
+    resetPcnt(pcnt_servo_unit);
+    resetPcnt(pcnt_pendulum_unit);
     positionOffsetDeg = 0.0f;
     pendulumOffsetDeg = 0.0f;
     setpoint_deg = 0.0f;
@@ -714,60 +661,87 @@ void handleCmd() {
     lastCommandMs = millis();
   }
 
-  // Servo PID gains
-  if (server.hasArg("kp")) {
-    Kp = server.arg("kp").toFloat();
+  if (request->hasParam("kp")) {
+    Kp = request->getParam("kp")->value().toFloat();
     resetPid();
   }
-  if (server.hasArg("ki")) {
-    Ki = server.arg("ki").toFloat();
+  if (request->hasParam("ki")) {
+    Ki = request->getParam("ki")->value().toFloat();
     resetPid();
   }
-  if (server.hasArg("kd")) {
-    Kd = server.arg("kd").toFloat();
+  if (request->hasParam("kd")) {
+    Kd = request->getParam("kd")->value().toFloat();
     resetPid();
   }
 
-  // Pendulum PID gains
-  if (server.hasArg("kpp")) {
-    Kp_pend = server.arg("kpp").toFloat();
+  if (request->hasParam("kpp")) {
+    Kp_pend = request->getParam("kpp")->value().toFloat();
     resetPendulumPid();
   }
-  if (server.hasArg("kip")) {
-    Ki_pend = server.arg("kip").toFloat();
+  if (request->hasParam("kip")) {
+    Ki_pend = request->getParam("kip")->value().toFloat();
     resetPendulumPid();
   }
-  if (server.hasArg("kdp")) {
-    Kd_pend = server.arg("kdp").toFloat();
+  if (request->hasParam("kdp")) {
+    Kd_pend = request->getParam("kdp")->value().toFloat();
     resetPendulumPid();
   }
 
-  // LQR gains
-  if (server.hasArg("lqr1")) {
-    lqr_K1 = server.arg("lqr1").toFloat();
+  if (request->hasParam("lqr1")) {
+    lqr_K1 = request->getParam("lqr1")->value().toFloat();
     resetLqr();
   }
-  if (server.hasArg("lqr2")) {
-    lqr_K2 = server.arg("lqr2").toFloat();
+  if (request->hasParam("lqr2")) {
+    lqr_K2 = request->getParam("lqr2")->value().toFloat();
     resetLqr();
   }
-  if (server.hasArg("lqr3")) {
-    lqr_K3 = server.arg("lqr3").toFloat();
+  if (request->hasParam("lqr3")) {
+    lqr_K3 = request->getParam("lqr3")->value().toFloat();
     resetLqr();
   }
-  if (server.hasArg("lqr4")) {
-    lqr_K4 = server.arg("lqr4").toFloat();
+  if (request->hasParam("lqr4")) {
+    lqr_K4 = request->getParam("lqr4")->value().toFloat();
     resetLqr();
-  }
-  // Swing-up parameters
-  if (server.hasArg("ke")) {
-    ke_gain = server.arg("ke").toFloat();
-  }
-  if (server.hasArg("bt")) {
-    balance_threshold = server.arg("bt").toFloat();
   }
 
-  server.send(200, "application/json", getStateJson());
+  if (request->hasParam("ke")) {
+    ke_gain = request->getParam("ke")->value().toFloat();
+  }
+  if (request->hasParam("bt")) {
+    balance_threshold = request->getParam("bt")->value().toFloat();
+  }
+
+  if (request->hasParam("gs")) {
+    useGainScheduling = (request->getParam("gs")->value().toInt() != 0);
+    gainMode = 0;
+    resetPid();
+  }
+  if (request->hasParam("kpf")) {
+    Kp_fine = request->getParam("kpf")->value().toFloat();
+    resetPid();
+  }
+  if (request->hasParam("kif")) {
+    Ki_fine = request->getParam("kif")->value().toFloat();
+    resetPid();
+  }
+  if (request->hasParam("kdf")) {
+    Kd_fine = request->getParam("kdf")->value().toFloat();
+    resetPid();
+  }
+  if (request->hasParam("kpc")) {
+    Kp_coarse = request->getParam("kpc")->value().toFloat();
+    resetPid();
+  }
+  if (request->hasParam("kic")) {
+    Ki_coarse = request->getParam("kic")->value().toFloat();
+    resetPid();
+  }
+  if (request->hasParam("kdc")) {
+    Kd_coarse = request->getParam("kdc")->value().toFloat();
+    resetPid();
+  }
+
+  request->send(200, "application/json", getStateJson());
 }
 
 void connectStaIfConfigured() {
@@ -782,6 +756,10 @@ void connectStaIfConfigured() {
 
   Serial.print("STA: conectando a ");
   Serial.println(staSsid);
+  IPAddress local_IP(192, 168, 100, 50);
+  IPAddress gateway(192, 168, 100, 1);
+  IPAddress subnet(255, 255, 255, 0);
+  WiFi.config(local_IP, gateway, subnet);
   WiFi.begin(staSsid, staPass);
   // No bloquear: WiFi.begin() conecta en background
   // La IP se mostrara en printNetworkInfo() cuando este listo
@@ -867,6 +845,7 @@ void printHelp() {
   Serial.println("Servo: s<deg>, kp<val>, ki<val>, kd<val>, o<deg>, z, ed<1|-1>, cpr<val>");
   Serial.println("Pendulo: sp<deg>, kpp<val>, kip<val>, kdp<val>, op<deg>, zp, edp<1|-1>, cprp<val>");
   Serial.println("LQR: lqr1<val>, lqr2<val>, lqr3<val>, lqr4<val>");
+  Serial.println("GainSched: g1(on) g0(off) gf<val> gi<val> gd<val> (fino) GC<val> GI<val> Gd<val> (grueso)");
   Serial.println("Motor: p-255..255 (modo 1), x(stop), r(reset)");
   Serial.println("Info: ?(estado), i(IP), n(ina scan)");
   Serial.println("WiFi: wifi_ssid<TuRed>, wifi_pass<TuClave>, wifi_info");
@@ -908,8 +887,15 @@ void processSerialCommand() {
 
     case 's':
       {
-        setpoint_deg = cmd.substring(1).toFloat();
-        resetPid();
+        if (cmd.length() > 2 && cmd.charAt(1) == 'p') {
+          // sp<deg> — pendulum setpoint
+          pendulum_setpoint_deg = cmd.substring(2).toFloat();
+          resetPendulumPid();
+        } else {
+          // s<deg> — servo setpoint
+          setpoint_deg = cmd.substring(1).toFloat();
+          resetPid();
+        }
         lastCommandMs = millis();
         break;
       }
@@ -928,17 +914,14 @@ void processSerialCommand() {
           }
           resetPid();
         }
+        lastCommandMs = millis();
         break;
       }
 
     case 'r':
       {
-        noInterrupts();
-        encoderCount = 0;
-        pendulumCount = 0;
-        interrupts();
-        resetEncoderStateTracker();
-        resetPendulumStateTracker();
+        resetPcnt(pcnt_servo_unit);
+        resetPcnt(pcnt_pendulum_unit);
         positionOffsetDeg = 0.0f;
         pendulumOffsetDeg = 0.0f;
         setpoint_deg = 0.0f;
@@ -978,6 +961,30 @@ void processSerialCommand() {
             lastCommandMs = millis();
           }
         }
+        break;
+      }
+    // ── Gain Scheduling: g0=off, g1=on, gf<val>=Kp_fine, gi<val>=Ki_fine,
+    //    gd<val>=Kd_fine, GC<val>=Kp_coarse, GI<val>=Ki_coarse, Gd<val>=Kd_coarse ──
+    case 'g':
+      {
+        if (cmd.length() > 1) {
+          const char sub = cmd.charAt(1);
+          if (sub == '0' || sub == '1') {
+            useGainScheduling = (sub == '1');
+            gainMode = 0;
+            resetPid();
+          } else if (cmd.length() > 2) {
+            const float val = cmd.substring(2).toFloat();
+            if (sub == 'f') Kp_fine = val;
+            else if (sub == 'i') Ki_fine = val;
+            else if (sub == 'd') Kd_fine = val;
+            else if (sub == 'C') Kp_coarse = val;
+            else if (sub == 'I') Ki_coarse = val;
+            else if (sub == 'D') Kd_coarse = val;
+            resetPid();
+          }
+        }
+        lastCommandMs = millis();
         break;
       }
 
@@ -1064,6 +1071,29 @@ void processSerialCommand() {
       }
   }
 }
+// ── WebSocket Event Handler ─────────────────────────────────────────────────
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
+               AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  switch (type) {
+    case WS_EVT_CONNECT:
+      Serial.printf("[WS] Cliente conectado #%u desde %s\n", client->id(),
+                    client->remoteIP().toString().c_str());
+      break;
+    case WS_EVT_DISCONNECT:
+      Serial.printf("[WS] Cliente #%u desconectado\n", client->id());
+      break;
+    case WS_EVT_DATA:
+      break;
+    case WS_EVT_PONG:
+    case WS_EVT_ERROR:
+      break;
+  }
+}
+
+void broadcastTelemetry() {
+  if (ws.count() == 0) return;
+  ws.textAll(getStateJson());
+}
 
 void setup() {
   Serial.begin(115200);
@@ -1080,24 +1110,23 @@ void setup() {
 
   setMotor(0);
 
-  // GPIO34/GPIO35 son pines solo-entrada en ESP32 y no soportan pull-up interno.
-  pinMode(PIN_ENC_A, INPUT);
-  pinMode(PIN_ENC_B, INPUT);
-  resetEncoderStateTracker();
-  if (USE_ENCODER_INTERRUPTS) {
-    attachInterrupt(digitalPinToInterrupt(PIN_ENC_A), isrEncoderA, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(PIN_ENC_B), isrEncoderB, CHANGE);
-  }
+  // Encoder servo: PCNT en hardware (X4 cuadratura)
+  initPcntUnit(pcnt_servo_unit, PIN_ENC_A, PIN_ENC_B);
 
-  // GPIO32/GPIO33 encoder péndulo (también input-only)
-  pinMode(PIN_PEND_A, INPUT);
-  pinMode(PIN_PEND_B, INPUT);
-  resetPendulumStateTracker();
+  // Encoder péndulo: PCNT en hardware (X4 cuadratura)
+  initPcntUnit(pcnt_pendulum_unit, PIN_PEND_A, PIN_PEND_B);
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
   delay(50);
   scanI2CBus();
   inaOk = initIna219();
+  // Initialize SPIFFS for web GUI
+  if (!SPIFFS.begin(true)) {
+    Serial.println("[SPIFFS] Error al montar");
+  } else {
+    Serial.println("[SPIFFS] OK");
+  }
+
 
   // Load WiFi credentials from NVS
   loadWifiCredentials();
@@ -1106,7 +1135,11 @@ void setup() {
   WiFi.softAP(AP_SSID, AP_PASS, 6, false, 4);  // canal 6, SSID visible, max 4 clientes
   connectStaIfConfigured();
 
-  server.on("/", HTTP_GET, handleRoot);
+  ws.onEvent(onWsEvent);
+  server.addHandler(&ws);
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/index.html", "text/html");
+  });
   server.on("/state", HTTP_GET, handleState);
   server.on("/cmd", HTTP_GET, handleCmd);
   server.on("/state", HTTP_OPTIONS, handleOptions);
@@ -1140,10 +1173,8 @@ void setup() {
 }
 
 void loop() {
-  updateEncoderPolling();
-  updatePendulumPolling();
+  ws.cleanupClients();
 
-  server.handleClient();
 
   if (Serial.available()) {
     processSerialCommand();
@@ -1161,33 +1192,80 @@ void loop() {
     // ══════════════════════════════════════════════════════════════════════════
     if (mode == 2) {
       const float err = setpoint_deg - pos;
+      const float absErr = abs(err);
 
-      if (abs(err) < 45.0f && abs(filteredVel) < 60.0f) {
+      // ── Gain Scheduling: elegir gains según magnitud del error ──────────
+      float Kp, Ki, Kd;
+      if (useGainScheduling) {
+        // Histérisis: si estamos en modo fino, solo cambiamos a grueso si err > threshold + hysteresis
+        //            si estamos en modo grueso, solo cambiamos a fino si err < threshold - hysteresis
+        float upperBound = GAIN_THRESHOLD_DEG + GAIN_HYSTERESIS_DEG;
+        float lowerBound = GAIN_THRESHOLD_DEG - GAIN_HYSTERESIS_DEG;
+
+        if (gainMode == 0) {
+          // Actualmente en modo fino — cambiar a grueso solo si supera el límite superior
+          if (absErr > upperBound) gainMode = 1;
+        } else {
+          // Actualmente en modo grueso — volver a fino solo si baja del límite inferior
+          if (absErr < lowerBound) gainMode = 0;
+        }
+
+        if (gainMode == 0) {
+          Kp = Kp_fine;   Ki = Ki_fine;   Kd = Kd_fine;
+        } else {
+          Kp = Kp_coarse; Ki = Ki_coarse; Kd = Kd_coarse;
+        }
+      } else {
+        // PID clásico: usa los gains globales Kp/Ki/Kd
+        Kp = ::Kp;  Ki = ::Ki;  Kd = ::Kd;
+      }
+
+      // ── Integral anti-windup ────────────────────────────────────────────
+      if (absErr < 45.0f && abs(filteredVel) < 60.0f) {
         integralTerm += err * dt;
         integralTerm = constrain(integralTerm, -INTEGRAL_LIMIT, INTEGRAL_LIMIT);
       } else {
         integralTerm = 0.0f;
       }
 
+      // ── Velocidad filtrada (EMA) ───────────────────────────────────────
       const float rawVel = -(pos - prevPos) / dt;
       filteredVel = VEL_ALPHA * rawVel + (1.0f - VEL_ALPHA) * filteredVel;
       prevError = err;
       prevPos = pos;
 
+      // ── PID output ─────────────────────────────────────────────────────
       float u = Kp * err + Ki * integralTerm + Kd * filteredVel;
       int pwm = (int)(MOTOR_DIR * u);
 
-      if (abs(pwm) < PWM_MIN && abs(err) > 8.0f && abs(filteredVel) < 15.0f) {
-        pwm = (pwm >= 0) ? PWM_MIN : -PWM_MIN;
-      }
-      if (abs(err) <= 0.8f) {
+      // ── Dead band ──────────────────────────────────────────────────────
+      const float deadBand = useGainScheduling ? (gainMode == 0 ? 0.5f : 1.0f) : 0.8f;
+      if (absErr <= deadBand) {
         pwm = 0;
       }
 
+      // ── Kick mínimo para vencer fricción ───────────────────────────────
+      if (abs(pwm) < PWM_MIN && absErr > 8.0f && abs(filteredVel) < 15.0f) {
+        pwm = (pwm >= 0) ? PWM_MIN : -PWM_MIN;
+      }
+
+      // ── Limitación dinámica de PWM ─────────────────────────────────────
       int pwmLimit = PWM_MAX;
-      if (abs(err) < 20.0f) pwmLimit = 80;
-      if (abs(err) < 10.0f) pwmLimit = 55;
-      if (abs(err) < 5.0f) pwmLimit = 35;
+      if (useGainScheduling) {
+        if (gainMode == 0) {
+          // Modo fino: PWM acotado para movimientos suaves
+          if (absErr < 5.0f) pwmLimit = 30;
+          else if (absErr < 10.0f) pwmLimit = 50;
+        } else {
+          // Modo grueso: PWM libre para respuesta rápida
+          if (absErr < 20.0f) pwmLimit = 80;
+        }
+      } else {
+        // PID clásico: escalonamiento original
+        if (absErr < 5.0f) pwmLimit = 35;
+        else if (absErr < 10.0f) pwmLimit = 55;
+        else if (absErr < 20.0f) pwmLimit = 80;
+      }
 
       pwm = constrain(pwm, -pwmLimit, pwmLimit);
       setMotor(pwm);
@@ -1229,34 +1307,57 @@ void loop() {
       pwm = constrain(pwm, -pwmLimit, pwmLimit);
       setMotor(pwm);
     }
-
     // ══════════════════════════════════════════════════════════════════════════
     // MODO 4: LQR Péndulo Invertido
     // ══════════════════════════════════════════════════════════════════════════
     if (mode == 4) {
       // Estado: [theta, alpha, theta_dot, alpha_dot]
-      // theta = posición servo (grados), alpha = posición péndulo (grados)
-      const float theta = pos;
-      const float alpha = pendPos;
+      // theta = posición servo (grados)
+      // alpha = ángulo péndulo normalizado, 0 = vertical arriba (invertido)
+      const float theta = constrain(pos, -90.0f, 90.0f);  // Limitar servo a ±90 para evitar crash mecánico
+      const float alpha_raw = pendPos;  // Crudo para cálculo de velocidad
+      const float alpha = normalizeAngle(pendPos - 180.0f);  // 0=arriba, ±180=abajo
 
-      // Velocidades con filtro EMA
+      // Velocidades con filtro EMA (usar ángulo crudo para evitar errores en wrap-around)
       const float rawVelTheta = -(theta - lqr_prevTheta) / dt;
-      const float rawVelAlpha = -(alpha - lqr_prevAlpha) / dt;
+      const float rawVelAlpha = -(alpha_raw - lqr_prevAlpha) / dt;
       lqr_filteredVelTheta = VEL_ALPHA * rawVelTheta + (1.0f - VEL_ALPHA) * lqr_filteredVelTheta;
       lqr_filteredVelAlpha = VEL_ALPHA_PEND * rawVelAlpha + (1.0f - VEL_ALPHA_PEND) * lqr_filteredVelAlpha;
       lqr_prevTheta = theta;
-      lqr_prevAlpha = alpha;
+      lqr_prevAlpha = alpha_raw;  // Guardar crudo para siguiente velocidad
 
       // LQR: u = -(K1*theta + K2*alpha + K3*theta_dot + K4*alpha_dot)
       // alpha=0 es la posición vertical (invertido)
       float u = -(lqr_K1 * theta + lqr_K2 * alpha + lqr_K3 * lqr_filteredVelTheta + lqr_K4 * lqr_filteredVelAlpha);
       int pwm = (int)(MOTOR_DIR * u);
 
-      // Protección: si el péndulo está muy lejos de la vertical, no aplicar torque
-      // (evita que el motor se vuelva loco si el péndulo está abajo)
-      if (abs(alpha) > 150.0f) {
+      // Protección: solo apagar motor cuando el péndulo está muy cerca del fondo
+      // alpha normalizado: 0=arriba, ±180=abajo
+      // |alpha|>140 = más de 40° del fondo → LQR puede intentar atrapar
+      if (abs(alpha) > 140.0f) {
         pwm = 0;
       }
+
+      // Fallback automático: si el péndulo cayó lejos de la vertical por >2s,
+      // volver a swing-up para reintentar
+      if (abs(alpha) > 90.0f) {
+        if (lqr_fallbackMs == 0) lqr_fallbackMs = millis();
+        if (millis() - lqr_fallbackMs > 2000) {
+          mode = 5;
+          resetSwingUp();
+          lqr_fallbackMs = 0;
+          Serial.println("LQR: Fallback a swing-up (péndulo lejos de vertical)");
+        }
+      } else {
+        lqr_fallbackMs = 0;  // Reset timer if pendulum comes back near upright
+      }
+
+      // Hard stop: si el servo se desborda, forzar de vuelta al centro
+      if (abs(pos) > 120.0f) {
+        pwm = (pos > 0) ? -PWM_MAX : PWM_MAX;
+      }
+
+
 
       pwm = constrain(pwm, -PWM_MAX, PWM_MAX);
       setMotor(pwm);
@@ -1273,32 +1374,46 @@ void loop() {
 
       const float mgl = PEND_MASS * GRAVITY * PEND_LENGTH;
 
-      // Bombeo de energia (Quanser) con ganancia alta
+      // Energía total del péndulo (0 en fondo, 2*mgl en vertical arriba)
       const float E = 0.5f * PEND_INERTIA * alpha_dot * alpha_dot + mgl * (1.0f - cosf(alpha));
       const float Er = 2.0f * mgl;
-      const float E_err = E - Er;
 
-      float sign_val = 0.0f;
-      float prod = alpha_dot * cosf(alpha);
-      if (prod > 0.001f) sign_val = 1.0f;
-      else if (prod < -0.001f) sign_val = -1.0f;
+      // Ley de swing-up por energía (Quanser / Åström-Furuta):
+      //   u = sign(α̇ · cos α) · sign(Er - E)
+      // Bombea energía cuando E < Er, la reduce cuando E > Er.
+      const float prod = alpha_dot * cosf(alpha);
+      float motion_sign = 0.0f;
+      if (prod > 0.001f) motion_sign = 1.0f;
+      else if (prod < -0.001f) motion_sign = -1.0f;
 
-      // Kick solo cuando el pendulo esta muy quieto
-      if (abs(alpha_dot) < 0.1f) {
-        pwm = MOTOR_DIR * PWM_MAX * 0.8f;
+      const float energy_sign = (Er > E) ? 1.0f : -1.0f;
+
+      if (abs(alpha_dot) < 0.15f) {
+        // Péndulo casi quieto — kick alternante para iniciar oscilación.
+        // Alterna cada ~250ms (≈ periodo natural del péndulo / 2) para
+        // construir amplitud por resonancia.
+        const unsigned long halfPeriodMs = 250;
+        if (((millis() / halfPeriodMs) % 2) == 0) {
+          pwm = MOTOR_DIR * (int)(PWM_MAX * 0.7f);
+        } else {
+          pwm = -MOTOR_DIR * (int)(PWM_MAX * 0.7f);
+        }
       } else {
-        float u = ke_gain * E_err * sign_val * 80.0f;
-        u = constrain(u, -1.0f, 1.0f);
+        // Bombeo de energía normal
+        float u = ke_gain * energy_sign * motion_sign;
         pwm = (int)(MOTOR_DIR * u * PWM_MAX);
       }
 
-      // Transicion a LQR si esta cerca de la vertical arriba (180°)
-      float alpha_abs = abs(pendPos);
-      float mod360 = fmodf(alpha_abs, 360.0f);
-      float dist_from_up = abs(mod360 - 180.0f);
-      if (dist_from_up < balance_threshold) {
+      // Transición a LQR si el péndulo está cerca de la vertical arriba
+      // Y la velocidad angular es baja (evita transiciones prematuras)
+      // normalizeAngle(pendPos - 180): 0=arriba, ±180=abajo
+      float alpha_lqr = normalizeAngle(pendPos - 180.0f);
+      float dist_from_up = abs(alpha_lqr);
+      float vel_abs = abs(alpha_dot) * RAD_TO_DEG;  //_velocidad en deg/s
+      if (dist_from_up < balance_threshold && vel_abs < 500.0f) {
         mode = 4;
         resetLqr();
+        Serial.println("Swing-up: TRANSICION a LQR");
       }
 
       pwm = constrain(pwm, -PWM_MAX, PWM_MAX);
@@ -1344,5 +1459,7 @@ void loop() {
       Serial.print(powermW, 1);
     }
     Serial.println();
+    // Broadcast via WebSocket to connected clients
+    broadcastTelemetry();
   }
 }

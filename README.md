@@ -1,4 +1,6 @@
-> **QUBE ESP32** — Plataforma de control educativo de péndulo rotatorio invertido basada en **ESP32 + L298N + INA219 + LM2596**, con encoders duales, telemetría de potencia en tiempo real y conectividad WiFi/BLE. Alternativa open-source al Quanser QUBE Servo por **~$70 USD** frente a los $2,500–$3,500 USD del original.
+# QUBE ESP32
+
+Plataforma de control educativo de péndulo rotatorio invertido basada en **ESP32 + L298N + INA219 + LM2596 + CD40106BE**, con encoders duales, telemetría de potencia en tiempo real y conectividad WiFi. Alternativa open-source al Quanser QUBE Servo por **~$70 USD** frente a los $2,500–$3,500 USD del original.
 
 ---
 
@@ -8,11 +10,7 @@
 2. [Arquitectura del Sistema](#arquitectura-del-sistema)
 3. [Hardware Requerido](#hardware-requerido)
 4. [Pinout y Conexiones](#pinout-y-conexiones)
-5. [Sensores y Acondicionamiento de Señal](#sensores-y-acondicionamiento-de-señal)
-   - [Encoders Duales](#encoders-duales)
-   - [Acondicionamiento de Señal](#acondicionamiento-de-señal)
-   - [Schmitt Trigger (CD40106BE)](#schmitt-trigger-cd40106be)
-   - [Telemetría de Potencia (INA219)](#telemetría-de-potencia-ina219)
+5. [Acondicionamiento de Señal — Schmitt Trigger + RC](#acondicionamiento-de-señal--schmitt-trigger--rc)
 6. [Control PID en Lazo Cerrado](#control-pid-en-lazo-cerrado)
 7. [Firmware](#firmware)
 8. [Instructivo de Uso](#instructivo-de-uso)
@@ -20,137 +18,199 @@
 10. [Resultados y Validación](#resultados-y-validación)
 11. [Problemas Conocidos y Soluciones](#problemas-conocidos-y-soluciones)
 12. [Roadmap](#roadmap)
-13. [Referencias](#referencias)
-14. [Licencia](#licencia)
+13. [Documentación Adicional](#documentación-adicional)
+14. [Referencias](#referencias)
+15. [Licencia](#licencia)
 
 ---
 
 ## Motivación
 
-El **Quanser QUBE Servo** es una plataforma educativa de referencia para laboratorios de control moderno (LQR, PID, control en espacio de estado). Su principal limitación es el costo: entre **$2,500 y $3,500 USD**, lo que lo hace inaccesible para la mayoría de instituciones de educación media y superior en Latinoamérica.
+### El problema del péndulo rotatorio invertido
 
-Este proyecto propone una modernización completa del sistema usando componentes de bajo costo disponibles globalmente, manteniendo:
+El **péndulo rotatorio invertido** es uno de los problemas clásicos más importantes en ingeniería de control. Consiste en un péndulo articulado en el extremo de un brazo rotatorio impulsado por un motor DC. El objetivo es mantener el péndulo en posición **vertical invertida** (hacia arriba), una posición inherentemente inestable — cualquier perturbación mínima lo hace caer.
+
+**Por qué es un problema difícil:**
+
+1. **Sistema inestable por naturaleza** — El equilibrio vertical arriba es un punto de silla en el espacio de fases. Sin control activo, el péndulo cae en fracciones de segundo.
+2. **Un actuador, dos variables** — El motor del servo es el único actuador, pero debe controlar simultáneamente el ángulo del brazo (θ) y el ángulo del péndulo (α). Esto lo convierte en un sistema **SISO con dinámica acoplada**.
+3. **No linealidad** — La dinámica del péndulo involucra funciones trigonométricas (`sin(α)`, `cos(α)`) que hacen el control más complejo que un sistema lineal simple.
+4. **Restricciones físicas** — El motor tiene límites de voltaje, corriente y velocidad. El brazo tiene un rango de movimiento limitado. Estas restricciones deben considerarse en el diseño del controlador.
+
+**Aplicaciones reales:**
+
+Los métodos usados para resolver este problema se aplican directamente a:
+
+- Robots manipuladores industriales
+- Sistemas de estabilización de drones y aeronaves
+- Vehículos autónomos (balance de robots bípedos)
+- Sistemas de posicionamiento de antenas y paneles solares
+- Control de actuadores en sistemas aeroespaciales
+
+### El sistema QUBE-Servo de Quanser
+
+El **Quanser QUBE-Servo** es una plataforma educativa de referencia fabricada por Quanser (Canadá) diseñada específicamente para enseñar control moderno en universidades. El sistema consta de:
+
+- **Un servo motor DC** con encoder óptico de alta resolución
+- **Un brazo rotatorio** (el eje del servo)
+- **Un péndulo** articulado en el extremo del brazo (módulo opcional)
+
+El sistema tiene **dos grados de libertad**: el ángulo del servo (θ) y el ángulo del péndulo (α). El servo es el actuador único — todo el control se hace moviendo el brazo rotatorio para influenciar el péndulo.
+
+**Los 7 laboratorios que Quanser diseña con el QUBE-Servo:**
+
+| # | Lab                                      | Qué enseña                                             |
+| - | ---------------------------------------- | -------------------------------------------------------- |
+| 1 | **Momento de inercia**             | Calcular J del péndulo (analítica + experimental)      |
+| 2 | **Modelado del péndulo**          | Verificar convenciones de signos HW ↔ modelo            |
+| 3 | **Modelado en espacio de estados** | Representación matricial del sistema linealizado        |
+| 4 | **Balance con PD**                 | Control clásico para estabilizar el péndulo arriba     |
+| 5 | **Pole Placement**                 | Diseño de control por estados con ubicación de polos   |
+| 6 | **LQR**                            | Control óptimo por regulador cuadrático lineal         |
+| 7 | **Swing-up**                       | Control no lineal por energía para levantar el péndulo |
+
+### Las dos fases del problema de control
+
+El problema completo del péndulo rotatorio invertido se divide en **dos fases** que deben resolverse en secuencia:
+
+#### Fase 1: Swing-up (levantamiento)
+
+- **Situación inicial:** péndulo colgando hacia abajo (posición estable)
+- **Objetivo:** hacer oscilar el péndulo hasta que llegue a la vertical arriba
+- **Método:** control basado energía — se inyecta energía al sistema hasta alcanzar la energía del equilibrio arriba: `E_r = 2·m·g·l`
+- **El brazo del servo oscila** para bombear energía al péndulo
+- **Desafío:** el algoritmo debe ser robusto a perturbaciones y funcionar desde cualquier posición inicial
+
+#### Fase 2: Balance (estabilización)
+
+- **Situación:** péndulo cerca de la vertical arriba (dentro de un umbral angular)
+- **Objetivo:** mantenerlo vertical sin que caiga
+- **Método:** control lineal por estados (LQR o pole placement) que usa las 4 variables de estado: `[θ, α, θ_dot, α_dot]`
+- **El servo se mueve** para contrarrestar cualquier perturbación
+- **Desafío:** el controlador debe ser rápido y preciso para contrarrestar la gravedad en tiempo real
+
+### El problema de accesibilidad económica
+
+El Quanser QUBE-Servo tiene un costo de **$2,500–$3,500 USD**, lo que lo hace inaccesible para la mayoría de instituciones de educación media y superior en Latinoamérica. Esta barrera económica limita:
+
+- El acceso a laboratorios de control moderno
+- La formación práctica de estudiantes en ingeniería de control
+- La investigación en sistemas embebidos de control en tiempo real
+- La replicabilidad de experimentos en instituciones con presupuestos limitados
+
+### Nuestra propuesta: una alternativa open-source
+
+Este proyecto propone una **modernización completa del sistema** usando componentes de bajo costo disponibles globalmente, manteniendo:
 
 - Control en lazo cerrado con realimentación de posición angular
-- Telemetría de voltaje, corriente y potencia en tiempo real
-- Conectividad inalámbrica (WiFi + BLE) para monitoreo remoto
+- Telemetría de voltaje, corriente y potencia en tiempo real (INA219)
+- Conectividad inalámbrica (WiFi) para monitoreo remoto
 - **Encoders duales**: uno en el eje del servo (posición del motor) y uno en el eje del péndulo (posición del brazo rotatorio)
 - Compatibilidad con Arduino IDE y librerías estándar
+- **Implementación completa de swing-up + balance** con los mismos métodos que Quanser
 
-El resultado es una plataforma funcional por **$40–$70 USD** (sin batería), documentada completamente y publicada como open-source para la comunidad educativa.
+**Comparación directa:**
+
+| Aspecto                  | Quanser QUBE-Servo                  | Nuestra propuesta               |
+| ------------------------ | ----------------------------------- | ------------------------------- |
+| **Costo**          | $2,500–$3,500 USD                  | **$40–70 USD**           |
+| **Plataforma**     | DSP propietario                     | ESP32 open-source               |
+| **Software**       | MATLAB/Simulink (requiere licencia) | Python + Arduino IDE (gratuito) |
+| **Telemetría**    | Sensores integrados                 | INA219 digital (I2C)            |
+| **Control**        | PID + LQR + Swing-up                | **PID + LQR + Swing-up**  |
+| **Encoders**       | 2 (servo + péndulo)                | **2 (servo + péndulo)**  |
+| **Conectividad**   | Ethernet/USB                        | **WiFi + BLE nativa**     |
+| **Documentación** | Courseware proprietario             | **Open-source completa**  |
+
+El resultado es una plataforma funcional por **~$70 USD** (98% de reducción de costo), documentada completamente y publicada como open-source para la comunidad educativa.
 
 ---
 
 ## Arquitectura del Sistema
 
-### Diagrama de conexión general
+### Diagrama de bloques general
 
 ```
-                         ┌─────────────────────────────────────────────────┐
-                         │              FUENTE DE ALIMENTACIÓN 12V          │
-                         │          (LiPo 3S o PSU de laboratorio)          │
-                         └──────────┬──────────────────────┬───────────────┘
-                                    │ (+12V)                │ GND
-                          ┌─────────┴─────────┐            │
-                          │                   │            │
-                          ▼                   │            │
-                ┌─────────────────┐           │            │
-                │   INA219 (I2C)  │           │            │
-                │   Monitor de    │           │            │
-                │   potencia      │           │            │
-                │                 │           │            │
-                │  VIN+ ◄────────┘           │            │
-                │  VIN- ─────────────────┐   │            │
-                │  GND ──────────────────┼───┼────────────┤
-                │  SDA ──────────┐       │   │            │
-                │  SCL ─────┐    │       │   │            │
-                │  VCC      │    │       │   │            │
-                │  (3.3V)   │    │       │   │            │
-                └───────────┼────┼───────┼───┼────────────┘
-                            │    │       │   │
-                   ┌────────┼────┼───────┼───┼────────────────────────┐
-                   │  ESP32 │    │       │   │                        │
-                   │        │    │       │   │                        │
-                   │ GPIO21 ─┘    │       │   │  (SDA I2C)            │
-                   │ GPIO22 ──────┘       │   │  (SCL I2C)            │
-                   │                       │   │                       │
-                   │              VIN ◄────┼───┤  (5V del LM2596)      │
-                   │              GND ◄────┼───┤  (tierra común)       │
-                   │                       │   │                       │
-                   │ GPIO26 ───────────────┼───┼──► L298N IN1          │
-                   │ GPIO27 ───────────────┼───┼──► L298N IN2          │
-                   │                       │   │                       │
-                   │ GPIO34 ──[100Ω]──+────┼───┼── Encoder Servo A     │
-                   │                  [4.7kΩ]↑3.3V                     │
-                   │ GPIO35 ──[100Ω]──+    │   │  Encoder Servo B      │
-                   │                  [4.7kΩ]↑3.3V                     │
-                   │ GPIO32 ──[100Ω]──+    │   │  Encoder Péndulo A    │
-                   │                  [4.7kΩ]↑3.3V                     │
-                   │ GPIO33 ──[100Ω]──+    │   │  Encoder Péndulo B    │
-                   │                  [4.7kΩ]↑3.3V                     │
-                   └───────────────────────┼───┼────────────────────────┘
-                                           │   │
-                          ┌────────────────┼───┼──────────────────┐
-                          │  L298N (Puente H) │                   │
-                          │                │   │                  │
-                          │  IN1 ◄─────────┘   │  (desde GPIO26)  │
-                          │  IN2 ◄─────────────┘  (desde GPIO27)  │
-                          │  VS  ◄──────────────── VIN- del INA219│
-                          │                                   │    │
-                          │  OUT1 ────────────────────────────┼──┐ │
-                          │  OUT2 ─────────────────────────────┘│ │
-                          │  GND ◄──────────────────────────────┼─┤
-                          └─────────────────────────────────────┘ │
-                                                                  │
-                                                    ┌─────────────┘
-                                                    │  Motor DC
-                                                    │  (con encoder
-                                                    │   integrado)
-                                                    ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    QUBE SERVO MODERNIZADO                                │
+│                    ESP32 + L298N + INA219 + LM2596 + CD40106BE           │
+└──────────────────────────────────────────────────────────────────────────┘
+
+ENTRADA: 12V (LiPo 3S o PSU de laboratorio)
+    │
+    ├── [LM2596 Buck Converter] ──→ 5V rail para lógica
+    │       │
+    │       ├── ESP32 VIN (5V → 3.3V interno AMS1117)
+    │       ├── L298N 5V (lógica del driver)
+    │       └── Encoder VCC (5V)
+    │
+    ├── [INA219] High-side current sensing
+    │       VIN+ ← 12V fuente
+    │       VIN- → L298N VS (12V motor)
+    │       I2C: SDA=GPIO21, SCL=GPIO22
+    │
+    ├── [ESP32-WROOM-32] Núcleo de control
+    │       ├── Core 1: Control PID @ 200 Hz
+    │       ├── Core 0: Telemetría + WiFi
+    │       ├── GPIO26 → L298N IN1 (PWM+)
+    │       ├── GPIO27 → L298N IN2 (PWM-)
+    │       ├── GPIO34 → Encoder Servo A → Schmitt + RC
+    │       ├── GPIO35 → Encoder Servo B → Schmitt + RC
+    │       ├── GPIO32 → Encoder Péndulo A → Schmitt + RC
+    │       ├── GPIO33 → Encoder Péndulo B → Schmitt + RC
+    │       └── USB-UART → PC (depuración + GUI)
+    │
+    ├── [L298N Dual H-Bridge] Etapa de potencia
+    │       ├── IN1/IN2: Dirección + PWM (jumper ENA habilitado)
+    │       ├── OUT1/OUT2 → Motor DC (+/-)
+    │       └── VS: 12V desde INA219 VIN-
+    │
+    └── [Motor DC + Encoder] Actuador
+            ├── M+ / M- (OUT1/OUT2 del L298N)
+            └── Encoder: A/B + GND + VCC (5V)
 ```
 
-### Conexión detallada del INA219
-
-El INA219 se conecta **en serie** entre la fuente de alimentación y el L298N para medir la corriente que consume el motor:
+### Conexión de potencia
 
 ```
-    FUENTE 12V (+)          INA219                  L298N
-    ───────────────     ───────────────          ─────────────
-                        │           │
-        (+12V) ─────────┤ VIN+      │
-                        │  (shunt)  │            VS (pin 4)
-        (mide corriente │ VIN- ─────┼────────────┤
-         y voltaje)     │           │
-                        │  GND ─────┼──────┬─────┤ GND (tierra común)
-                        │  VCC ─────┼──┐   │     │
-                        │  SDA ─────┼──┤   │     │ OUT1 ──► Motor (+)
-                        │  SCL ─────┼──┤   │     │ OUT2 ──► Motor (−)
-                        └───────────┘  │   │     │
-                                       │   │     │ IN1 ◄── GPIO26 (ESP32)
-    ESP32                              │   │     │ IN2 ◄── GPIO27 (ESP32)
-    ─────────────                      │   │     │
-    3V3 ───────────────────────────────┘   │
-    GND ───────────────────────────────────┘
-    GPIO21 (SDA) ──────────────────────────┘──► INA219 SDA
-    GPIO22 (SCL) ─────────────────────────────► INA219 SCL
+                    ┌──────────────────────────────────────┐
+                    │          TOPOLOGÍA DE POTENCIA        │
+                    └──────────────────────────────────────┘
+
+Fuente 12V (+) ──┬── VIN+ [INA219] VIN- ──── L298N VS (12V motor)
+                 │
+                 ├── LM2596 IN+
+                 │      └── LM2596 OUT+ (5V) ──── ESP32 VIN
+                 │                             ──── L298N VSS (lógica)
+                 │                             ──── Encoder VCC (5V)
+                 │                             ──── CD40106BE Vcc (3.3V)
+                 │
+Fuente GND  ─────┴── GND común (topología estrella)
+                    ├── L298N GND
+                    ├── LM2596 IN-
+                    ├── ESP32 GND (pin GND)
+                    ├── INA219 GND
+                    ├── CD40106BE GND (pin 7)
+                    └── Encoder GND
 ```
 
-**Claves de conexión:**
-- **VIN+/VIN−**: El INA219 va en **serie** con la línea +12V. La corriente del motor pasa por el shunt interno.
-- **GND compartido**: Todos los módulos comparten la misma tierra.
-- **I2C (SDA/SCL)**: Comunicación digital con el ESP32.
-- **VCC**: Alimentado con **3.3V** del ESP32 (no conectar a 5V).
+**Requisitos de potencia:**
+
+- Cable de retorno motor: AWG 16 mínimo (R < 0.05 Ω)
+- GND común en topología estrella (NO en cadena)
+- Bypass capacitors: 470 µF + 100 µF en rail 5V
+- Capacitor 100 µF cerca del L298N
 
 ### Flujo de datos
 
 ```
                           ESP32 (FreeRTOS)
                          ┌──────────────────┐
-Encoder Servo ──────────►│                  │
-(GPIO34/35)              │  task_control    │──► L298N (PWM → Motor)
+Encoder Servo ─────►     │                  │
+(GPIO34/35 + Schmitt)    │  task_control    │──► L298N (PWM → Motor)
                          │  200 Hz          │
-Encoder Péndulo ────────►│                  │
-(GPIO32/33)              └────────┬─────────┘
+Encoder Péndulo ────►    │                  │
+(GPIO32/33 + Schmitt)    └────────┬─────────┘
                                   │
                     INA219 (I2C)───┤──► task_ina219 (100 Hz)
                     (GPIO21/22)    │
@@ -158,7 +218,7 @@ Encoder Péndulo ────────►│                  │
                                   ├──► task_telemetry (10 Hz)
                                   │         │
                                   │         ├──► Serial (USB → PC)
-                                  │         └──► WebSocket (WiFi)
+                                  │         └──► WiFi (HTTP REST)
                                   │
                                   └──► task_wifi (event-driven)
 ```
@@ -167,24 +227,24 @@ Encoder Péndulo ────────►│                  │
 
 ## Hardware Requerido
 
-| Componente | Especificación | Cantidad | Precio aprox. |
-|---|---|---|---|
-| **ESP32-WROOM-32** | Dual-core 240MHz, WiFi+BLE | 1 | $6–10 USD |
-| **L298N** | Dual H-bridge, 2A/canal, 5–35V | 1 | $1.50–3 USD |
-| **INA219** | Monitor I2C, 0–26V, ±3.2A | 1 | $2–4 USD |
-| **LM2596** | Buck converter ajustable, 3A | 1 | $1–3 USD |
-| **Motor DC + reductor** | 12V, 25W, 100–300 RPM | 1 | $15–30 USD |
-| **Encoder servo** | Incremental, open-drain, ≥200 CPR | 1 | Incluido en motor |
-| **Encoder péndulo** | Incremental, open-drain, ≥200 CPR | 1 | $5–15 USD |
-| **CD40106BE** | Hex Schmitt Trigger Inverter, DIP-14 | 1 | ~$0.50 USD |
-| **Resistores 4.7 kΩ** | Pull-up para encoders (×4) | 4 | < $0.10 USD |
-| **Resistores 100 Ω** | Filtro RC encoders (×4) | 4 | < $0.10 USD |
-| **Capacitores 10 nF** | Filtro RC encoders (×4) | 4 | < $0.10 USD |
-| **Capacitores 100 nF** | Bypass Schmitt (×1) | 1 | < $0.05 USD |
-| **Capacitor 100 µF** | Filtro salida LM2596 | 1 | < $0.20 USD |
-| **Fuente 12V** | LiPo 3S o PSU laboratorio | 1 | Variable |
+| Componente                    | Especificación                      | Cantidad | Precio aprox.     |
+| ----------------------------- | ------------------------------------ | -------- | ----------------- |
+| **ESP32-WROOM-32**      | Dual-core 240 MHz, WiFi+BLE          | 1        | $6–10 USD        |
+| **L298N**               | Dual H-bridge, 2 A/canal, 5–35 V    | 1        | $1.50–3 USD      |
+| **INA219**              | Monitor I2C, 0–26 V, ±3.2 A        | 1        | $2–4 USD         |
+| **LM2596**              | Buck converter ajustable, 3 A        | 1        | $1–3 USD         |
+| **CD40106BE**           | Hex Schmitt Trigger Inverter, DIP-14 | 1        | ~$0.50 USD        |
+| **Motor DC + reductor** | 12 V, 25 W, 100–300 RPM             | 1        | $15–30 USD       |
+| **Encoder servo**       | Incremental, open-drain, ≥200 CPR   | 1        | Incluido en motor |
+| **Encoder péndulo**    | Incremental, open-drain, ≥200 CPR   | 1        | $5–15 USD        |
+| **Resistores 4.7 kΩ**  | Pull-up para encoders (×4)          | 4        | < $0.10 USD       |
+| **Resistores 10 kΩ**   | Filtro RC post-Schmitt (×4)         | 4        | < $0.10 USD       |
+| **Capacitores 10 nF**   | Filtro RC post-Schmitt a GND (×4)   | 4        | < $0.10 USD       |
+| **Capacitor 100 nF**    | Bypass Vcc CD40106BE                 | 1        | < $0.05 USD       |
+| **Capacitor 100 µF**   | Filtro salida LM2596                 | 1        | < $0.20 USD       |
+| **Fuente 12V**          | LiPo 3S o PSU laboratorio            | 1        | Variable          |
 
-**Costo total estimado (sin fuente):** $35–70 USD  
+**Costo total estimado (sin fuente):** $35–70 USD
 **Comparación:** Quanser QUBE Servo = $2,500–$3,500 USD
 
 ---
@@ -193,313 +253,213 @@ Encoder Péndulo ────────►│                  │
 
 ### Tabla completa pin por pin
 
-| Subsistema | Origen | Destino | Notas |
-|---|---|---|---|
-| Potencia motor | Fuente 12V (+) | L298N VS | Alimentación del puente H |
-| Potencia motor | GND fuente | L298N GND | GND común obligatorio |
-| Lógica L298N | LM2596 5V | L298N 5V | Según jumper del módulo |
-| Motor DC | L298N OUT1 | Motor terminal (+) | Salida de potencia |
-| Motor DC | L298N OUT2 | Motor terminal (−) | Salida de potencia |
-| Control motor | ESP32 GPIO26 | L298N IN1 | Señal de control canal A |
-| Control motor | ESP32 GPIO27 | L298N IN2 | Señal de control canal A |
-| Control motor | ENB (canal B) | L298N ENB | No usado en configuración de un motor |
-| Encoder servo | Pin A | 4.7 kΩ pull-up a 3.3V → GPIO34 | Open-drain |
-| Encoder servo | Pin B | 4.7 kΩ pull-up a 3.3V → GPIO35 | Open-drain |
-| Encoder servo | GND / +5V | GND común / Alimentación | Referencia compartida |
-| Encoder péndulo | Pin A | 4.7 kΩ pull-up a 3.3V → GPIO32 | Open-drain |
-| Encoder péndulo | Pin B | 4.7 kΩ pull-up a 3.3V → GPIO33 | Open-drain |
-| Encoder péndulo | GND / +5V | GND común / Fuente auxiliar 5V | Referencia compartida |
-| INA219 | ESP32 GPIO21 | INA219 SDA | I2C datos |
-| INA219 | ESP32 GPIO22 | INA219 SCL | I2C reloj |
-| INA219 | ESP32 3V3 | INA219 VCC | No conectar a 5V |
-| INA219 | GND común | INA219 GND | Referencia común |
-| INA219 | (+) batería / LM2596 IN | INA219 VIN+ | Antes del L298N |
-| INA219 | L298N VS (pin 8) | INA219 VIN− | Después del shunt |
-| Debug serial | USB ESP32 | PC / monitor serie | UART0 por USB |
-
-### Cableado de ENA
-
-| Opción | Jumper ENA | Conexión ENA | Cuándo usar |
-|---|---|---|---|
-| **A (recomendada)** | Dejar puesto | No conectar al ESP32 | Control por IN1/IN2 |
-| B (alternativa) | Retirar | ESP32 GPIO25 → ENA (señal) | PWM directo por ENA |
-
-> **Importante:** El bloque ENA tiene 2 pines físicos: ENA (señal) y +5V. Con jumper puesto quedan puenteados. Si retiras el jumper, conecta GPIO25 solo al pin ENA (señal), nunca al pin +5V.
+| Subsistema       | Origen                   | Destino                                                | Notas                                |
+| ---------------- | ------------------------ | ------------------------------------------------------ | ------------------------------------ |
+| Potencia motor   | Fuente 12 V (+)          | L298N VS                                               | Alimentación del puente H           |
+| Potencia motor   | GND fuente               | L298N GND                                              | GND común obligatorio               |
+| Lógica L298N    | LM2596 5 V               | L298N 5V                                               | Según jumper del módulo            |
+| Motor DC         | L298N OUT1               | Motor terminal (+)                                     | Salida de potencia                   |
+| Motor DC         | L298N OUT2               | Motor terminal (−)                                    | Salida de potencia                   |
+| Control motor    | ESP32 GPIO26             | L298N IN1                                              | Señal de control canal A            |
+| Control motor    | ESP32 GPIO27             | L298N IN2                                              | Señal de control canal A            |
+| Encoder servo    | Canal A                  | 4.7 kΩ pull-up → Schmitt → 10 kΩ + 10 nF → GPIO34 | Ver acondicionamiento                |
+| Encoder servo    | Canal B                  | 4.7 kΩ pull-up → Schmitt → 10 kΩ + 10 nF → GPIO35 | Ver acondicionamiento                |
+| Encoder servo    | GND / +5V                | GND común / Alimentación                             | Referencia compartida                |
+| Encoder péndulo | Canal A                  | 4.7 kΩ pull-up → Schmitt → 10 kΩ + 10 nF → GPIO32 | Ver acondicionamiento                |
+| Encoder péndulo | Canal B                  | 4.7 kΩ pull-up → Schmitt → 10 kΩ + 10 nF → GPIO33 | Ver acondicionamiento                |
+| Encoder péndulo | GND / +5V                | GND común / Fuente auxiliar 5 V                       | Referencia compartida                |
+| INA219           | ESP32 GPIO21             | INA219 SDA                                             | I2C datos                            |
+| INA219           | ESP32 GPIO22             | INA219 SCL                                             | I2C reloj                            |
+| INA219           | ESP32 3V3                | INA219 VCC                                             | No conectar a 5 V                    |
+| INA219           | GND común               | INA219 GND                                             | Referencia común                    |
+| INA219           | (+) batería / LM2596 IN | INA219 VIN+                                            | Antes del L298N                      |
+| INA219           | L298N VS (pin 8)         | INA219 VIN−                                           | Después del shunt                   |
+| Schmitt          | CD40106BE pin 14         | ESP32 3V3                                              | Vcc = 3.3 V (salida compatible GPIO) |
+| Schmitt          | CD40106BE pin 7          | GND común                                             | Tierra del chip                      |
+| Schmitt          | 100 nF                   | Pin 14 a pin 7                                         | Bypass, lo más cerca del chip       |
+| Debug serial     | USB ESP32                | PC / monitor serie                                     | UART0 por USB                        |
 
 ### Configuración de pines ESP32
 
 ```
-Pin     │ Función              │ Tipo         │ Notas
-────────┼──────────────────────┼──────────────┼──────────────────────────
-GPIO21  │ I2C SDA              │ Bidireccional│ Pull-up interno
-GPIO22  │ I2C SCL              │ Salida       │ Pull-up interno
-GPIO25  │ L298N ENA (PWM)      │ Salida       │ Solo opción B (jumper retirado)
-GPIO26  │ L298N IN1            │ Salida       │ Control canal A
-GPIO27  │ L298N IN2            │ Salida       │ Control canal A
-GPIO32  │ Encoder péndulo A    │ Entrada      │ Pull-up externo 4.7kΩ
-GPIO33  │ Encoder péndulo B    │ Entrada      │ Pull-up externo 4.7kΩ
-GPIO34  │ Encoder servo A      │ Entrada      │ Pull-up externo 4.7kΩ (input-only)
-GPIO35  │ Encoder servo B      │ Entrada      │ Pull-up externo 4.7kΩ (input-only)
+Pin     │ Función               │ Tipo         │ Notas
+────────┼───────────────────────┼──────────────┼──────────────────────────────
+GPIO21  │ I2C SDA               │ Bidireccional│ Pull-up interno
+GPIO22  │ I2C SCL               │ Salida       │ Pull-up interno
+GPIO25  │ L298N ENA (PWM)       │ Salida       │ Solo opción B (jumper retirado)
+GPIO26  │ L298N IN1             │ Salida       │ Control canal A
+GPIO27  │ L298N IN2             │ Salida       │ Control canal A
+GPIO32  │ Encoder péndulo A     │ Entrada      │ Schmitt + RC (10 kΩ/10 nF)
+GPIO33  │ Encoder péndulo B     │ Entrada      │ Schmitt + RC (10 kΩ/10 nF)
+GPIO34  │ Encoder servo A       │ Entrada      │ Schmitt + RC (10 kΩ/10 nF), input-only
+GPIO35  │ Encoder servo B       │ Entrada      │ Schmitt + RC (10 kΩ/10 nF), input-only
 ```
 
 > **Nota:** GPIO34 y GPIO35 son pines input-only en el ESP32-WROOM-32. No soportan `INPUT_PULLUP` por firmware — los pull-ups deben ser externos.
 
----
+### Cableado de ENA
 
-## Sensores y Acondicionamiento de Señal
+| Opción                   | Jumper ENA   | Conexión ENA                | Cuándo usar        |
+| ------------------------- | ------------ | ---------------------------- | ------------------- |
+| **A (recomendada)** | Dejar puesto | No conectar al ESP32         | Control por IN1/IN2 |
+| B (alternativa)           | Retirar      | ESP32 GPIO25 → ENA (señal) | PWM directo por ENA |
 
-### Encoders Duales
-
-Este proyecto implementa realimentación de posición angular mediante **dos encoders incrementales independientes**:
-
-#### Encoder 1 — Eje del Servo (Motor DC)
-
-Mide la posición y velocidad angular del eje del motor después del reductor.
-
-- **GPIO:** 34 (canal A), 35 (canal B)
-- **Resolución típica:** 200–2048 CPR (counts per revolution)
-- **Decodificación:** Cuadratura X4 por interrupciones hardware
-- **Salida:** posición en grados (`pos_servo`), velocidad en rad/s (`vel_servo`)
-
-#### Encoder 2 — Eje del Péndulo (Brazo Rotatorio)
-
-Mide la posición angular del brazo del péndulo respecto a la vertical.
-
-- **GPIO:** 32 (canal A), 33 (canal B)
-- **Resolución típica:** 200–2048 CPR
-- **Decodificación:** Cuadratura X4 por interrupciones hardware
-- **Salida:** posición en grados (`pos_pendulo`), velocidad en rad/s (`vel_pendulo`)
-- **Referencia:** 0° = posición inferior (colgando), ±180° = posición superior (invertido)
-
-#### Decodificación cuadratura X4
-
-```cpp
-// Tabla de decodificación cuadratura (QUAD_LUT)
-// Estado anterior [A_prev, B_prev] + Estado actual [A, B]
-// Resultado: +1 (avance), -1 (retroceso), 0 (sin cambio / error)
-const int8_t QUAD_LUT[16] = {
-    0, -1, +1,  0,
-   +1,  0,  0, -1,
-   -1,  0,  0, +1,
-    0, +1, -1,  0
-};
-```
-
-#### Variables de estado exportadas (JSON `/state`)
-
-```json
-{
-  "mode": 2,
-  "count": 1024, "position_deg": 15.2, "setpoint_deg": 20.0, "error_deg": 4.8,
-  "pend_count": -128, "pend_position_deg": -2.3, "pend_setpoint_deg": 0.0, "pend_error_deg": 2.3,
-  "pwm": 45, "ina_ok": true, "v_bus": 11.8, "i_ma": 350.0, "p_mw": 4130.0
-}
-```
+> **Importante:** El bloque ENA tiene 2 pines físicos: ENA (señal) y +5V. Con jumper puesto quedan puenteados. Si retiras el jumper, conecta GPIO25 solo al pin ENA (señal), nunca al pin +5V.
 
 ---
 
-### Acondicionamiento de Señal
+## Acondicionamiento de Señal — Schmitt Trigger + RC
 
-#### Problema: encoders open-drain
+### Problema: encoders open-drain
 
 Los encoders (Premotec 990412016913) tienen salida **open-drain (NPN)**:
 
 - **Estado bajo:** transistor conduce → 0 V
 - **Estado alto:** transistor corta → línea flota (Hi-Z)
 
-Sin pull-up, la línea queda en ~1.5V indeterminado.
+Sin acondicionamiento, la señal es susceptible a ruido de conmutación PWM, rebotes mecánicos y glitches que generan cuentas espurias en el encoder.
 
-#### Soluciones evaluadas
+### Circuito implementado: CD40106BE + filtro RC
 
-| Topología | Tensión estado alto | Resultado |
-|---|---|---|
-| Level shifter 5V→3.3V (7 MΩ) | ~1.5 V (indeterminado) | ❌ RC demasiado lento |
-| Divisor 4.7kΩ / 8.2kΩ | 15–40 mV (Hi-Z) | ❌ Confirma open-drain |
-| **Pull-up 4.7 kΩ a 3.3 V** | **3.3 V (limpio)** | **✅ Implementado** |
-
-#### Esquema actual (por canal, ×2)
-
-El circuito de acondicionamiento utiliza **doble inversión** con Schmitt Trigger CD40106BE. El encoder se conecta **directamente** a la entrada del inversor, sin componentes adicionales:
+El circuito de acondicionamiento combina **Schmitt Trigger** (histéresis para rechazo de ruido) con un **filtro RC pasivo** (atenuación de alta frecuencia) en cada canal del encoder:
 
 ```
-Encoder canal (~5V) ──────────┬── CD40106BE IN_A ──► OUT_A ──┐
-                              │                               │
-                              │              IN_B ──► OUT_B ──┼──► GPIOxx
-                              │                      (recupera fase)
-                             GND (referencia común)
+                                     CD40106BE
+                                ┌──────────────────┐
+Encoder A (~5V) ────────────────┤ pin 1  (IN_A)    │
+                		│        (OUT_A) pin 2 ├──┐
+  		                │                  │   │  │
+   	                        │        (IN_B) pin 3 ◄─┘
+                                │        (OUT_B) pin 4 ├──► 10kΩ ──┬──► GPIO34
+                                │                  │              │
+                                │                  │            10nF
+                                │                  │              │
+                                │                  │             GND
+                                │                  │
+Encoder B (~5V) ────────────────┤ pin 5  (IN_C)    │
+                                │        (OUT_C) pin 6 ├──┐
+                                │                  │  │  │
+                                │        (IN_D) pin 9 ◄─┘
+                                │        (OUT_D) pin 8 ├──► 10kΩ ──┬──► GPIO35
+                                │                  │              │
+                                │                  │            10nF
+                                │                  │              │
+         GND ───────────────────┤ pin 7       pin 14├──── 3.3V   GND
+                                └──────────────────┘
+                                       │
+                                   100nF (bypass Vcc)
+                                       │
+                                      GND
 ```
 
-**Señal del encoder (~5V)** → **Schmitt Trigger** (regenera señal limpia de ~3.3V) → **GPIO ESP32**
+**Por canal (replicado ×4 para servo A/B + péndulo A/B):**
 
-El Schmitt Trigger toma la señal directa del encoder (~5V) y genera un nivel lógico limpio de **~3.3V** en la salida (limitado por Vcc = 3.3V). La histéresis del Schmitt (~0.5V) elimina glitches y rebotes que causarían cuentas espurias en el encoder.
+```
+                            CD40106BE                    Filtro RC
+                           ┌─────────┐
 
-> ✅ Este circuito está **implementado y funcionando** en la protoboard actual para los canales del encoder servo (GPIO34/GPIO35).
+Encoder (~5V) ──► IN_A ──►│ INV_A   │
+                  (pin 1)  │         │──► OUT_A (pin 2) ──┐
+                           │  INV_B  │                     │
+                           │         │◄── IN_B (pin 3) ◄──┘
+                           │         │
+                           │         │──► OUT_B (pin 4) ──[10kΩ]──┬──► GPIO
+                                                   (doble inversión) │
+                                                                 [10nF]
+                                                                     │
+                                                                    GND
+```
 
----
+### ¿Por qué este circuito?
 
-### Schmitt Trigger (CD40106BE) — Implementado
+| Etapa                                  | Función                                | Efecto                          |
+| -------------------------------------- | --------------------------------------- | ------------------------------- |
+| **Pull-up 4.7 kΩ**              | Convierte open-drain a niveles lógicos | Señal: 0 V / 3.3 V             |
+| **Schmitt Trigger (doble inv.)** | Histéresis ~0.5 V (a 3.3 V Vcc)        | Elimina glitches y rebotes      |
+| **Filtro RC (10 kΩ + 10 nF)**   | Atenuación de alta frecuencia          | Filtro anti-alias, τ = 100 µs |
 
-> 📄 Ver investigación completa: [`docs/research/ai_research/CD40106BE_INVESTIGATION.md`](docs/research/ai_research/CD40106BE_INVESTIGATION.md)
+**Filtro RC:**
 
-> ✅ **Estado actual:** El circuito de acondicionamiento con CD40106BE **está implementado** en la protoboard para los canales del encoder servo (A y B). La salida del Schmitt trigger (pin 4 → GPIO34, pin 8 → GPIO35) produce un nivel lógico limpio de **~3.3V**, seguro para el ESP32.
+- τ = R × C = 10 kΩ × 10 nF = **100 µs**
+- f_c = 1 / (2π × τ) ≈ **1.59 kHz**
+- Atenua ruido de conmutación PWM (>20 kHz) y transitorios de alta frecuencia
+- No afecta señales de encoder en rango operativo (<50 kHz para 400 RPM)
 
-El encoder se conecta directamente a la entrada del Schmitt trigger (5V), que regenera un nivel lógico limpio de **~3.3V** en la salida (limitado por Vcc = 3.3V).
+**Schmitt Trigger:**
 
-#### ¿Por qué un Schmitt Trigger?
+| Parámetro                   | CD40106BE @ 3.3 V Vcc | Efecto                                                    |
+| ---------------------------- | --------------------- | --------------------------------------------------------- |
+| Umbral alto (VT+)            | ~2.3 V                | Se activa cuando la señal**supera** este valor     |
+| Umbral bajo (VT−)           | ~1.0 V                | Se desactiva cuando la señal**baja** de este valor |
+| **Histéresis (ΔVT)** | **~1.3 V**      | **Zona muerta que rechaza ruido**                   |
+| Tiempo de propagación       | ~80–150 ns           | Salida digital limpia y rápida                           |
 
-El filtro RC simple **no tiene histéresis**: cuando la señal cruza el umbral lentamente, el ruido genera **rebotes (glitches)** que causan cuentas espurias. El Schmitt Trigger resuelve esto con **dos umbrales de conmutación**:
+### Características del CD40106BE
 
-| Parámetro | CD40106BE @ 5V | CD40106BE @ 3.3V | Efecto |
-|---|---|---|---|
-| Umbral alto (`VT+`) | ~2.9 V | ~2.3 V | Se activa cuando la señal **supera** este valor |
-| Umbral bajo (`VT-`) | ~2.1 V | ~1.0 V | Se desactiva cuando la señal **baja** de este valor |
-| **Histéresis (`ΔVT`)** | **~0.8 V** | **~0.5 V** | **Zona muerta que rechaza ruido** |
-| Tiempo de propagación | ~60–120 ns | ~80–150 ns | Salida digital limpia y rápida |
-
-#### Características del CD40106BE
-
-| Propiedad | Valor |
-|---|---|
-| Tipo | Hex Schmitt Trigger Inverter (6 inversores) |
-| Paquete | DIP-14 (CD40106BE), SOIC-14 (CD40106BM) |
-| Alimentación | 3 V a 18 V (rango completo CMOS) |
-| Corriente de salida | ~1.6 mA sink/source a 5V |
-| Disipación | Muy baja (~µW en estático) |
-| Costo | ~$0.50 USD |
+| Propiedad           | Valor                                       |
+| ------------------- | ------------------------------------------- |
+| Tipo                | Hex Schmitt Trigger Inverter (6 inversores) |
+| Paquete             | DIP-14                                      |
+| Alimentación       | 3 V a 18 V (rango completo CMOS)            |
+| Corriente de salida | ~1.6 mA sink/source a 3.3 V                 |
+| Disipación         | Muy baja (~µW en estático)                |
+| Costo               | ~$0.50 USD                                  |
 
 **Pinout (DIP-14):**
 
 ```
-         +--------+
-  A_IN 1 |        | 14 Vcc (3–18V)
+          +--------+
+  A_IN 1  |        | 14 Vcc (3.3V)
   A_OUT 2 |        | 13 F_IN
-  B_IN 3 |        | 12 F_OUT
+  B_IN 3  |        | 12 F_OUT
   B_OUT 4 |  40106 | 11 E_IN
-  C_IN 5 |        | 10 E_OUT
+  C_IN 5  |        | 10 E_OUT
   C_OUT 6 |        | 9  D_IN
-   GND 7 |        | 8  D_OUT
-         +--------+
+   GND 7  |        | 8  D_OUT
+          +--------+
 ```
 
-#### Circuito de acondicionamiento
+### Uso de los 6 inversores
 
-Como el CD40106BE es un **inversor**, se usa **doble inversión** (2 inversores en serie) para recuperar la polaridad original. El encoder se conecta directamente a la entrada del chip, sin resistencias adicionales:
+| Inversor      | Pines      | Uso                                                     | Estado          |
+| ------------- | ---------- | ------------------------------------------------------- | --------------- |
+| INV_A + INV_B | 1→2→3→4 | Encoder servo canal A (doble inversión + RC → GPIO34) | **Usado** |
+| INV_C + INV_D | 5→6→9→8 | Encoder servo canal B (doble inversión + RC → GPIO35) | **Usado** |
+| INV_E         | 11→10     | Reservado — oscilador watchdog / botón de paro        | Libre           |
+| INV_F         | 13→12     | Reservado — debounce de botones / expansión           | Libre           |
 
-```
-                          CD40106BE
-                     ┌──────────────────┐
-Encoder A (~5V) ─────┤ pin 1  (IN_A)    │
-                     │        (OUT_A) pin 2 ├──┐
-                     │                  │  │  │
-                     │        (IN_B) pin 3  │◄─┘
-                     │        (OUT_B) pin 4 ├──► GPIO34
-                     │                  │      (recupera fase)
-                     │                  │
-Encoder B (~5V) ─────┤ pin 5  (IN_C)    │
-                     │        (OUT_C) pin 6 ├──┐
-                     │                  │  │  │
-                     │        (IN_D) pin 9  │◄─┘
-                     │        (OUT_D) pin 8 ├──► GPIO35
-                     │                  │      (recupera fase)
-                     │                  │
-         GND ────────┤ pin 7       pin 14├──── 3.3V (ESP32)
-                     └──────────────────┘
-                            │
-                        100nF (bypass)
-                            │
-                           GND
-```
+> **Importante:** Alimentar el CD40106BE a **3.3 V** (desde el pin 3V3 del ESP32) para salida directa compatible con GPIO. La salida será **~3.3 V** (limitada por Vcc), seguro para los GPIO del ESP32 (máximo tolerado: 3.6 V).
 
-**Alimentación:**
+### Alimentación y bypass
 
 ```
 3.3V (ESP32) ──┬── CD40106BE pin 14 (Vcc)
                │
-              100nF ── GND  (bypass, cerca del pin 14)
+              100nF ── GND  (bypass, lo más cerca del pin 14)
                │
               GND ──── CD40106BE pin 7
 ```
 
-> **Importante:** Alimentar el CD40106BE a **3.3V** (desde el pin 3V3 del ESP32) para salida directa compatible con GPIO. La salida será **~3.3V** (limitada por Vcc), seguro para los GPIO del ESP32 (máximo tolerado: 3.6V). A 3.3V la histéresis es ~0.5 V, significativamente mejor que los 0 V sin Schmitt.
+> **Sobre el capacitor de bypass (100 nF):** Conectar **entre pin 14 (Vcc) y pin 7 (GND)**, lo más cerca posible del chip. Cuando las compuertas del CD40106BE conmutan, dibujan picos de corriente del rail 3.3V. Sin el capacitor, estos transitorios generan glitches en el voltaje de alimentación que pueden afectar al ESP32, ya que ambos comparten el mismo rail.
 
-> **⚠️ Error común:** Si la salida del Schmitt entrega ~4–5V, significa que el pin 14 (Vcc) está conectado a 5V en lugar de 3.3V. Reconectar a 3V3 del ESP32.
+### Componentes del acondicionamiento (×4 canales)
 
-> **Sobre el capacitor de bypass (100nF):** Conectar **entre pin 14 (Vcc) y pin 7 (GND)**, lo más cerca posible del chip. Cuando las compuertas del CD40106BE conmutan, dibujan picos de corriente del rail 3.3V. Sin el capacitor, estos transitorios (aunque breves, ~60–150 ns) generan glitches en el voltaje de alimentación que pueden afectar al ESP32, ya que ambos comparten el mismo rail. En protoboard a baja frecuencia de encoder (<10 kHz) su efecto es menor, pero sigue siendo buena práctica. En PCB Rev2.0 con los 6 inversores activos simultáneamente, el capacitor es **indispensable** para estabilizar la alimentación.
+| Componente         | Valor               | Cantidad | Costo                |
+| ------------------ | ------------------- | -------- | -------------------- |
+| CD40106BE          | Hex Schmitt Trigger | 1        | ~$0.50               |
+| Resistores 4.7 kΩ | Pull-up encoder     | 4        | < $0.10              |
+| Resistores 10 kΩ  | Serie filtro RC     | 4        | < $0.10              |
+| Capacitores 10 nF  | Filtro RC a GND     | 4        | < $0.10              |
+| Capacitor 100 nF   | Bypass Vcc          | 1        | < $0.05              |
+| **Total**    |                     |          | **~$0.85 USD** |
 
-#### Uso de los 6 inversores
+### Comparativa de topologías
 
-| Inversor | Pines | Uso | Estado |
-|---|---|---|---|
-| INV_A + INV_B | 1→2→3→4 | Encoder servo canal A (doble inversión → GPIO34) | Usado |
-| INV_C + INV_D | 5→6→9→8 | Encoder servo canal B (doble inversión → GPIO35) | Usado |
-| INV_E | 11→10 | Reservado — oscilador watchdog / botón de paro | Libre |
-| INV_F | 13→12 | Reservado — debounce de botones / expansión | Libre |
-
-#### Componentes adicionales
-
-| Componente | Valor | Cantidad | Costo |
-|---|---|---|---|
-| CD40106BE | Hex Schmitt Trigger | 1 | ~$0.50 |
-| Capacitor 100nF | Cerámico X7R (bypass Vcc) | 1 | ~$0.05 |
-| **Total** | | | **~$0.55 USD** |
-
-#### Comparativa
-
-| Topología | Histéresis | Glitches | Velocidad max | Costo |
-|---|---|---|---|---|
-| Pull-up + RC (actual) | No | Posibles | ~10 kHz | ~$0.10 |
-| **Pull-up + RC + CD40106BE** | **Sí (~0.5 V)** | **Eliminados** | **>100 kHz** | **~$0.55** |
-
-#### Alternativas de IC
-
-| IC | Tipo | Paquete | Canales | Voltaje | Nota |
-|---|---|---|---|---|---|
-| **CD40106BE** | Inversor hex Schmitt | DIP-14 | 6 | 3–18V | **Implementado** |
-| SN74LVC1G17 | Buffer (no inversor) | SOT-23-5 | 1 | 1.65–5.5V | Alternativa SMD |
-| SN74LVC1G14 | Inversor Schmitt | SOT-23-5 | 1 | 1.65–5.5V | Alternativa SMD |
-
-> **Recomendación:** El CD40106BE es ideal para una **PCB dedicada**. Un chip DIP-14 cubre 4 canales de encoder + 2 reservados, todo por ~$0.55 USD (solo el chip + bypass). En protoboard estándar (40 líneas), el montaje del chip + bypass ocupa poco espacio y es sencillo de implementar.
-
-> **Referencias:** [CD40106B Datasheet — TI](https://www.ti.com/lit/ds/symlink/cd40106b.pdf) · [Investigación completa](docs/research/ai_research/CD40106BE_INVESTIGATION.md)
-
----
-
-### Telemetría de Potencia (INA219)
-
-El INA219 mide en tiempo real:
-
-- **Voltaje de bus** (`v_bus`): tensión de la fuente (0–26 V)
-- **Corriente** (`i_ma`): corriente consumida por el motor (±3200 mA)
-- **Potencia** (`p_mw`): potencia instantánea calculada por el chip
-
-#### Posición en el circuito
-
-```
-Batería (+) ──── VIN+ ──[shunt INA219]── VIN- ──── L298N VS
-Batería (−) ──────────────────────────────────────── GND común
-```
-
-#### Configuración I2C
-
-```cpp
-#include <Wire.h>
-#include <INA219_WE.h>
-
-INA219_WE ina219(&Wire, 0x40);  // A0=GND, A1=GND → 0x40
-
-void setup() {
-    Wire.begin(21, 22);   // SDA=GPIO21, SCL=GPIO22
-    ina219.init();
-    ina219.setMeasureMode(INA219_CONTINUOUS);  // Modo continuo
-}
-```
-
-#### Usos del dato de potencia
-
-- Detección de sobrecarga del motor (protección térmica)
-- Estimación de eficiencia (potencia mecánica vs eléctrica)
-- Logging para identificación de parámetros del motor (Km, Kb)
-- Correlación PID: `error` vs `potencia consumida`
+| Topología                       | Histéresis            | Glitches             | Filtro HF                | Velocidad max     | Costo            |
+| -------------------------------- | ---------------------- | -------------------- | ------------------------ | ----------------- | ---------------- |
+| Pull-up solamente                | No                     | Posibles             | No                       | ~10 kHz           | ~$0.05           |
+| Pull-up + Schmitt                | Sí (~1.3 V)           | Eliminados           | No                       | >100 kHz          | ~$0.55           |
+| **Pull-up + Schmitt + RC** | **Sí (~1.3 V)** | **Eliminados** | **Sí (1.59 kHz)** | **>50 kHz** | **~$0.85** |
 
 ---
 
@@ -507,13 +467,14 @@ void setup() {
 
 ### Modos de operación
 
-| Modo | Código | Descripción |
-|---|---|---|
-| Libre | `m0` | Motor deshabilitado, encoders activos |
-| PWM manual | `m1` | PWM fijo, sin lazo |
-| PID posición servo | `m2` | Setpoint en grados, lazo cerrado servo |
-| PID posición péndulo | `m3` | Setpoint en grados, lazo cerrado péndulo |
-| LQR péndulo invertido | `m4` | Control en espacio de estados (implementado) |
+| Modo                   | Código | Descripción                              |
+| ---------------------- | ------- | ----------------------------------------- |
+| Libre                  | `m0`  | Motor deshabilitado, encoders activos     |
+| PWM manual             | `m1`  | PWM fijo, sin lazo                        |
+| PID posición servo    | `m2`  | Setpoint en grados, lazo cerrado servo    |
+| PID posición péndulo | `m3`  | Setpoint en grados, lazo cerrado péndulo |
+| LQR péndulo invertido | `m4`  | Control en espacio de estados             |
+| Swing-up               | `m5`  | Levantamiento del péndulo por energía   |
 
 ### Implementación PID
 
@@ -527,17 +488,18 @@ filteredVel = VEL_ALPHA * rawVel + (1.0f - VEL_ALPHA) * filteredVel;
 float u = Kp * err + Ki * integralTerm + Kd * filteredVel;
 ```
 
-### Parámetros por defecto (v1.20.0)
+### Parámetros por defecto
 
-| Parámetro | Servo | Péndulo |
-|---|---|---|
-| `Kp` | 3.0 | 15.0 |
-| `Ki` | 0.5 | 0.5 |
-| `Kd` | 0.15 | 2.0 |
-| `VEL_ALPHA` (EMA) | 0.12 | 0.15 |
-| Frecuencia loop | 200 Hz | 200 Hz |
-
-**LQR (modo 4):** `K1=1.0` (θ servo), `K2=25.0` (α péndulo), `K3=0.5` (θ'), `K4=3.0` (α')
+| Parámetro           | Servo (m2) | Péndulo (m3) | LQR (m4) |
+| -------------------- | ---------- | ------------- | -------- |
+| `Kp`               | 3.0        | 15.0          | —       |
+| `Ki`               | 0.5        | 0.5           | —       |
+| `Kd`               | 0.15       | 2.0           | —       |
+| `VEL_ALPHA` (EMA)  | 0.12       | 0.15          | —       |
+| `K1` (θ servo)    | —         | —            | 1.0      |
+| `K2` (α péndulo) | —         | —            | 25.0     |
+| `K3` (θ')         | —         | —            | 0.5      |
+| `K4` (α')         | —         | —            | 3.0      |
 
 > Los parámetros se han sintonizado experimentalmente. Ver [Calibración](#calibración).
 
@@ -548,48 +510,83 @@ float u = Kp * err + Ki * integralTerm + Kd * filteredVel;
 ### Estructura del proyecto
 
 ```
-firmware/
+src/firmware/
 ├── esp32_qube_l298n/
-│   └── esp32_qube_l298n.ino   ← Firmware principal
-├── platformio.ini              ← Configuración PlatformIO
-└── README.md
+│   ├── esp32_qube_l298n.ino   ← Firmware principal (~1350 líneas)
+│   └── credentials.h          ← WiFi STA (gitignored)
+└── platformio.ini             ← Configuración PlatformIO
 ```
 
 ### Tasks FreeRTOS
 
-| Task | Core | Prioridad | Período | Función |
-|---|---|---|---|---|
-| `task_control` | Core 1 | 5 | 5 ms (200 Hz) | Leer encoders, PID, PWM |
-| `task_ina219` | Core 0 | 3 | 10 ms (100 Hz) | Leer INA219, filtrar |
-| `task_telemetry` | Core 0 | 2 | 100 ms (10 Hz) | JSON → Serial/WiFi |
-### Comandos HTTP (query string)
+| Task               | Core   | Prioridad | Período       | Función                |
+| ------------------ | ------ | --------- | -------------- | ----------------------- |
+| `task_control`   | Core 1 | 5         | 5 ms (200 Hz)  | Leer encoders, PID, PWM |
+| `task_ina219`    | Core 0 | 3         | 10 ms (100 Hz) | Leer INA219, filtrar    |
+| `task_telemetry` | Core 0 | 2         | 100 ms (10 Hz) | JSON → Serial/WiFi     |
+
+### Endpoints HTTP
+
+#### GET /state
+
+Retorna JSON con el estado completo del sistema (servo + péndulo + INA219):
+
+```json
+{
+  "mode": 2,
+  "count": 1024, "position_deg": 15.2, "setpoint_deg": 20.0, "error_deg": 4.8,
+  "pend_count": -128, "pend_position_deg": -2.3, "pend_setpoint_deg": 0.0, "pend_error_deg": 2.3,
+  "pwm": 45,
+  "ina_ok": true, "v_bus": 11.8, "i_ma": 350.0, "p_mw": 4130.0
+}
+```
+
+#### GET /cmd
+
+| Parámetro                   | Tipo   | Descripción               |
+| ---------------------------- | ------ | -------------------------- |
+| `m`                        | 0–5   | Modo de operación         |
+| `s`                        | float  | Setpoint servo (grados)    |
+| `sp`                       | float  | Setpoint péndulo (grados) |
+| `p`                        | int    | PWM manual (−255 a 255)   |
+| `kp`, `ki`, `kd`       | float  | PID gains servo            |
+| `kpp`, `kip`, `kdp`    | float  | PID gains péndulo         |
+| `lqr1`–`lqr4`           | float  | LQR gains                  |
+| `ke`                       | float  | Ganancia swing-up          |
+| `bt`                       | float  | Umbral transición LQR     |
+| `cpr`                      | float  | Counts per revolution      |
+| `ed`                       | −1, 1 | Dirección encoder         |
+| `z`                        | 1      | Zero position servo        |
+| `zp`                       | 1      | Zero position péndulo     |
+| `x`                        | 1      | Paro de emergencia         |
+| `wifi_ssid`, `wifi_pass` | str    | Guardar credenciales WiFi  |
+| `wifi_reconnect`           | 1      | Reconectar WiFi            |
+
+### Comandos HTTP de uso frecuente
 
 ```bash
 # Leer estado
 curl -s http://192.168.4.1/state
 
-# Modos: m0=stop, m1=PWM, m2=PID servo, m3=PID péndulo, m4=LQR
-/cmd?m=2                  # Modo PID servo
-/cmd?s=45                 # Setpoint servo 45°
-/cmd?sp=0                 # Setpoint péndulo 0°
-/cmd?m=4                  # Modo LQR
+# Modos: m0=stop, m1=PWM, m2=PID servo, m3=PID péndulo, m4=LQR, m5=swing-up
+curl "http://192.168.4.1/cmd?m=2&s=20"        # PID servo, setpoint 20°
+curl "http://192.168.4.1/cmd?m=4"              # LQR péndulo invertido
+curl "http://192.168.4.1/cmd?m=5"              # Swing-up
 
-# PID servo: kp, ki, kd
-/cmd?kp=3.0&ki=0.5&kd=0.15
+# Ajustar PID servo
+curl "http://192.168.4.1/cmd?kp=3.0&ki=0.5&kd=0.15"
 
-# PID péndulo: kpp, kip, kdp
-/cmd?kpp=15.0&kip=0.5&kdp=2.0
+# Ajustar PID péndulo
+curl "http://192.168.4.1/cmd?kpp=15.0&kip=0.5&kdp=2.0"
 
-# LQR: lqr1-4
-/cmd?lqr1=1&lqr2=25&lqr3=0.5&lqr4=3
+# Ajustar LQR
+curl "http://192.168.4.1/cmd?lqr1=1&lqr2=25&lqr3=0.5&lqr4=3"
 
-# Péndulo: zp=zero, op=offset, edp=direccion, cprp=CPR
-/cmd?zp=1                 # Zero péndulo
+# Swing-up
+curl "http://192.168.4.1/cmd?m=5&ke=0.5&bt=20"
 
-# Otros
-/cmd?p=100                # PWM manual (modo 1)
-/cmd?x=1                  # Paro de emergencia
-/cmd?z=1                  # Zero servo
+# Paro de emergencia
+curl "http://192.168.4.1/cmd?x=1"
 ```
 
 ---
@@ -602,23 +599,24 @@ Guía paso a paso para poner en funcionamiento el sistema completo.
 
 #### Software
 
-| Herramienta | Propósito | Instalación |
-|---|---|---|
-| **Python ≥ 3.12** | GUI y análisis de datos | [python.org](https://www.python.org/downloads/) |
-| **[uv](https://docs.astral.sh/uv/)** | Gestor de paquetes Python | `pip install uv` |
-| **[PlatformIO](https://platformio.org/)** | Compilar firmware ESP32 | Extensión VSCode o `pip install platformio` |
-| **Git** | Clonar repositorio | [git-scm.com](https://git-scm.com/) |
+| Herramienta                                  | Propósito                | Instalación                                   |
+| -------------------------------------------- | ------------------------- | ---------------------------------------------- |
+| **Python ≥ 3.12**                     | GUI y análisis de datos  | [python.org](https://www.python.org/downloads/)   |
+| **[uv](https://docs.astral.sh/uv/)**      | Gestor de paquetes Python | `pip install uv`                             |
+| **[PlatformIO](https://platformio.org/)** | Compilar firmware ESP32   | Extensión VSCode o `pip install platformio` |
+| **Git**                                | Clonar repositorio        | [git-scm.com](https://git-scm.com/)               |
 
 #### Hardware mínimo
 
-| Componente | Estado mínimo |
-|---|---|
-| ESP32-WROOM-32 | Conectado por USB |
-| Fuente 12V (LiPo 3S o PSU) | Alimentando el L298N |
-| L298N + LM2596 | Regulador ajustado a 5V |
-| Motor DC + encoder | Conectado al L298N |
-| Encoder péndulo (opcional) | Solo para modo `m3` |
-| INA219 (opcional) | Solo para telemetría de potencia |
+| Componente                  | Estado mínimo                       |
+| --------------------------- | ------------------------------------ |
+| ESP32-WROOM-32              | Conectado por USB                    |
+| Fuente 12 V (LiPo 3S o PSU) | Alimentando el L298N                 |
+| L298N + LM2596              | Regulador ajustado a 5 V             |
+| Motor DC + encoder          | Conectado al L298N                   |
+| CD40106BE + componentes RC  | Acondicionamiento de señal          |
+| Encoder péndulo (opcional) | Solo para modos `m3`/`m4`/`m5` |
+| INA219 (opcional)           | Solo para telemetría de potencia    |
 
 ---
 
@@ -636,7 +634,7 @@ make test                         # Verificar (opcional)
 ### 3. Ajustar el LM2596 (⚠️ ANTES de conectar el ESP32)
 
 1. **Desconectar** el ESP32 del circuito
-2. Conectar solo el LM2596 a la fuente de 12V
+2. Conectar solo el LM2596 a la fuente de 12 V
 3. Medir con multímetro entre `OUT+` y `OUT−`
 4. Girar el potenciómetro hasta leer **5.00 V** exactos
 5. Recién conectar el ESP32 al pin `VIN`
@@ -650,7 +648,7 @@ make test                         # Verificar (opcional)
 #### Opción A: PlatformIO (recomendado)
 
 ```bash
-cd firmware
+cd src/firmware
 pio pkg install                   # Instalar dependencias
 pio run                           # Compilar
 pio run --target upload           # Flashear al ESP32
@@ -659,11 +657,11 @@ pio device monitor --baud 115200  # Monitor serie
 
 #### Opción B: Arduino IDE
 
-1. Abrir `firmware/esp32_qube_l298n/esp32_qube_l298n.ino`
+1. Abrir `src/firmware/esp32_qube_l298n/esp32_qube_l298n.ino`
 2. **Tools → Board → ESP32 Arduino → ESP32 Dev Module**
 3. Seleccionar puerto COM
 4. Instalar librerías: `INA219_WE`, `ArduinoJson`, `AsyncTCP`, `ESPAsyncWebServer`
-5. Click **Upload** ▶️
+5. Click **Upload**
 6. Abrir Monitor Serie a 115200 baud
 
 #### Verificación
@@ -671,11 +669,11 @@ pio device monitor --baud 115200  # Monitor serie
 Al encender, el monitor serie debe mostrar:
 
 ```
-[BOOT] QUBE ESP32 — v1.x.x
+=== QUBE ESP32 + L298N + INA219 ===
 [ENC] Servo   CNT=0   POS=0.00°
 [ENC] Pendulo CNT=0   POS=0.00°
 [INA219] V=11.8V  I=0mA  P=0mW
-[WIFI] Conectado a: QUBE-AP  IP: 192.168.4.1
+[WIFI] Conectado a: QUBE-ESP32  IP: 192.168.4.1
 [MODO] Libre (m0)
 ```
 
@@ -691,23 +689,24 @@ Al encender, el monitor serie debe mostrar:
 
 #### Modo STA (Station)
 
-- Configurar credenciales vía serial: `wifi_ssid<TuRed>`, `wifi_pass<TuClave>`
-- El ESP32 obtiene IP por DHCP del router
-- Verificar con comando serial: `wifi_info`
+- Editar `credentials.h` con tus credenciales y recompilar
+- O configurar vía HTTP: `/cmd?wifi_ssid=Red&wifi_pass=Clave`
+- Reconectar: `/cmd?wifi_reconnect=1`
 
-> ⚠️ Las credenciales STA se guardan en NVS del ESP32.
+> ⚠️ Las credenciales STA se guardan en NVS del ESP32. El archivo `credentials.h` está en `.gitignore`.
 
 ---
 
 ### 6. Modos de operación
 
-| Modo | Comando HTTP | Descripción |
-|---|---|---|
+| Modo   | Comando HTTP | Descripción                                   |
+| ------ | ------------ | ---------------------------------------------- |
 | `m0` | `/cmd?m=0` | Libre — motor deshabilitado, encoders activos |
-| `m1` | `/cmd?m=1` | PWM manual — `/cmd?p=100` |
-| `m2` | `/cmd?m=2` | PID posición servo — `/cmd?s=20` |
-| `m3` | `/cmd?m=3` | PID posición péndulo — `/cmd?sp=0` |
-| `m4` | `/cmd?m=4` | LQR péndulo invertido |
+| `m1` | `/cmd?m=1` | PWM manual —`/cmd?p=100`                    |
+| `m2` | `/cmd?m=2` | PID posición servo —`/cmd?s=20`            |
+| `m3` | `/cmd?m=3` | PID posición péndulo —`/cmd?sp=0`         |
+| `m4` | `/cmd?m=4` | LQR péndulo invertido                         |
+| `m5` | `/cmd?m=5` | Swing-up por energía                          |
 
 ---
 
@@ -723,46 +722,25 @@ uv run python gui/app.py           # Opción 2
 3. Abrir la GUI — ingresa IP y haz clic en "Conectar"
 
 **Panel de gráficas (4 subplots):**
+
 1. **Servo** — posición angular y setpoint
 2. **Péndulo** — posición angular y setpoint
-3. **PWM** — señal de control (-255 a +255)
+3. **PWM** — señal de control (−255 a +255)
 4. **Potencia** — corriente (mA) y voltaje bus (V) del INA219
 
 **Panel de control:**
-- Modo de operación (5 radios: STOP, PWM, PID Servo, PID Péndulo, LQR)
+
+- Modo de operación (6 radios: STOP, PWM, PID Servo, PID Péndulo, LQR, Swing-up)
 - Setpoint servo y péndulo (grados)
 - PID gains servo y péndulo (Kp, Ki, Kd)
-- LQR gains (K1-K4)
+- LQR gains (K1–K4)
+- Swing-up gains (ke, threshold)
 - Zero Servo / Zero Péndulo / Reset / STOP
 - Exportar CSV
 
 ---
 
-### 8. Comandos HTTP directos
-
-```bash
-# Leer estado (JSON completo con servo + péndulo)
-curl -s http://192.168.4.1/state | python -m json.tool
-
-# Modo PID servo + setpoint 20°
-curl "http://192.168.4.1/cmd?m=2&s=20"
-
-# Modo LQR péndulo invertido
-curl "http://192.168.4.1/cmd?m=4"
-
-# Ajustar PID servo
-curl "http://192.168.4.1/cmd?kp=3.0&ki=0.5&kd=0.15"
-
-# Ajustar PID péndulo
-curl "http://192.168.4.1/cmd?kpp=15.0&kip=0.5&kdp=2.0"
-
-# Paro de emergencia
-curl "http://192.168.4.1/cmd?x=1"
-```
-
----
-
-### 9. Flujo típico de trabajo
+### 8. Flujo típico de trabajo
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -776,7 +754,7 @@ curl "http://192.168.4.1/cmd?x=1"
 ├─────────────────────────────────────────────────────────────┤
 │ 5. PROBAR MOTOR      Modo m1 → motor gira                   │
 ├─────────────────────────────────────────────────────────────┤
-│ 6. CALIBRAR PID      Ziegler-Nichols → Ku, Tu → ganancias  │
+│ 6. CALIBRAR PID      Ziegler-Nichols → Ku, Tu → ganancias   │
 ├─────────────────────────────────────────────────────────────┤
 │ 7. MONITOREAR        GUI (make run) o curl /state           │
 ├─────────────────────────────────────────────────────────────┤
@@ -786,7 +764,7 @@ curl "http://192.168.4.1/cmd?x=1"
 
 ---
 
-### 10. Tests y desarrollo
+### 9. Tests y desarrollo
 
 ```bash
 make test              # Ejecutar tests (pytest)
@@ -800,17 +778,18 @@ make help              # Ver todos los comandos
 
 ---
 
-### 11. Solución rápida de problemas
+### 10. Solución rápida de problemas
 
-| Síntoma | Causa probable | Solución |
-|---|---|---|
-| `CNT` no cambia al girar encoder | Falta pull-up o level shifter de alta impedancia | Instalar pull-up 4.7kΩ a 3.3V + Schmitt trigger |
-| Error de boot al usar GPIO34/35 | `INPUT_PULLUP` en pin input-only | Usar solo `INPUT` + pull-up externo |
-| PID diverge inmediatamente | Motor invertido | Cambiar `MOTOR_DIR = -1` en `config.h` |
-| Derivativo oscila con ruido | `Kd` demasiado alto | Aumentar `alpha` del filtro EMA (0.12–0.20) |
-| ESP32 no responde por WiFi | IP incorrecta | Verificar SSID/IP, usar modo AP `192.168.4.1` |
-| GUI no muestra datos | IP mal configurada | Revisar `ESP32_IP` en `gui/esp32_client.py` |
-| `VIN` se calienta | Voltaje > 5.5V | Ajustar LM2596 a 5.00V con multímetro |
+| Síntoma                           | Causa probable                     | Solución                                         |
+| ---------------------------------- | ---------------------------------- | ------------------------------------------------- |
+| `CNT` no cambia al girar encoder | Falta pull-up o Schmitt trigger    | Verificar pull-up 4.7 kΩ + Schmitt + RC          |
+| Error de boot al usar GPIO34/35    | `INPUT_PULLUP` en pin input-only | Usar solo `INPUT` + pull-up externo             |
+| PID diverge inmediatamente         | Motor invertido                    | Cambiar `MOTOR_DIR = -1` en firmware            |
+| Derivativo oscila con ruido        | `Kd` demasiado alto              | Aumentar `alpha` del filtro EMA (0.12–0.20)    |
+| ESP32 no responde por WiFi         | IP incorrecta                      | Verificar SSID/IP, usar modo AP `192.168.4.1`   |
+| GUI no muestra datos               | IP mal configurada                 | Revisar `ESP32_IP` en `src/qube_ui/client.py` |
+| `VIN` se calienta                | Voltaje > 5.5 V                    | Ajustar LM2596 a 5.00 V con multímetro           |
+| Señal encoder ruidosa a alta RPM  | Filtro RC insuficiente             | Verificar 10 kΩ + 10 nF post-Schmitt             |
 
 ---
 
@@ -832,7 +811,7 @@ Girar manualmente y verificar que `CNT` incremente/decremente correctamente.
 Si el encoder retrocede con PWM positivo:
 
 ```cpp
-// config.h
+// En el firmware:
 #define MOTOR_DIR  (-1)   // +1 o -1
 ```
 
@@ -841,7 +820,7 @@ O invertir cables `OUT1`/`OUT2` del L298N.
 ### 3. CPR (Counts Per Revolution)
 
 ```cpp
-// config.h
+// Ajustar según tu encoder:
 #define ENC_SERVO_CPR    2048
 #define ENC_PENDULO_CPR  1024
 ```
@@ -853,7 +832,9 @@ O invertir cables `OUT1`/`OUT2` del L298N.
 3. Medir período de oscilación → `Tu`
 4. Calcular:
 
-$$K_p = 0.6 \cdot K_u \qquad K_i = \frac{2 K_p}{T_u} \qquad K_d = \frac{K_p \cdot T_u}{8}$$
+$$
+K_p = 0.6 \cdot K_u \qquad K_i = \frac{2 K_p}{T_u} \qquad K_d = \frac{K_p \cdot T_u}{8}
+$$
 
 5. Ajustar `alpha` del filtro EMA si hay ruido en `Kd`.
 
@@ -863,68 +844,84 @@ $$K_p = 0.6 \cdot K_u \qquad K_i = \frac{2 K_p}{T_u} \qquad K_d = \frac{K_p \cdo
 
 ### Comparativa de rendimiento
 
-| Métrica | Arduino Uno + L298N | ESP32 + L298N (este proyecto) | Quanser QUBE |
-|---|---|---|---|
-| Frecuencia de control | ~100 Hz | **200 Hz** | 1000 Hz |
-| Encoders simultáneos | 1 (limitado) | **2** | 2 |
-| Telemetría de potencia | No | **Sí (INA219)** | Sí |
-| Conectividad inalámbrica | No | **WiFi + BLE** | Ethernet |
-| Costo | ~$35 USD | **~$70 USD** | ~$3,000 USD |
-| Swing-up automático | No | En desarrollo | Sí |
+| Métrica                  | Arduino Uno + L298N      | ESP32 + L298N (este proyecto) | Quanser QUBE |
+| ------------------------- | ------------------------ | ----------------------------- | ------------ |
+| Frecuencia de control     | ~100 Hz                  | **200 Hz**              | 1000 Hz      |
+| Encoders simultáneos     | 1 (limitado)             | **2**                   | 2            |
+| Telemetría de potencia   | No                       | **Sí (INA219)**        | Sí          |
+| Conectividad inalámbrica | No                       | **WiFi + BLE**          | Ethernet     |
+| Swing-up automático      | No                       | **Sí (modo 5)**        | Sí          |
+| Costo                     | ~$35 USD | **~$70 USD** | ~$3,000 USD                   |              |
 
-### Validación del encoder (post HW-FIX-1)
+### Validación del encoder (post HW-FIX)
 
-| Métrica | Antes (level shifter 7MΩ) | Después (pull-up 4.7kΩ) |
-|---|---|---|
-| `enc_a` | Ruido (~1.5V indeterminado) | Transiciones limpias 0V / 3.3V |
-| `CNT` servo | ±0 cambio/min | +2048 counts/revolución |
-| `POS` servo | 0.0° (fijo) | 0° → 360° → 0° continuo |
-| Convergencia PID | No (sin feedback) | Sí (±2° en 2–3 s) |
+| Métrica         | Antes (sin acondicionamiento) | Después (Schmitt + RC)          |
+| ---------------- | ----------------------------- | -------------------------------- |
+| Señal encoder   | Ruido (~1.5 V indeterminado)  | Transiciones limpias 0 V / 3.3 V |
+| `CNT` servo    | ±0 cambio/min                | +2048 counts/revolución         |
+| `POS` servo    | 0.0° (fijo)                  | 0° → 360° → 0° continuo     |
+| Convergencia PID | No (sin feedback)             | Sí (±2° en 2–3 s)            |
 
 ---
 
 ## Problemas Conocidos y Soluciones
 
-### HW-FIX-1: Encoder open-drain con level shifter de alta impedancia
+### HW-FIX-1: Encoder open-drain sin acondicionamiento
 
-**Síntoma:** `CNT` no actualiza aunque el eje gire.  
-**Causa:** Level shifter 5V→3.3V con ~7 MΩ. τ ≈ 350–700 µs, demasiado lento.  
-**Solución:** Eliminar level shifter. Instalar pull-up 4.7 kΩ a 3.3V + Schmitt trigger CD40106BE.
+**Síntoma:** `CNT` no actualiza aunque el eje gire.
+**Causa:** Level shifter de alta impedancia (~7 MΩ) o pull-up insuficiente.
+**Solución:** Pull-up 4.7 kΩ a 3.3 V + Schmitt trigger CD40106BE + filtro RC (10 kΩ / 10 nF).
 
 ### HW-FIX-2: GPIO34/35 sin `INPUT_PULLUP`
 
-**Síntoma:** Error de boot al llamar `pinMode(34, INPUT_PULLUP)`.  
-**Causa:** GPIO34/35 son input-only, sin pull-up interno.  
+**Síntoma:** Error de boot al llamar `pinMode(34, INPUT_PULLUP)`.
+**Causa:** GPIO34/35 son input-only, sin pull-up interno.
 **Solución:** Usar `pinMode(34, INPUT)` + pull-ups externos.
 
 ### SW-FIX-1: Ruido de cuantización en término derivativo
 
-**Síntoma:** Derivativo oscila violentamente con `Kd` alto.  
-**Causa:** ±1–2 counts de ruido del encoder.  
+**Síntoma:** Derivativo oscila violentamente con `Kd` alto.
+**Causa:** ±1–2 counts de ruido del encoder.
 **Solución:** Filtro EMA (`alpha ≈ 0.12`) sobre velocidad estimada.
 
 ### SW-FIX-2: Dirección del motor vs encoder
 
-**Síntoma:** PID diverge inmediatamente.  
-**Causa:** Retroalimentación positiva.  
-**Solución:** `MOTOR_DIR = -1` en `config.h` o invertir cables OUT1/OUT2.
+**Síntoma:** PID diverge inmediatamente.
+**Causa:** Retroalimentación positiva.
+**Solución:** `MOTOR_DIR = -1` en firmware o invertir cables OUT1/OUT2.
 
 ---
 
 ## Roadmap
 
-- [x] Control PID posición servo (encoder 1)
-- [x] Telemetría INA219 (V, I, P)
-- [x] Fix acondicionamiento señal open-drain (HW-FIX-1)
-- [x] Schmitt trigger CD40106BE para encoders servo (GPIO34/35) — **implementado**
+- [X] Control PID posición servo (encoder 1)
+- [X] Telemetría INA219 (V, I, P)
+- [X] Fix acondicionamiento señal open-drain (HW-FIX-1)
+- [X] Schmitt trigger CD40106BE para encoders (GPIO34/35)
+- [X] Filtro RC post-Schmitt (10 kΩ / 10 nF) para cada canal
+- [X] Swing-up por energía (modo 5)
+- [X] WiFi STA no-bloqueante + credenciales gitignored
+- [X] GUI con modos LQR y Swing-up
 - [ ] Integración encoder péndulo (encoder 2) — **en progreso**
-- [ ] Control PID posición péndulo (modo m3)
-- [ ] Control LQR péndulo invertido (modo m4)
-- [ ] Swing-up automático (modo m5)
+- [ ] Control PID posición péndulo (modo m3) — validación
+- [ ] Control LQR péndulo invertido (modo m4) — validación
 - [ ] Dashboard web en tiempo real (WebSocket)
 - [ ] Logging en SPIFFS / tarjeta SD
 - [ ] Identificación de parámetros del motor
-- [ ] Paper académico comparativo vs Quanser QUBE
+- [ ] PCB Rev2.0 con acondicionamiento integrado
+
+---
+
+## Documentación Adicional
+
+| Documento                | Ubicación                                                                | Descripción                                          |
+| ------------------------ | ------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Arquitectura del sistema | [`docs/arquitectura.md`](docs/arquitectura.md)                             | Diagramas detallados, pinout completo, FreeRTOS tasks |
+| Modelo físico           | [`docs/MODELO_FISICO_SISTEMA_QUBE.md`](docs/MODELO_FISICO_SISTEMA_QUBE.md) | Ecuaciones del motor, encoder, péndulo, PID y LQR    |
+| Investigación           | [`docs/research/`](docs/research/)                                         | Papers, estado del arte, acondicionamiento de señal  |
+| Validación científica  | [`docs/validation/`](docs/validation/)                                     | Marco científico, checklist, matriz de referencias   |
+| Changelog                | [`CHANGELOG.md`](CHANGELOG.md)                                             | Historial de versiones del firmware                   |
+| Experimentos             | [`experiments/`](experiments/)                                             | Datos CSV y notas de experimentos                     |
 
 ---
 
@@ -951,8 +948,8 @@ $$K_p = 0.6 \cdot K_u \qquad K_i = \frac{2 K_p}{T_u} \qquad K_d = \frac{K_p \cdo
 
 ### Documentación interna
 
-- [Investigación CD40106BE](docs/research/ai_research/CD40106BE_INVESTIGATION.md) — Schmitt trigger para acondicionamiento de señal
-- [Estabilización de señales](docs/research/SIGNAL_STABILIZATION.md) — Filtros y mitigación de ruido
+- [Investigación CD40106BE](docs/research/ai_research/investigacion_cd40106be.md) — Schmitt trigger para acondicionamiento de señal
+- [Estabilización de señales](docs/research/estabilizacion_senales.md) — Filtros y mitigación de ruido
 - [CHANGELOG](CHANGELOG.md) — Historial de versiones del firmware
 
 ---
@@ -963,4 +960,4 @@ MIT License — ver [LICENSE](LICENSE) para detalles.
 
 ---
 
-*Última actualización: Mayo 27, 2026*
+*Última actualización: 1 de junio, 2026*

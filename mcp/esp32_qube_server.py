@@ -112,7 +112,7 @@ def pio_clean(environment: str = "esp32dev") -> str:
 
 
 @mcp.tool()
-def pio_serial_monitor(baud: int = 115200, lines: int = 50) -> str:
+def pio_serial_monitor(baud: int = 115200, _lines: int = 50) -> str:
     """Lee las últimas líneas del monitor serial del ESP32.
 
     Abre una conexión serial breve y captura las líneas disponibles.
@@ -338,6 +338,7 @@ def qube_stop_motor() -> str:
     except Exception as e:
         return f"❌ Error deteniendo motor: {e}"
 
+
 @mcp.tool()
 def qube_set_wifi(ssid: str, password: str) -> str:
     """Guarda credenciales WiFi en NVS del ESP32 (no se suben al repo).
@@ -408,6 +409,7 @@ def qube_set_swing_up(ke: float = 0.5, balance_threshold: float = 20.0) -> str:
         return f"✅ Swing-up configurado: ke={ke}, threshold={balance_threshold}°"
     except Exception as e:
         return f"❌ Error configurando swing-up: {e}"
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  HERRAMIENTAS — Análisis de datos CSV
@@ -535,7 +537,7 @@ def qube_analyze_csv(filename: str) -> str:
         errors = [row[col_map[error_key]] for row in data_rows if col_map[error_key] < len(row)]
         if errors:
             abs_errors = [abs(e) for e in errors]
-            report.append(f"\n🎯 Error:")
+            report.append("\n🎯 Error:")
             report.append(f"   |Error| final: {abs_errors[-1]:.2f}°")
             report.append(f"   |Error| max: {max(abs_errors):.2f}°")
             report.append(f"   |Error| medio: {sum(abs_errors) / len(abs_errors):.2f}°")
@@ -545,7 +547,7 @@ def qube_analyze_csv(filename: str) -> str:
     if pwm_key is not None and pwm_key in col_map:
         pwms = [row[col_map[pwm_key]] for row in data_rows if col_map[pwm_key] < len(row)]
         if pwms:
-            report.append(f"\n⚡ PWM:")
+            report.append("\n⚡ PWM:")
             report.append(f"   Rango: [{min(pwms):.0f}, {max(pwms):.0f}]")
             report.append(f"   |PWM| final: {abs(pwms[-1]):.0f}")
 
@@ -556,7 +558,7 @@ def qube_analyze_csv(filename: str) -> str:
     if i_key is not None and i_key in col_map:
         currents = [row[col_map[i_key]] for row in data_rows if col_map[i_key] < len(row)]
         if currents:
-            report.append(f"\n🔋 Corriente:")
+            report.append("\n🔋 Corriente:")
             report.append(f"   Máx: {max(currents):.1f} mA")
             report.append(f"   Media: {sum(currents) / len(currents):.1f} mA")
             report.append(f"   Final: {currents[-1]:.1f} mA")
@@ -564,7 +566,7 @@ def qube_analyze_csv(filename: str) -> str:
     if v_key is not None and v_key in col_map:
         voltages = [row[col_map[v_key]] for row in data_rows if col_map[v_key] < len(row)]
         if voltages:
-            report.append(f"\n🔌 Voltaje:")
+            report.append("\n🔌 Voltaje:")
             report.append(f"   Rango: [{min(voltages):.2f}, {max(voltages):.2f}] V")
 
     # Columnas disponibles

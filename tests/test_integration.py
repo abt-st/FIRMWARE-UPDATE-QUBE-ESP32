@@ -54,7 +54,9 @@ class TestSignalBufferIntegration:
         samples = buffer.get_all()
 
         assert len(samples) == 10
+        assert isinstance(samples[0], QubeState)
         assert samples[0].position_deg == 0.0
+        assert isinstance(samples[-1], QubeState)
         assert samples[-1].position_deg == 9.0
 
     def test_thread_safety(self) -> None:

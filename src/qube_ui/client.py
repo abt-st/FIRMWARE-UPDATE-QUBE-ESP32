@@ -205,10 +205,6 @@ class ESP32Client:
         """Set PID gains."""
         return self.send_cmd(kp=kp, ki=ki, kd=kd)
 
-    def set_pid_gains(self, kp: float, ki: float, kd: float) -> bool:
-        """Set PID gains (alias for set_pid)."""
-        return self.set_pid(kp, ki, kd)
-
     def set_cpr(self, cpr: float) -> bool:
         """Set encoder counts per revolution."""
         return self.send_cmd(cpr=f"{cpr:.1f}")
@@ -221,17 +217,9 @@ class ESP32Client:
         """Zero the current position."""
         return self.send_cmd(z=1)
 
-    def zero_position(self) -> bool:
-        """Zero the current position (alias for zero_here)."""
-        return self.zero_here()
-
     def stop_motor(self) -> bool:
         """Emergency stop."""
         return self.send_cmd(x=1)
-
-    def emergency_stop(self) -> bool:
-        """Emergency stop (alias for stop_motor)."""
-        return self.stop_motor()
 
     # ── Pendulum commands ────────────────────────────────────────────
 

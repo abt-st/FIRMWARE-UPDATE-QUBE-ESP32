@@ -15,6 +15,7 @@ import csv
 import threading
 import time
 import tkinter as tk
+from collections.abc import Callable
 from tkinter import filedialog, messagebox
 
 import matplotlib
@@ -24,7 +25,9 @@ matplotlib.use("TkAgg")
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from matplotlib.artist import Artist
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
 from .client import ESP32Client, QubeState
 
@@ -305,7 +308,7 @@ class App(tk.Tk):
         chart_frame.pack(side="left", fill="both", expand=True)
 
         plt.style.use("dark_background")
-        self._fig = plt.Figure(figsize=(9, 8), facecolor=COLORS["bg"])
+        self._fig = Figure(figsize=(9, 8), facecolor=COLORS["bg"])
         gs = gridspec.GridSpec(
             4,
             1,
@@ -381,8 +384,7 @@ class App(tk.Tk):
         scrollbar.pack(side="right", fill="y")
 
         # Canvas scrolleable
-        canvas = tk.Canvas(panel, bg=COLORS["panel"], highlightthickness=0,
-                           yscrollcommand=scrollbar.set, width=255)
+        canvas = tk.Canvas(panel, bg=COLORS["panel"], highlightthickness=0, yscrollcommand=scrollbar.set, width=255)
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=canvas.yview)
 
@@ -394,34 +396,48 @@ class App(tk.Tk):
         def _on_inner_configure(_event: object) -> None:
             canvas.configure(scrollregion=canvas.bbox("all"))
 
-        def _on_canvas_configure(_event: object) -> None:
+        def _on_canvas_configure(_event: tk.Event[tk.Canvas]) -> None:
             canvas.itemconfig(inner_window, width=_event.width)
 
         inner.bind("<Configure>", _on_inner_configure)
         canvas.bind("<Configure>", _on_canvas_configure)
 
         # Mouse wheel scroll
-        def _on_mousewheel(event: object) -> None:
+        def _on_mousewheel(event: tk.Event[tk.Misc]) -> None:
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         def section(text: str) -> None:
-            tk.Label(inner, text=text, bg=COLORS["accent"], fg=COLORS["text"],
-                     font=("Consolas", 9, "bold"), pady=3, padx=6, anchor="w",
-                     ).pack(fill="x", pady=(8, 2))
+            tk.Label(
+                inner,
+                text=text,
+                bg=COLORS["accent"],
+                fg=COLORS["text"],
+                font=("Consolas", 9, "bold"),
+                pady=3,
+                padx=6,
+                anchor="w",
+            ).pack(fill="x", pady=(8, 2))
 
-        def row(label: str, widget_cb: callable) -> None:
+        def row(label: str, widget_cb: Callable[[tk.Frame], None]) -> None:
             f = tk.Frame(inner, bg=COLORS["panel"])
             f.pack(fill="x", padx=8, pady=2)
-            tk.Label(f, text=label, bg=COLORS["panel"], fg=COLORS["text"],
-                     font=("Consolas", 9), width=12, anchor="w").pack(side="left")
+            tk.Label(
+                f, text=label, bg=COLORS["panel"], fg=COLORS["text"], font=("Consolas", 9), width=12, anchor="w"
+            ).pack(side="left")
             widget_cb(f)
 
         def entry_widget(parent_frame: tk.Frame, var: tk.StringVar) -> None:
-            tk.Entry(parent_frame, textvariable=var, width=8, bg=COLORS["accent"],
-                     fg=COLORS["text"], insertbackground="white",
-                     font=("Consolas", 10)).pack(side="left")
+            tk.Entry(
+                parent_frame,
+                textvariable=var,
+                width=8,
+                bg=COLORS["accent"],
+                fg=COLORS["text"],
+                insertbackground="white",
+                font=("Consolas", 10),
+            ).pack(side="left")
 
         # ── Estado actual ─────────────────────────────────────────────
         section("ESTADO ACTUAL")
@@ -440,44 +456,91 @@ class App(tk.Tk):
         f_mode.pack(fill="x", padx=8, pady=4)
         self._mode_var = tk.IntVar(value=0)
         for val, label in MODE_NAMES.items():
-            tk.Radiobutton(f_mode, text=label, variable=self._mode_var, value=val,
-                           command=self._send_mode, bg=COLORS["panel"], fg=COLORS["text"],
-                           selectcolor=COLORS["accent"], activebackground=COLORS["panel"],
-                           activeforeground=COLORS["text"], font=("Consolas", 9),
-                           ).pack(anchor="w")
+            tk.Radiobutton(
+                f_mode,
+                text=label,
+                variable=self._mode_var,
+                value=val,
+                command=self._send_mode,
+                bg=COLORS["panel"],
+                fg=COLORS["text"],
+                selectcolor=COLORS["accent"],
+                activebackground=COLORS["panel"],
+                activeforeground=COLORS["text"],
+                font=("Consolas", 9),
+            ).pack(anchor="w")
 
         # ── Setpoint Servo ────────────────────────────────────────────
         section("SETPOINT SERVO (°)")
         f_sp = tk.Frame(inner, bg=COLORS["panel"])
         f_sp.pack(fill="x", padx=8, pady=4)
         self._sp_var = tk.StringVar(value="0")
-        tk.Entry(f_sp, textvariable=self._sp_var, width=8, bg=COLORS["accent"],
-                 fg=COLORS["text"], insertbackground="white", font=("Consolas", 10),
-                 ).pack(side="left", padx=(0, 4))
-        tk.Button(f_sp, text="Enviar", command=self._send_setpoint, bg=COLORS["accent"],
-                  fg=COLORS["text"], font=("Consolas", 9), relief="flat").pack(side="left")
+        tk.Entry(
+            f_sp,
+            textvariable=self._sp_var,
+            width=8,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            insertbackground="white",
+            font=("Consolas", 10),
+        ).pack(side="left", padx=(0, 4))
+        tk.Button(
+            f_sp,
+            text="Enviar",
+            command=self._send_setpoint,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(side="left")
 
         # ── Setpoint Péndulo ──────────────────────────────────────────
         section("SETPOINT PÉNDULO (°)")
         f_psp = tk.Frame(inner, bg=COLORS["panel"])
         f_psp.pack(fill="x", padx=8, pady=4)
         self._psp_var = tk.StringVar(value="0")
-        tk.Entry(f_psp, textvariable=self._psp_var, width=8, bg=COLORS["accent"],
-                 fg=COLORS["text"], insertbackground="white", font=("Consolas", 10),
-                 ).pack(side="left", padx=(0, 4))
-        tk.Button(f_psp, text="Enviar", command=self._send_pendulum_setpoint, bg=COLORS["accent"],
-                  fg=COLORS["text"], font=("Consolas", 9), relief="flat").pack(side="left")
+        tk.Entry(
+            f_psp,
+            textvariable=self._psp_var,
+            width=8,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            insertbackground="white",
+            font=("Consolas", 10),
+        ).pack(side="left", padx=(0, 4))
+        tk.Button(
+            f_psp,
+            text="Enviar",
+            command=self._send_pendulum_setpoint,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(side="left")
 
         # ── PWM Manual ────────────────────────────────────────────────
         section("PWM MANUAL (-255…255)")
         f_pwm = tk.Frame(inner, bg=COLORS["panel"])
         f_pwm.pack(fill="x", padx=8, pady=4)
         self._pwm_var = tk.StringVar(value="0")
-        tk.Entry(f_pwm, textvariable=self._pwm_var, width=8, bg=COLORS["accent"],
-                 fg=COLORS["text"], insertbackground="white", font=("Consolas", 10),
-                 ).pack(side="left", padx=(0, 4))
-        tk.Button(f_pwm, text="Enviar", command=self._send_pwm, bg=COLORS["accent"],
-                  fg=COLORS["text"], font=("Consolas", 9), relief="flat").pack(side="left")
+        tk.Entry(
+            f_pwm,
+            textvariable=self._pwm_var,
+            width=8,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            insertbackground="white",
+            font=("Consolas", 10),
+        ).pack(side="left", padx=(0, 4))
+        tk.Button(
+            f_pwm,
+            text="Enviar",
+            command=self._send_pwm,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(side="left")
 
         # ── PID Servo ────────────────────────────────────────────────
         section("PID SERVO")
@@ -487,8 +550,15 @@ class App(tk.Tk):
         row("Kp:", lambda p: entry_widget(p, self._kp_var))
         row("Ki:", lambda p: entry_widget(p, self._ki_var))
         row("Kd:", lambda p: entry_widget(p, self._kd_var))
-        tk.Button(inner, text="Aplicar PID Servo", command=self._send_pid, bg=COLORS["accent"],
-                  fg=COLORS["text"], font=("Consolas", 9), relief="flat").pack(padx=8, pady=4, anchor="w")
+        tk.Button(
+            inner,
+            text="Aplicar PID Servo",
+            command=self._send_pid,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(padx=8, pady=4, anchor="w")
 
         # ── PID Péndulo ──────────────────────────────────────────────
         section("PID PÉNDULO")
@@ -498,8 +568,15 @@ class App(tk.Tk):
         row("Kp:", lambda p: entry_widget(p, self._kp_p_var))
         row("Ki:", lambda p: entry_widget(p, self._ki_p_var))
         row("Kd:", lambda p: entry_widget(p, self._kd_p_var))
-        tk.Button(inner, text="Aplicar PID Péndulo", command=self._send_pendulum_pid, bg=COLORS["accent"],
-                  fg=COLORS["text"], font=("Consolas", 9), relief="flat").pack(padx=8, pady=4, anchor="w")
+        tk.Button(
+            inner,
+            text="Aplicar PID Péndulo",
+            command=self._send_pendulum_pid,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(padx=8, pady=4, anchor="w")
 
         # ── LQR Gains ────────────────────────────────────────────────
         section("LQR GANANCIAS")
@@ -511,8 +588,15 @@ class App(tk.Tk):
         row("K2 (al):", lambda p: entry_widget(p, self._lqr2_var))
         row("K3 (th'):", lambda p: entry_widget(p, self._lqr3_var))
         row("K4 (al'):", lambda p: entry_widget(p, self._lqr4_var))
-        tk.Button(inner, text="Aplicar LQR", command=self._send_lqr, bg=COLORS["accent"],
-                  fg=COLORS["text"], font=("Consolas", 9), relief="flat").pack(padx=8, pady=4, anchor="w")
+        tk.Button(
+            inner,
+            text="Aplicar LQR",
+            command=self._send_lqr,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(padx=8, pady=4, anchor="w")
 
         # ── Swing-up Parameters ──────────────────────────────────────
         section("SWING-UP")
@@ -520,37 +604,77 @@ class App(tk.Tk):
         self._bt_var = tk.StringVar(value="20.0")
         row("ke (gain):", lambda p: entry_widget(p, self._ke_var))
         row("threshold:", lambda p: entry_widget(p, self._bt_var))
-        tk.Button(inner, text="Aplicar Swing-up", command=self._send_swing_up, bg=COLORS["accent"],
-                  fg=COLORS["text"], font=("Consolas", 9), relief="flat").pack(padx=8, pady=4, anchor="w")
+        tk.Button(
+            inner,
+            text="Aplicar Swing-up",
+            command=self._send_swing_up,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(padx=8, pady=4, anchor="w")
 
         # ── Offset / Calibración ──────────────────────────────────────
         section("OFFSET (°)")
         f_ofs = tk.Frame(inner, bg=COLORS["panel"])
         f_ofs.pack(fill="x", padx=8, pady=4)
         self._ofs_var = tk.StringVar(value="0")
-        tk.Entry(f_ofs, textvariable=self._ofs_var, width=8, bg=COLORS["accent"],
-                 fg=COLORS["text"], insertbackground="white", font=("Consolas", 10),
-                 ).pack(side="left", padx=(0, 4))
-        tk.Button(f_ofs, text="Set Offset", command=self._send_offset, bg=COLORS["accent"],
-                  fg=COLORS["text"], font=("Consolas", 9), relief="flat").pack(side="left")
+        tk.Entry(
+            f_ofs,
+            textvariable=self._ofs_var,
+            width=8,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            insertbackground="white",
+            font=("Consolas", 10),
+        ).pack(side="left", padx=(0, 4))
+        tk.Button(
+            f_ofs,
+            text="Set Offset",
+            command=self._send_offset,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(side="left")
 
         # ── Acciones ──────────────────────────────────────────────────
         section("ACCIONES")
         f_act = tk.Frame(inner, bg=COLORS["panel"])
         f_act.pack(fill="x", padx=8, pady=4)
-        tk.Button(f_act, text="Zero Servo", command=self._send_zero, bg=COLORS["accent"],
-                  fg=COLORS["text"], font=("Consolas", 9), relief="flat").pack(side="left", padx=2)
-        tk.Button(f_act, text="Zero Pénd", command=self._send_zero_pendulum, bg=COLORS["accent"],
-                  fg=COLORS["text"], font=("Consolas", 9), relief="flat").pack(side="left", padx=2)
-        tk.Button(f_act, text="Reset", command=self._send_reset, bg=COLORS["accent"],
-                  fg=COLORS["text"], font=("Consolas", 9), relief="flat").pack(side="left", padx=2)
+        tk.Button(
+            f_act,
+            text="Zero Servo",
+            command=self._send_zero,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(side="left", padx=2)
+        tk.Button(
+            f_act,
+            text="Zero Pénd",
+            command=self._send_zero_pendulum,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(side="left", padx=2)
+        tk.Button(
+            f_act,
+            text="Reset",
+            command=self._send_reset,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(side="left", padx=2)
 
     def _make_status_label(self, text: str) -> tk.Label:
         """Crear una etiqueta de estado en el panel (usa inner frame via winfo_toplevel)."""
         # Encuentra el canvas inner frame via el widget padre
         parent = self._canvas_panel_inner
-        lbl = tk.Label(parent, text=text, bg=COLORS["panel"], fg=COLORS["text"],
-                       font=("Consolas", 9), anchor="w")
+        lbl = tk.Label(parent, text=text, bg=COLORS["panel"], fg=COLORS["text"], font=("Consolas", 9), anchor="w")
         lbl.pack(fill="x", padx=8, pady=1)
         return lbl
 
@@ -601,12 +725,12 @@ class App(tk.Tk):
             cache_frame_data=False,
         )
 
-    def _update_charts(self, _frame: int) -> None:
+    def _update_charts(self, _frame: int) -> list[Artist]:
         """Actualizar todas las gráficas con los datos más recientes."""
         t, pos, sp, _err, ppos, psp, _perr, pwm, ima, vb, _pmw = self.buffer.snapshot()
 
         if len(t) == 0:
-            return
+            return []
 
         # Subplot 1: Servo
         self._ln_pos.set_data(t, pos)
@@ -652,6 +776,7 @@ class App(tk.Tk):
         self._lbl_vb_d.config(text=f"V bus:   {state.v_bus:.2f} V")
 
         self._canvas.draw_idle()
+        return []
 
     # ------------------------------------------------------------------ #
     #  Envío de comandos                                                   #
@@ -787,6 +912,7 @@ def main() -> None:
         pass
     except Exception:
         import traceback
+
         traceback.print_exc()
         raise
 

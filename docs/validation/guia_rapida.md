@@ -10,12 +10,12 @@
 ```
 docs/validation/
 ├── README.md                 ← Índice maestro (empieza aquí para entender todo)
-├── QUICK_START_GUIDE.md      ← Esta guía (2 min)
-├── EXECUTIVE_SUMMARY.md      ← Resumen ejecutivo con gráficas (15 min) ⭐
-├── VALIDATION_REPORT.md      ← Análisis académico exhaustivo (60 min)
-├── SCIENTIFIC_FRAMEWORK.md   ← Certificado final, 5 min ⭐
-├── REFERENCE_MATRIX.md       ← 22 referencias verificables (30 min)
-└── VERIFICATION_CHECKLIST.md ← 160 items cumplidos (20 min)
+├── guia_rapida.md               ← Esta guía (2 min)
+├── resumen_ejecutivo.md         ← Resumen ejecutivo con gráficas (15 min) ⭐
+├── informe_validacion.md        ← Análisis académico exhaustivo (60 min)
+├── marco_cientifico.md          ← Certificado final, 5 min ⭐
+├── matriz_referencias.md        ← 22 referencias verificables (30 min)
+└── lista_verificacion.md        ← 160 items cumplidos (20 min)
 ```
 
 ---
@@ -23,19 +23,19 @@ docs/validation/
 ## 🎯 ¿Qué leer según tu objetivo?
 
 ### Decisión rápida (5 min)
-→ `SCIENTIFIC_FRAMEWORK.md` — Veredicto: **91/100, APTO PARA TESIS** ✅
+→ `marco_cientifico.md` — Veredicto: **91/100, APTO PARA TESIS** ✅
 
 ### Presentación ante comité (15 min)
-→ `EXECUTIVE_SUMMARY.md` — Puntuación + gráficas + evidencia
+→ `resumen_ejecutivo.md` — Puntuación + gráficas + evidencia
 
 ### Análisis completo (1 hora)
-→ `VALIDATION_REPORT.md` — Fundamentación completa + datos
+→ `informe_validacion.md` — Fundamentación completa + datos
 
 ### Verificar referencias (30 min)
-→ `REFERENCE_MATRIX.md` — 22 referencias con URLs, BibTeX
+→ `matriz_referencias.md` — 22 referencias con URLs, BibTeX
 
 ### Evidencia de rigor (20 min)
-→ `VERIFICATION_CHECKLIST.md` — 160/160 items cumplidos
+→ `lista_verificacion.md` — 160/160 items cumplidos
 
 ---
 

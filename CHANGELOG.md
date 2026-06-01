@@ -4,6 +4,359 @@ Registro de cambios del firmware `esp32_qube_l298n.ino` y documentación del pro
 
 ---
 
+## [1.25.0] — 2026-06-01
+### Swing-up funcional + LQR con fallback automático + 500Hz
+
+#### Problema identificado
+- El péndulo no lograba estabilizarse con swing-up (modo 5) + LQR (modo 4).
+- **Bug 1:** Signo invertido en la ley de energía del swing-up — el motor peleaba contra el péndulo.
+- **Bug 2:** Kick unidireccional — el péndulo se atascaba colgado hacia abajo.
+- **Bug 3:** LQR usaba ángulo sin normalizar — la protección siempre mataba el PWM.
+- **Bug 4:** Sin fallback — cuando el LQR fallaba, el sistema se quedaba en modo 4 muerto.
+- **Bug 5:** Servo desbordaba a ±175°+ durante LQR causando crash mecánico.
+
+#### Cambios aplicados
+
+**1. Ley de energía corregida (modo 5)**
+- Antes: `E_err = E - Er` → signo invertido, torque contra el péndulo.
+- Ahora: `energy_sign = (Er > E) ? 1.0f : -1.0f` → ley Quanser/Åström-Furuta correcta.
+
+**2. Kick alternante para iniciar oscilación (modo 5)**
+- Antes: PWM constante `MOTOR_DIR * PWM_MAX * 0.8` siempre en una dirección.
+- Ahora: Alterna dirección cada 250ms (~periodo natural/2) para construir resonancia.
+- Threshold ampliado: `abs(alpha_dot) < 0.15f` (era 0.1).
+
+**3. Función `normalizeAngle()` + LQR normalizado (modo 4)**
+- Nueva función que normaliza ángulos a [-180, 180].
+- `alpha = normalizeAngle(pendPos - 180.0f)` → 0=arriba, ±180=abajo.
+- Velocidades calculadas con ángulo crudo (evita errores en wrap-around).
+
+**4. Fallback automático LQR → Swing-up**
+- Si `|alpha| > 90°` por >2 segundos → vuelve a modo 5 (swing-up).
+- Permite ciclar swing-up → LQR → fallback → swing-up hasta estabilizar.
+
+**5. Protección LQR ampliada y hard stop de servo**
+- Protección: `|alpha| > 140°` → PWM=0 (era 150°).
+- Hard stop: `|pos| > 120°` → fuerza motor de vuelta al centro.
+
+**6. Filtro de velocidad más rápido**
+- `VEL_ALPHA_PEND = 0.30f` (era 0.15) → reduce retardo de 33ms a 17ms.
+
+**7. Frecuencia de control: 200 Hz → 500 Hz**
+- `CONTROL_PERIOD_US = 2000` (era 5000) → latencia 2ms vs 5ms.
+
+**8. Balance threshold reducido**
+- `balance_threshold = 12°` (era 20°) → transición más cercana a vertical.
+
+**9. Velocidad gate en transición**
+- Solo permite transición si `|alpha_dot| < 500°/s` (evita transiciones prematuras).
+
+#### Cambios de firmware
+```cpp
+// NUEVA: normalización de ángulo
+float normalizeAngle(float deg) {
+  deg = fmodf(deg, 360.0f);
+  if (deg > 180.0f) deg -= 360.0f;
+  else if (deg < -180.0f) deg += 360.0f;
+  return deg;
+}
+
+// Swing-up: energía corregida + kick alternante
+const float energy_sign = (Er > E) ? 1.0f : -1.0f;
+if (abs(alpha_dot) < 0.15f) {
+    if (((millis() / 250) % 2) == 0)
+        pwm = MOTOR_DIR * (int)(PWM_MAX * 0.7f);
+    else
+        pwm = -MOTOR_DIR * (int)(PWM_MAX * 0.7f);
+} else {
+    float u = ke_gain * energy_sign * motion_sign;
+    pwm = (int)(MOTOR_DIR * u * PWM_MAX);
+}
+
+// LQR: ángulo normalizado + fallback + hard stop
+const float alpha = normalizeAngle(pendPos - 180.0f);
+// ... (fallback si |alpha|>90 por >2s)
+// ... (hard stop si |pos|>120)
+
+// Control: 500 Hz
+const unsigned long CONTROL_PERIOD_US = 2000;
+```
+
+#### Parámetros LQR actuales
+- K1=1.5 (posición servo), K2=25 (ángulo péndulo), K3=1.0 (vel servo), K4=10 (vel péndulo)
+- VEL_ALPHA_PEND=0.30, balance_threshold=12°, velocity gate=500°/s
+
+#### Notas
+- Resultado: LQR atrapa péndulo a 0.2° de la vertical pero no sostiene >0.5s.
+- Limitación física identificada: motor L298N demasiado lento. BTS7960 recomendado como upgrade.
+- Datos de test en `experiments/2026-06-01_swing/`
+- Log completo de tuning en `experiments/2026-06-01_swing/TUNING_LOG.md`
+
+
+## [1.24.1] — 2026-06-01
+
+### Fix LQR: ángulo péndulo sin normalizar + protección mata motor
+
+#### Problema identificado
+- El swing-up (modo 5) funcionaba y el péndulo llegaba a ~0° (vertical), pero el LQR (modo 4) nunca lograba estabilizarlo.
+- **100% de los 6 ciclos de swing-up fallaron**: el péndulo llegaba a 160-178° y el LQR apagaba el motor inmediatamente.
+- **Causa raíz:** El LQR usaba `pendPos` crudo (que puede ser -521°, 512°, etc. por acumulación del encoder) directamente como `alpha`.
+- La protección `abs(alpha) > 150` se activaba siempre porque 161° > 150°, aunque 161° es casi la vertical (180°).
+- Segunda causa: la condición de transición swing-up→LQR usaba `fmodf(abs(pendPos), 360) - 180` que no normalizaba correctamente.
+
+#### Cambios aplicados
+
+**1. Función `normalizeAngle()`**
+- Normaliza cualquier ángulo a [-180, 180].
+- Usada en LQR y en la condición de transición del swing-up.
+
+**2. LQR con ángulo normalizado (modo 4)**
+- `alpha = normalizeAngle(pendPos - 180.0)` → 0=arriba, ±180=abajo.
+- Velocidades calculadas con ángulo crudo (evita errores en wrap-around ±180°).
+- Protección `abs(alpha) > 150` ahora funciona correctamente: solo apaga motor cuando el péndulo está cerca del fondo.
+
+**3. Transición swing-up→LQR simplificada**
+- Antes: `fmodf(abs(pendPos), 360) - 180` (incorrecto para ángulos negativos grandes).
+- Ahora: `dist_from_up = abs(normalizeAngle(pendPos - 180.0))`.
+
+#### Cambios de firmware
+```cpp
+// NUEVA: normalización de ángulo
+float normalizeAngle(float deg) {
+  deg = fmodf(deg, 360.0f);
+  if (deg > 180.0f) deg -= 360.0f;
+  else if (deg < -180.0f) deg += 360.0f;
+  return deg;
+}
+
+// LQR: ANTES (sin normalizar, protección siempre activa)
+const float alpha = pendPos;  // -521° → abs > 150 → PWM=0
+
+// LQR: DESPUÉS (normalizado, 0=arriba)
+const float alpha_raw = pendPos;
+const float alpha = normalizeAngle(pendPos - 180.0f);  // 0=arriba
+// Velocidades calculadas de alpha_raw (sin wrap-around)
+```
+
+#### Notas
+- Los gains LQR (K1=1, K2=25, K3=0.5, K4=3) pueden necesitar ajuste fino ahora que el LQR efectivamente controla.
+- Si el péndulo oscila alrededor de la vertical sin estabilizar, subir K2 y K4.
+- Subir firmware: `pio run --target upload`
+
+
+## [1.24.0] — 2026-06-01
+
+### PCNT hardware encoder + CPR medido experimentalmente
+
+#### Problema identificado
+- El encoder del servo usaba polling en `loop()` (`USE_ENCODER_POLLING`), que perdia transiciones porque el loop tambien maneja WiFi, web server, INA219 y serial.
+- Las ISRs por software (`isrEncoderA/B`) usaban `digitalRead()` dentro de la interrupcion (~5us cada llamada), demasiado lento para seguir el ritmo de un encoder incremental a velocidad real.
+- El encoder del pendulo no tenia ISRs configuradas, solo polling.
+- El CPR de ambos encoders estaba configurado en 2048 por defecto sin verificacion experimental.
+- Medir el CPR manualmente era impreciso: el usuario debia rotar el eje y contar vueltas, introduciendo error humano significativo.
+
+#### Cambios aplicados
+
+**1. PCNT (Pulse Counter) hardware para ambos encoders**
+- Reemplaza ISRs y polling con el periferico PCNT del ESP32, que decodifica cuadratura X4 en hardware sin intervencion de CPU.
+- PCNT_UNIT_0: encoder servo (GPIO34/GPIO35)
+- PCNT_UNIT_1: encoder pendulo (GPIO32/GPIO33)
+- Cada canal configura: pulse en un pin, control en el otro, con modos REVERSE/KEEP para direccion.
+- Eliminadas: `isrEncoderA`, `isrEncoderB`, `isrPendulumA`, `isrPendulumB`, `updateEncoderPolling`, `updatePendulumPolling`, `resetEncoderStateTracker`, `resetPendulumStateTracker`.
+- Eliminadas variables: `encoderCount`, `pendulumCount`, `encoderLastState`, `pendulumLastState`, `USE_ENCODER_INTERRUPTS`, `USE_ENCODER_POLLING`.
+
+**2. ISRs para encoder pendulo (agregadas, ahora obsoletas)**
+- Se agregaron `isrPendulumA`/`isrPendulumB` antes de migrar a PCNT. Quedan como referencia pero no se usan.
+
+**3. Reset PCNT via HTTP y serial**
+- Comando `r` ahora llama `resetPcnt()` en vez de `encoderCount = 0`.
+- Comando `zp` (HTTP) solo resetea offset, no el contador PCNT.
+
+**4. CPR verificado experimentalmente**
+- Encoder pendulo: CPR = 2048 confirmado (1024 counts = 180.000 exacto).
+- Encoder servo: CPR = 2048 verificado via PID (setPosition a 45/-45/0 grados funciona correctamente).
+- Ambos encoders son el mismo modelo Premotec 990412016913.
+
+**5. Scripts de medicion de CPR** (`experiments/2026-06-01_cpr_measurement/`)
+- `diagnose_encoder.py`: lee estados enc_a/enc_b en tiempo real para diagnosticar hardware.
+- `sweep_cpr.py`: barrido no-interactivo con soporte para encoder servo o pendulum.
+- `motor_sweep_cpr.py`: mueve el motor con PWM y graba counts.
+- `servo_sweep_cpr.py`: barrido servo considerando rango mecanico +/-90 grados.
+- `dual_encoder_sweep.py`: compara servo vs pendulum simultaneamente.
+
+#### Cambios de firmware
+```cpp
+// ANTES: polling en loop (perdia transiciones)
+void loop() {
+  updateEncoderPolling();    // ~5us por digitalRead x2
+  updatePendulumPolling();   // same
+  ...
+}
+
+// DESPUES: PCNT en hardware (cero perdida)
+void loop() {
+  ws.cleanupClients();      // PCNT cuenta en background
+  ...
+}
+
+// Init PCNT (X4 cuadratura)
+pcnt_config_t ch0 = {
+    .pulse_gpio_num = pinA,
+    .ctrl_gpio_num = pinB,
+    .lctrl_mode = PCNT_MODE_KEEP,
+    .hctrl_mode = PCNT_MODE_REVERSE,
+    .pos_mode = PCNT_COUNT_INC,
+    .neg_mode = PCNT_COUNT_DEC,
+    .counter_h_lim = 32767,
+    .counter_l_lim = -32768,
+    .unit = PCNT_UNIT_0,
+    .channel = PCNT_CHANNEL_0,
+};
+```
+
+#### Notas
+- El PCNT de 16 bits permite ~4 vueltas completas antes de overflow (con CPR=2048). El loop a 200Hz lee el counter periodicamente.
+- El ratio de la caja de engranajes es ~10:1 (medido via comparacion dual encoder).
+- Los scripts de medicion corrigen el bug de emojis Unicode en Windows (cp1252).
+
+## [1.23.1] — 2026-06-01
+
+### Fix swing-up (modo 5): signo invertido de energía y kick unidireccional
+
+#### Problema identificado
+- El péndulo no subía al activar swing-up (modo 5): se quedaba estático colgado hacia abajo.
+- El motor generaba mucha fricción porque empujaba en una sola dirección sin alternar.
+- **Causa raíz 1:** La ley de bombeo de energía usaba `E - Er` en vez de `Er - E`, invirtiendo el signo del torque. El motor peleaba contra el péndulo en vez de bombearle energía.
+- **Causa raíz 2:** El kick inicial (`abs(alpha_dot) < 0.1`) siempre aplicaba `MOTOR_DIR * PWM_MAX * 0.8` (= -80), dirección constante. Esto atascaba el péndulo en vez de iniciar oscilación.
+
+#### Cambios aplicados
+
+**1. Signo correcto de la ley de energía (Quanser/Åström-Furuta)**
+- Antes: `u = ke_gain * (E - Er) * sign_val * 80.0` → signo invertido.
+- Ahora: `u = ke_gain * sign(Er - E) * sign(α̇ · cos α)` → bombea cuando E < Er, reduce cuando E > Er.
+- Eliminada la constrain a [-1, 1] y la multiplicación por 80.0 innecesaria.
+
+**2. Kick alternante para iniciar oscilación**
+- Antes: PWM constante en una dirección → péndulo se atasca.
+- Ahora: alterna dirección cada 250ms (~periodo natural del péndulo / 2) para construir amplitud por resonancia.
+- Se activa cuando `abs(alpha_dot) < 0.15` (threshold ampliado de 0.1 a 0.15).
+
+#### Cambios de firmware
+```cpp
+// ANTES (buggeado):
+const float E_err = E - Er;  // signo invertido
+if (abs(alpha_dot) < 0.1f) {
+    pwm = MOTOR_DIR * PWM_MAX * 0.8f;  // siempre -80
+} else {
+    float u = ke_gain * E_err * sign_val * 80.0f;
+    u = constrain(u, -1.0f, 1.0f);
+    pwm = (int)(MOTOR_DIR * u * PWM_MAX);
+}
+
+// DESPUÉS (corregido):
+const float energy_sign = (Er > E) ? 1.0f : -1.0f;
+if (abs(alpha_dot) < 0.15f) {
+    // Kick alternante cada 250ms
+    if (((millis() / 250) % 2) == 0)
+        pwm = MOTOR_DIR * (int)(PWM_MAX * 0.7f);
+    else
+        pwm = -MOTOR_DIR * (int)(PWM_MAX * 0.7f);
+} else {
+    float u = ke_gain * energy_sign * motion_sign;
+    pwm = (int)(MOTOR_DIR * u * PWM_MAX);
+}
+```
+
+#### Notas
+- Parámetro ajustable `ke_gain` (default 0.5) controla la intensidad del bombeo. Subir si el motor no tiene fuerza para construir oscilación.
+- `balance_threshold` (default 20°) controla la transición automática a LQR (modo 4).
+- Subir firmware: `pio run --target upload`
+
+## [1.23.0] — 2026-06-01
+
+### Gain Scheduling dual-mode para PID servo (Modo 2)
+
+#### Problema identificado
+- El PID del modo 2 usaba gains fijos (Kp=3.0, Ki=0.5, Kd=0.15) para cualquier magnitud de error.
+- Errores pequeños (<10°) generaban movimientos demasiado agresivos que causaban overshoot y pérdida de posición por backlash mecánico.
+- Errores grandes (>10°) no tenían suficiente ganancia para responder rápidamente.
+- El escalonamiento de PWM existente limitaba la potencia pero no la dinámica del controlador.
+
+#### Cambios aplicados
+
+**1. Gain Scheduling dual-mode (modo 2)**
+- Dos juegos de gains independientes: **modo fino** (|error| ≤ 10°) y **modo grueso** (|error| > 10°).
+- Modo fino: Kp=2.0, Ki=0.8, Kd=0.2 — movimientos suaves, más amortiguación, PWM acotado (max 50).
+- Modo grueso: Kp=4.0, Ki=0.2, Kd=0.1 — respuesta rápida, PWM libre (max 100).
+- Histérisis de ±2° sobre el umbral (10°) para evitar chattering entre modos.
+- Dead band adaptiva: 0.5° en modo fino, 1.0° en modo grueso.
+- Toggle `useGainScheduling` para activar/desactivar el dual-mode (default: off, usa PID clásico).
+
+**2. Nuevos parámetros HTTP**
+- `gs=0|1` — activar/desactivar gain scheduling.
+- `kpf`, `kif`, `kdf` — gains del modo fino (Kp, Ki, Kd).
+- `kpc`, `kic`, `kdc` — gains del modo grueso (Kp, Ki, Kd).
+
+**3. Nuevos comandos seriales**
+- `g0` / `g1` — desactivar/activar gain scheduling.
+- `gf<val>`, `gi<val>`, `gd<val>` — ajustar gains del modo fino.
+- `GC<val>`, `GI<val>`, `Gd<val>` — ajustar gains del modo grueso.
+
+**4. Telemetría extendida**
+- Campo `gain_scheduling` (true/false) en JSON de `/state`.
+- Campo `gain_mode` (0=fino, 1=grueso) en JSON de `/state`.
+
+**5. Ayuda actualizada**
+- Línea de ayuda serial incluye comandos de gain scheduling.
+- Página HTML de `/` incluye endpoints de gain scheduling.
+
+#### Notas
+- **Backward compatible**: `useGainScheduling` default es `false`, mantiene el PID clásico existente.
+- Activar con `GET /cmd?gs=1` o `g1` por serial.
+- Los gains clásicos (Kp/Ki/Kd) siguen funcionando cuando el gain scheduling está desactivado.
+- Los parámetros de gain scheduling se resetean al cambiar de esquema (fine ↔ coarse).
+
+---
+## [1.22.0] — 2026-06-01
+
+### README completo: diagrama eléctrico actualizado con Schmitt Trigger + filtro RC
+
+#### Problema identificado
+- El README no reflejaba el circuito de acondicionamiento de señal real implementado en la protoboard.
+- El diagrama eléctrico mostraba solo Schmitt Trigger sin filtro RC, aunque el hardware ya tenía resistencias 10 kΩ y capacitores 10 nF a GND en cada canal.
+- Referencia interna a `gui/esp32_client.py` apuntaba a un archivo inexistente (migrado a `src/qube_ui/client.py`).
+
+#### Cambios aplicados
+
+**1. Diagrama eléctrico actualizado**
+- Circuito de acondicionamiento: Schmitt Trigger CD40106BE → filtro RC (10 kΩ serie + 10 nF a GND) → GPIO ESP32.
+- Diagrama de bloques general incluye Schmitt + RC en cada canal encoder.
+- Topología de potencia incluye GND del CD40106BE.
+
+**2. Sección de acondicionamiento de señal reescrita**
+- Circuito completo con doble inversión + filtro RC documentado con diagrama ASCII.
+- Cálculo de filtro RC: τ = 100 µs, f_c ≈ 1.59 kHz.
+- Tabla comparativa de 3 topologías: pull-up solamente, pull-up + Schmitt, pull-up + Schmitt + RC.
+- BOM actualizado: resistores 10 kΩ (×4) + capacitores 10 nF (×4).
+
+**3. Modos de operación actualizados**
+- Modo m5 (swing-up) incluido en todas las tablas de modos.
+- Tabla de parámetros PID actualizada con columna LQR.
+- Endpoints HTTP completos con todos los parámetros nuevos (swing-up, WiFi, LQR).
+
+**4. Estructura del proyecto reflejada**
+- Rutas actualizadas: `src/firmware/`, `src/qube_ui/`, `src/qube_analysis/`.
+- Referencia a `gui/esp32_client.py` corregida a `src/qube_ui/client.py`.
+- Sección "Documentación Adicional" con tabla de navegación a docs/.
+
+**5. Roadmap actualizado**
+- Ítems completados: swing-up, WiFi STA no-bloqueante, GUI con LQR/swing-up, filtro RC.
+- Nuevo ítem: PCB Rev2.0 con acondicionamiento integrado.
+
+#### Notas
+- Solo cambios en documentación (README.md). No se modifica firmware ni código Python.
+- Todos los enlaces internos verificados contra archivos existentes en el repositorio.
+
 ## [1.21.0] — 2026-05-29
 
 ### Swing-up (Modo 5), WiFi STA no-bloqueante y credenciales gitignored
