@@ -1,6 +1,472 @@
+## [1.34.0] — 2026-06-04
+### Eliminación completa del PID Péndulo (modo 3)
+
+#### Problema identificado
+El péndulo del QUBE es un brazo articulado pasivo sin motor propio. El modo 3 (PID Péndulo) intentaba controlar algo que no existe físicamente. Se eliminó completamente del firmware, interfaz web, GUI Python y servidor MCP.
+
+#### Cambios de firmware
+1. **Variables eliminadas**: `Kp_pend`, `Ki_pend`, `Kd_pend`, `integralTermPend`, `filteredVelPend`, `pendulum_setpoint_deg`
+2. **Constantes eliminadas**: `PEND_ANTIWIND_*`, `PEND_STICTION_*`, `PEND_DEADBAND_*`, `PEND_LIMIT_*` (11 constantes)
+3. **Función eliminada**: `resetPendulumPid()`
+4. **Bloque modo 3 eliminado**: todo el control PID del péndulo en el loop principal
+5. **Handlers HTTP eliminados**: `sp` (setpoint péndulo), `kpp`/`kip`/`kdp` (gains péndulo)
+6. **Serial**: sub-comando `sp` eliminado, referencias removidas de handlers `zp`, `op`, `edp`, `cprp`, `r`
+7. **Telemetría JSON**: removidos `pend_setpoint_deg` y `pend_error_deg` de `/state`
+8. **Conservado**: `prevPosPend` (swing-up), `VEL_ALPHA_PEND` (LQR), encoder péndulo, modos 4 y 5
+
+#### Cambios de interfaz web (SPIFFS)
+1. **index.html** (ambos data/): opción `PID Péndulo` removida del selector de modos
+2. **Panel PID Péndulo eliminado**: entradas Kp/Ki/Kd y botón OK
+3. **Fila SP P eliminada**: input setpoint péndulo y botón Set
+4. **Script restaurado**: funciones `toggleRec()`, `clearRec()`, `exportCSV()`, chart flush optimization, mode override
+
+#### Cambios de GUI Python
+1. **client.py**: métodos `set_pendulum_setpoint()` y `set_pendulum_pid()` eliminados
+2. **app.py**: `3: "PID Péndulo"` removido de MODE_NAMES, secciones UI SETPOINT PÉNDULO y PID PÉNDULO eliminadas, métodos `_send_pendulum_setpoint()` y `_send_pendulum_pid()` eliminados
+3. **Conservado**: gráfico péndulo, status labels, LQR, Swing-up, calibración (CPR/dir/offset péndulo)
+
+#### Cambios MCP
+1. **Herramienta `qube_set_swing_up()` eliminada**
+2. **`qube_set_mode()`**: modo 3 removido de descripción y diccionario
+
+#### Archivos modificados
+- `src/firmware/esp32_qube_l298n/esp32_qube_l298n.ino`
+- `src/firmware/data/index.html`
+- `src/firmware/esp32_qube_l298n/data/index.html`
+- `src/qube_ui/app.py`
+- `src/qube_ui/client.py`
+- `mcp/esp32_qube_server.py`
+
+
+## [1.33.0] — 2026-06-04
+### Firmware: alpha continuo, recovery persistente, dead zone + hardware fixes
+
+#### Sesión nocturna — 22+ iteraciones de firmware, 3+ horas
+
+#### Cambios de firmware (críticos)
+1. **Alpha continuo para LQR**: `alpha` calculado con aritmética modular usando `pendPosRaw` en vez de `pendPos - copysign(180, pendPos)`. Elimina la discontinuidad en ±180° que rompía el LQR y el fallback.
+2. **Recovery persistente en swing-up**: Variable global `swing_recovering` que mantiene el motor apagado cuando el péndulo cruza la vertical (`|pendPosRaw| > 180°`), espera a que caiga al fondo (`|pendPos| < 30°`), y reanuda el pumping.
+3. **Dead zone a 160°**: El swing-up no bombea cuando `|pendPosRaw| > 160°`. Permite que el péndulo alcance ±170° sin overshoot a spinning.
+4. **Damping progresivo 150°-180°**: Damping lineal de 0.3 a 1.0 del PWM máximo según proximidad a la vertical.
+5. **LQR K2_NEAR=30, K4_NEAR=15**: Gains probados que lograron 55+ segundos de estabilización (revertido de experimentos con K2=35, K4=20 que empeoraban el LQR).
+6. **Catch mode ±60 PWM**: Frenado al entrar a LQR (era ±20).
+7. **Fallback usa `pendPosRaw > 360°`**: En vez de `alpha > 45°` (wrapped) que no se activaba.
+8. **Servo protection direction-aware**: Corta PWM que empuja hacia el hard stop del servo (±70° → ±85°).
+9. **Anti-spin threshold 360°**: Reducido de 720° para detectar spinning antes.
+10. **`balance_threshold = 1.0°`**: Transicionar a LQR solo cuando el péndulo está a <1° de la vertical.
+
+#### Resultados
+- Swing-up alcanza ±170° consistentemente ✅
+- LQR atrapa el péndulo (mejor resultado: 11.3 segundos) ✅
+- Servo protection previene brownout ✅
+- Alpha continuo implementado (pendiente de prueba completa) ✅
+- **LQR no estabiliza sostenidamente** — oscilaciones demasiado grandes después de la captura ❌
+
+#### Hardware
+- **INA219 dañado parcialmente**: Lecturas inconsistentes tras picos de corriente del diodo invertido. `ina_ok: true` pero voltaje inestable.
+- **Diodo 1N4007 quemado**: Se quemó por polaridad invertida. **No usar diodo externo con H-bridge** — el L298N tiene diodos flyback internos.
+- **3 capacitores dañados** (470µF, 220µF, 100µF): Se dañaron por polaridad invertida. Descartar.
+- **LM2596 descalibrado temporalmente**: Se ajustó a 5V con potenciómetro.
+
+#### Archivos
+- `experiments/2026-06-03_swing/SESSION_LOG_20260604.md` — log completo de la sesión
+- `experiments/2026-06-03_swing/data/` — 5+ CSVs de tests
+
+#### Notas
+- RAM: 15.0%, Flash: 72.5%
+- Error de caché PlatformIO: `pio run -t clean` antes de recompilar si aparece `FileNotFoundError: .sconsign312.tmp`
+- Próximo paso: probar firmware con alpha continuo + recovery en test de 90s
+
+---
+
 # CHANGELOG — QUBE ESP32 (Firmware + Documentación)
 
 Registro de cambios del firmware `esp32_qube_l298n.ino` y documentación del proyecto para la modernización de la plataforma QUBE Servo en el marco de la tesis.
+
+---
+## [1.32.0] — 2026-06-04
+### GUI HTML: selector de modos, recolección de datos, fix freeze
+
+#### Problema identificado
+Selector de modos desincronizado, freeze de la página, y botón Set no movía el motor.
+
+#### Cambios aplicados
+1. **Selector de modos**: `selected` movido a STOP (modo 0), WebSocket sincroniza el modo
+   al dropdown con flag `modeUserOverride` (8s) para no sobreescribir selección manual.
+2. **Panel "Recolección de datos"**: botones Grabar/Exportar CSV/Borrar. Datos solo se
+   acumulan cuando el usuario presiona Grabar. Estado visible con conteo de muestras y tiempo.
+3. **Fix freeze**: chart updates throttleados a 200ms, `splice(0,n)` batch en vez de `shift()`,
+   CSV export usa `Array.push + join` en vez de concatenación de strings.
+4. **Botones Set Servo / Set Pén**: ahora envían `m=2&s=VALUE` y `m=3&sp=VALUE` respectivamente,
+   activando el modo automáticamente. Setpoints separados en vez de enviarse juntos.
+5. **SPIFFS upload**: se usó endpoint `/fs` POST del firmware (SPIFFS OTA no escribe).
+
+#### Archivos modificados
+`src/firmware/esp32_qube_l298n/data/index.html` (reescritura completa)
+
+---
+
+## [1.31.1] — 2026-06-04
+### Firmware: tuning LQR gains + handoff document
+
+#### Cambios aplicados
+1. **K2_NEAR**: 30→35 (subido ligeramente para más autoridad cerca de vertical)
+2. **K4_NEAR**: 20→15 (revertido — K4_NEAR=20 empeora el LQR: 3s vs 55s con 15)
+3. **Handoff document**: `experiments/2026-06-03_swing/HANDOFF.md` con todos los
+   parámetros, bugs corregidos, CSVs, y próximos pasos
+
+#### Hallazgo importante
+K4_NEAR=20 es peor que K4_NEAR=15. Con K4=20 el LQR pierde el péndulo en ~3s
+vs 55+ s con K4=15. El damping excesivo cerca de la vertical parece desestabilizar
+el ciclo límite.
+
+#### Notas
+Compilación: ✅ RAM 15.0%, Flash 72.5%
+27+ CSVs de tests en `experiments/2026-06-03_swing/data/`
+
+---
+
+## [1.31.0] — 2026-06-04
+### Firmware: LQR sostiene péndulo invertido 55+ segundos
+
+#### Resultado
+El LQR mantiene el péndulo en modo 4 (control invertido) durante **55+ segundos**
+en un ciclo límite estable alrededor de ±180°. El péndulo oscila entre -130° y
++210° (wrapped) pero nunca cae al fondo.
+
+#### Cambios aplicados
+1. **LQR gains moderados**: K2_NEAR 60→30, K4_NEAR 25→15 (reduce overshoot)
+2. **LQR_NEAR_DEG**: 15→25° (gain scheduling en rango más amplio)
+3. **ke_gain**: 0.45→0.5 (más autoridad en swing-up)
+4. **LQR_FALLBACK_ALPHA_DEG**: 45→30° (evita soltar el péndulo innecesariamente)
+5. **Servo centering**: kp=0.2 en swing-up (reduce oscilación del servo)
+6. **Soft saturation**: k=80°, y=2 (protección suave contra hard stop)
+7. **Anti-spin con cooldown**: 1s, reset inmediato de offset
+8. **Disipación de energía**: threshold 0.95, brake progresivo
+
+#### Parámetros finales del sistema
+| Parámetro | Valor |
+|---|---|
+| ke_gain | 0.5 |
+| balance_threshold | 5° |
+| vel threshold | 20°/s |
+| K1, K2 (base) | 2.0, 22 |
+| K2_NEAR, K4_NEAR | 30, 15 |
+| LQR_NEAR_DEG | 25° |
+| LQR_FALLBACK_ALPHA_DEG | 30° |
+| LQR_FALLBACK_TIME_MS | 500ms |
+| soft saturation k | 80° |
+| centering_kp | 0.2 |
+
+#### Notas
+El sistema entra en un ciclo límite — el péndulo no se estabiliza en exactamente
+180° pero se mantiene en el hemisferio superior indefinidamente. Para lograr
+estabilización completa se requiere reducir la amplitud del ciclo límite, posiblemente
+con gains LQR más altos cuando el péndulo está muy cerca de ±180°.
+
+---
+
+## [1.30.1] — 2026-06-03
+### Firmware: bug crítico `if`→`else if` en cadenas de modo + disipación swing-up
+
+#### Bug crítico descubierto
+Los bloques de modo 2/3/4/5 usaban `if (mode == N)` independientes en vez de
+`else if`. Cuando el modo cambiaba (swing-up→LQR), el bloque del modo anterior
+seguía ejecutándose y sobreescribía `pwm`.
+
+**Efecto**: En transición swing-up→LQR, el anti-spin brake de modo 5 escribía
+`pwm = -100` sobre el LQR, causando que perdiera el péndulo inmediatamente.
+
+**Fix**: Cambiado a cadena `if/else if` (INCOMPLETO — falta eliminar `}` extra
+en cierre de modo 3, línea ~1505).
+
+#### Disipación de energía en swing-up
+- `energy_ratio >= 0.9`: freno progresivo (brake_gain 0.3→1.0 lineal)
+- `energy_ratio >= 0.85`: bombeo reducido al 50%
+- `energy_ratio < 0.85`: bombeo normal
+- Resultado: péndulo oscila estable ±160° sin spinning
+
+#### Anti-spin con cooldown
+- Reset inmediato de offset + freno PWM_MAX + cooldown 1000ms
+- Reset de cooldown al entrar a LQR
+
+#### Notas
+- Compilación pendiente (error de scope por `}` extra)
+- Tests CSV en `experiments/2026-06-03_swing/data/` (19 archivos)
+- Log completo en `experiments/2026-06-03_swing/SESSION_LOG.md`
+
+---
+
+## [1.30.0] — 2026-06-03
+### Firmware: OTA web + SPIFFS file upload + GUI flasheo
+
+#### Cambios aplicados
+
+**1. Endpoint `/update` (flasheo firmware vía HTTP)**
+- `POST /update` acepta multipart con binario `.bin`, escribe con `Update` library, reinicia al completar.
+- Detiene modo y motor antes de flashear.
+
+**2. Endpoint `/fs` (upload de archivos a SPIFFS)**
+- `POST /fs` acepta multipart con archivo, escribe directamente a SPIFFS (`/filename`).
+- Permite actualizar `index.html` desde el navegador sin reflashear toda la partición SPIFFS.
+
+**3. Endpoint `/restart` (reinicio remoto)**
+- `GET /restart` responde `{"ok":true}` y reinicia el ESP32.
+
+**4. GUI HTML: panel Firmware OTA**
+- Nuevo panel "Firmware OTA" en el sidebar derecho de la GUI web (`index.html`).
+- Selector de archivo `.bin`, botón "Flashear", barra de progreso con porcentaje.
+- Upload directo a `/update` con `XMLHttpRequest` para feedback en tiempo real.
+- CSS: `.ota-bar`, `.ota-fill`, `.ota-status` integrado al tema dark existente.
+
+**5. GUI Python/Tkinter: panel de flasheo**
+- Nueva sección "⚡ FIRMWARE" en el panel lateral de `src/qube_ui/app.py`.
+- Selector de entorno (`esp32dev`, `esp32dev_debug`, `esp32dev_ota`).
+- Selector de puerto serie con detección automática vía `pyserial` + botón ⟳.
+- Botón "⚡ Flashear" ejecuta `pio run` + `pio run --target upload` en thread background.
+- Botón "✕ Cancelar" aborta el proceso.
+- Log de output con scroll, limpieza de ANSI y `\r`.
+
+**6. Fix: auto-scaling de ejes Y en gráficos**
+- Péndulo y servo: margen cambiado de `std * 0.5, min 5°` a `ptp * 0.1, min 5°`.
+- Péndulo: Y clampeado a ±200° (rango físico real del encoder).
+- Fix: datos concentrados cerca de borde ya no se cortan.
+
+#### Notas
+- RAM: 15.0% (49092/327680), Flash: 72.5% (949961/1310720).
+- Para actualizar solo el HTML sin reflashear firmware: `curl -X POST http://192.168.100.50/fs -F "file=@index.html;filename=index.html"`.
+- Upload SPIFFS vía `pio run --target uploadfs` con `ArduinoOTA` puede no reiniciar automáticamente; el endpoint `/fs` es más confiable para updates incrementales.
+
+---
+
+
+## [1.29.0] — 2026-06-03
+### Firmware: anti-spin, LQR catch mode, gain scheduling, MCP docs
+
+#### Cambios aplicados
+
+**1. Anti-spin en swing-up (modo 5)**
+- Detección de spinning: delta de posición raw >200° entre samples o acumulación >720°.
+- Cuando detecta spinning: frena según dirección de velocidad (60% PWM_MAX).
+- Cuando se frena: recalibra offset del encoder.
+- Energía calculada con ángulo raw (evita error por wrap en oscilaciones normales).
+
+**2. LQR catch mode**
+- Al transicionar de swing-up a LQR, aplica freno máximo por 150ms.
+- Objetivo: disipar energía cinética antes de intentar equilibrar.
+- Freno basado en dirección de velocidad angular raw.
+
+**3. Gain scheduling LQR**
+- Gains base: K1=2.0, K2=22, K3=1.5, K4=9.
+- Gains agresivos cerca de vertical (<15°): K2_NEAR=60, K4_NEAR=25.
+- Hard stop proporcional (2 PWM/grado de overshoot).
+
+**4. Transición más estricta**
+- `balance_threshold`: 12°→5°.
+- `SWINGUP_TRANSITION_VEL_DPS`: 500→80°/s.
+- `VEL_ALPHA_PEND`: 0.15→0.60 (respuesta más rápida).
+
+**5. MCP server**
+- Nueva herramienta `pio_ota_flash(ip)` para flasheo OTA desde MCP.
+- Documentación completa en `mcp/README.md`.
+
+**6. Tests y logging**
+- Script `experiments/2026-06-03_swing/test_swing.py` con logging CSV.
+- 12 tests realizados, análisis en `experiments/2026-06-03_swing/ANALYSIS.md`.
+
+#### Resultados de pruebas
+- Swing-up estable hasta ~170° (ke=0.4-0.45) ✅
+- LQR atrapa péndulo cerca de vertical, sostiene ~1.3s ✅
+- Spinning después de LQR failure ❌ (root cause identificado, fix pendiente)
+
+#### Root cause del spinning (PENDIENTE)
+- La energía se calcula con `pendPosRaw` (ángulo crudo acumulado).
+- Cuando raw >360°, `cos(raw)` oscila erráticamente → `motion_sign` inestable.
+- Fix: usar ángulo wrapped para energía cuando `|pendPosRaw| > 360°`.
+- Ver `ANALYSIS.md` para detalles completos.
+
+#### Notas
+- RAM: 15.0% (49084/327680), Flash: 72.3% (947569/1310720).
+- ArduinoOTA funciona: flash WiFi sin USB desde environment `esp32dev_ota`.
+
+---
+
+## [1.28.1] — 2026-06-03
+### Firmware: fix wrap ángulo péndulo + pruebas swing-up
+
+#### Problema identificado
+- `pendPos` acumulaba vueltas sin wrap (1554° en pruebas). `normalizeAngle(pendPos - 180)` fallaba para la transición LQR.
+- Transición swing-up→LQR demasiado permisiva: `balance_threshold=12°`, `SWINGUP_TRANSITION_VEL_DPS=500°`.
+- Hard stop del LQR aplicaba PWM_MAX sin proporcionalidad, causando rebote violento.
+
+#### Cambios aplicados
+
+**1. Wrap modular de `pendPos` (crítico)**
+- `pendPosRaw` = ángulo crudo (para cálculo de velocidad, sin discontinuidades).
+- `pendPos` = wrap a [-180, 180] con `fmod(pendPos + 180, 360) - 180`.
+- Velocidad del péndulo calculada con `pendPosRaw` en modos 3, 4 y 5.
+
+**2. LQR: gains + transición más estricta**
+- `balance_threshold`: 12°→8° (solo transiciona más cerca de vertical).
+- `SWINGUP_TRANSITION_VEL_DPS`: 500→200°/s (solo transiciona con baja velocidad).
+- Gains: K1=2.0, K2=22, K3=1.5, K4=9 (incrementados para más autoridad).
+- Hard stop proporcional (2 PWM/grado de overshoot).
+
+**3. Swing-up: bombeo excesivo de energía**
+- El péndulo gira indefinidamente en vez de oscilar (motor sobrepotenciado).
+- `ke_gain=0.5` es demasiado alto para el hardware actual.
+- **Pendiente**: reducir `ke_gain` o implementar swing-up con control de amplitud.
+
+#### Datos de pruebas
+- Test 1: LQR atrapó péndulo a ~0.4° de vertical, sostuvo ~1.2s, luego perdió.
+- Test 2: Péndulo acumuló 3 vueltas (-1080°), swing-up no logró oscilación.
+- Logs guardados en `experiments/2026-06-03_swing/data/`.
+
+---
+
+## [1.28.0] — 2026-06-03
+### Firmware: ArduinoOTA + LQR hard stop proporcional + MCP docs
+
+#### Cambios aplicados
+
+**1. ArduinoOTA (flasheo por WiFi)**
+- `#include <ArduinoOTA.h>`, `ArduinoOTA.begin()` en setup, `ArduinoOTA.handle()` en loop.
+- Hostname: `qube-esp32`. Detiene motor al iniciar OTA.
+- Nuevo environment `[env:esp32dev_ota]` en `platformio.ini`.
+
+**2. LQR hard stop proporcional**
+- Hard stop a ±120° ahora aplica fuerza proporcional al overshoot (2 PWM/grado).
+- Orden corregido: hard stop ANTES del `constrain` final.
+- Gains reducidos: K2 25→18, K4 10→8 para captura menos agresiva.
+- Fallback time reducido: 2000ms→1000ms para detectar fallos más rápido.
+
+**3. MCP server**
+- Nueva herramienta `pio_ota_flash(ip)` para flasheo OTA desde MCP.
+- Documentación completa en `mcp/README.md`.
+
+#### Notas
+- Primer flash con OTA requiere USB; subsecuentes son por WiFi.
+- RAM: 15.0% (49076/327680 bytes), Flash: 72.3% (947181/1310720 bytes).
+
+---
+
+## [1.27.0] — 2026-06-03
+### Firmware: calidad de código — correcciones, constantes nombradas, watchdog INA219
+
+#### Problema identificado
+Revisión de calidad del firmware reveló:
+- **C1**: Cambio de modo duplicado entre HTTP y Serial sin histéresis en transiciones LQR↔swing-up.
+- **C2**: `Serial.readStringUntil()` con timeout de 1s bloqueaba el lazo de control a 500 Hz.
+- **D1**: Variables muertas (`swingPhase`, `exciteStartMs`, `prevError`, `prevErrorPend`) asignadas pero nunca leídas.
+- **D2**: `pwmAttachCompat` ignoraba el bool de retorno sin documentar por qué.
+- **D3**: INA219 sin watchdog — si el sensor I2C se desconectaba, los valores quedaban stale.
+- **M1**: ~20 magic numbers en los bloques PID/LQR/swing-up sin nombre ni documentación.
+
+#### Cambios aplicados
+
+**1. `setMode()` unificado (C1)**
+- Punto único de cambio de modo usado por HTTP (`handleCmd`) y Serial (`case 'm'`).
+- Histéresis LQR→swing-up con `lqr_inFallback` flag para evitar rebote rápido.
+
+**2. `processSerialCommand()` con buffer acotado (C2)**
+- `readStringUntil('\n')` → lectura caracter por caracter con `Serial.read()` y timeout de 50ms.
+- Buffer estático de 64 bytes con protección contra overflow.
+
+**3. Código muerto eliminado (D1)**
+- `swingPhase`, `exciteStartMs` y `resetSwingUp()` eliminados (asignados, nunca leídos).
+- `prevError` y `prevErrorPend` eliminados (PID usa velocidad filtrada, no error previo).
+
+**4. INA219 watchdog (D3)**
+- Verificación I2C cada 1000 ms con `Wire.beginTransmission()` + `endTransmission()`.
+- Reintento automático de `initIna219()` cada 5000 ms si el sensor falla.
+
+**5. Constantes nombradas (M1)**
+- LQR: `LQR_FALLBACK_TIME_MS`, `LQR_FALLBACK_ALPHA_DEG`, `LQR_REARM_ALPHA_DEG`, `LQR_SERVO_LIMIT_DEG`, `LQR_HARDSTOP_DEG`, `LQR_PROTECT_ALPHA_DEG`.
+- PID Servo: `PID_ANTIWIND_ERR_DEG`, `PID_ANTIWIND_VEL_DPS`, `DEADBAND_*_DEG`, `STICTION_*`.
+- PID Péndulo: `PEND_ANTIWIND_ERR_DEG`, `PEND_ANTIWIND_VEL_DPS`, `PEND_DEADBAND_DEG`.
+- Swing-up: `SWINGUP_TRANSITION_VEL_DPS`, `SWINGUP_KICK_DUTY_FRAC`, `SWINGUP_KICK_PERIOD_MS`, `SWINGUP_QUIET_THRESHOLD_RADPS`, `SWINGUP_PROD_DEADZONE`.
+- INA219: `INA_WATCHDOG_PERIOD_MS`, `INA_INIT_RETRY_MS`.
+
+#### Notas
+- `USE_ENA_PWM = false` confirmado: PWM en IN1/IN2 (ENA no conectado en hardware).
+- RAM: 13.7% (44948/327680 bytes), Flash: 67.7% (887429/1310720 bytes).
+- Upload exitoso en COM5 (ESP32-D0WD-V3, rev v3.1).
+
+---
+
+## [1.26.1] — 2026-06-03
+### GUI: layout de gráficas — subplots más altos, sin overflow
+
+#### Problema identificado
+Los 4 subplots del panel de gráficas se veían comprimidos verticalmente con gaps excesivos entre ellos, causando:
+- Subplots de 1.31" de alto (en figura 9×8") demasiado estrechos para series temporales legibles.
+- `hspace=0.5` (50% de la altura de subplot como gap) — 27% del alto de figura desperdiciado en gaps vacíos.
+- Márgenes superior/inferior (0.96/0.06) demasiado estrechos, riesgo de clipping de títulos de subplot.
+
+#### Cambios aplicados
+
+**1. `App._build_charts` (gridspec)**
+- `hspace`: 0.5 → 0.28 (reduce gaps entre subplots, +14% altura por subplot).
+- `top`: 0.96 → 0.97 (más espacio para títulos del primer subplot).
+- `bottom`: 0.06 → 0.07 (más espacio para xlabel del último subplot).
+- `left`: 0.08 → 0.09 (alinea ylabel izquierdo con el borde del panel).
+- `right`: 0.97 → 0.95 (libra espacio para los ticks derechos de la subplot `twinx()` de Potencia).
+
+#### Cambios de firmware
+```cpp
+// Sin cambios — solo ajuste de layout del GUI.
+```
+
+#### Notas
+- Altura efectiva por subplot: 1.31" → 1.49" (+14%).
+- `twinx()` de la subplot de Potencia sigue creando su propio eje Y a la derecha (`V bus`) — el ajuste `right=0.95` previene que se salga del área visible.
+- Lint: `ruff check`/`ruff format`/`pyright` pasan en `src/qube_ui/`.
+
+---
+
+## [1.26.0] — 2026-06-03
+### GUI: paridad completa con endpoints HTTP del firmware
+
+#### Problema identificado
+Auditoría cruzada GUI ↔ firmware reveló opciones del firmware sin exponer en `qube_ui.app`:
+- Parámetros HTTP sin widget: `cprp` (CPR péndulo), `edp` (dir encoder péndulo), `op` (offset péndulo), `gs`/`kpf`/`kif`/`kdf`/`kpc`/`kic`/`kdc` (gain scheduling), `wifi_ssid`/`wifi_pass`/`wifi_reconnect` (config STA).
+- Campos `/state` no parseados: `gain_scheduling`, `gain_mode`.
+- Métodos del cliente sin caller en UI: `set_cpr`, `set_encoder_dir` (código muerto).
+
+#### Cambios aplicados
+
+**1. `QubeState` (cliente)**
+- Nuevos campos: `gain_scheduling: bool`, `gain_mode: int`.
+- `from_json` los reconoce y los asigna a la dataclass.
+
+**2. `ESP32Client` (cliente)**
+- Nuevos métodos: `set_pendulum_cpr`, `set_pendulum_encoder_dir`, `set_pendulum_offset`, `set_gain_scheduling`, `set_servo_pid_fine`, `set_servo_pid_coarse`, `set_wifi_ssid`, `set_wifi_password`, `wifi_reconnect`.
+- Validación local de SSID (1-32 chars) y password (>= 8 chars) para evitar round-trips inútiles.
+
+**3. `App._build_control_panel` (GUI)**
+- Nueva sección **CALIBRACIÓN (CPR / DIR)**: campos CPR servo/péndulo + radiobuttons `+-1` para dirección encoder servo/péndulo + botón "Aplicar Calibración".
+- Nueva sección **GAIN SCHEDULING (PID SERVO)**: checkbox "Activar dual-mode" + sub-bloques para ganancias fino (`kpf`/`kif`/`kdf`) y grueso (`kpc`/`kic`/`kdc`) + botón "Aplicar Gains Fino/Grue.".
+- Nueva sección **WIFI STA**: campos SSID (texto) y password (enmascarado) + botones "Aplicar WiFi" y "Reconectar".
+- Sección **OFFSET** ampliada con fila independiente para offset del péndulo (`op`) junto a la fila del servo.
+- Sección **ESTADO ACTUAL** ampliada con etiquetas de telemetría `GainSch: {on|off} ({fino|grueso})` y `CPR servo: N`.
+
+**4. Handlers de envío**
+- Nuevos: `_send_pendulum_offset`, `_send_encoder_dir`, `_send_pendulum_encoder_dir`, `_send_calibration`, `_send_gain_scheduling`, `_send_gain_gains`, `_send_wifi`, `_send_wifi_reconnect`.
+- Validación de entrada + `messagebox.showerror` en valores no numéricos o credenciales inválidas.
+
+#### Cambios de firmware
+```cpp
+// Sin cambios — este commit solo agrega soporte GUI para endpoints existentes.
+// Endpoints cubiertos ahora en GUI:
+//   /cmd?cprp, edp, op, gs, kpf, kif, kdf, kpc, kic, kdc, wifi_ssid, wifi_pass, wifi_reconnect
+```
+
+#### Notas
+- Los radiobuttons de dirección de encoder aplican cambios inmediatamente al seleccionar (no requieren "Aplicar"); consistente con el patrón de cambio de modo.
+- "Aplicar Calibración" envía CPR y dirección en una sola acción (4 comandos consecutivos al firmware).
+- "Aplicar WiFi" no reconecta automáticamente — usuario debe pulsar "Reconectar" para activar STA, evitando desconexiones accidentales.
+- Lint: `ruff check`/`ruff format`/`pyright` pasan en `src/qube_ui/`.
+
 
 ---
 

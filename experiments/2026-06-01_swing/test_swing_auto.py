@@ -5,13 +5,13 @@ detects motor crashes, stops and retries.
 
 Usage: uv run python experiments/2026-06-01_swing/test_swing_auto.py
 """
+
 import csv
+import json
 import time
 import urllib.request
-import json
-import math
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 ESP32_IP = "192.168.100.50"
 BASE_URL = f"http://{ESP32_IP}"
@@ -104,9 +104,9 @@ def is_stabilized(history: list, window_s: float = 3.0) -> bool:
 
 
 def run_single_test(attempt: int):
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  TEST {attempt}: Starting swing-up (m=5)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     resp = send_cmd("m=5")
     if resp is None:
@@ -149,7 +149,7 @@ def run_single_test(attempt: int):
             print(f"  >> LQR active at t={elapsed:.1f}s")
 
         if is_stabilized(history):
-            print(f"  >> STABILIZED! Within 15deg for 3s")
+            print("  >> STABILIZED! Within 15deg for 3s")
             for _ in range(30):
                 s = get_state()
                 if s:
@@ -162,7 +162,7 @@ def run_single_test(attempt: int):
         if crash_reason:
             print(f"  !! {crash_reason}")
             send_cmd("x")
-            print(f"  >> Emergency stop")
+            print("  >> Emergency stop")
             time.sleep(1)
             break
 
@@ -189,8 +189,17 @@ def save_data(data: list, attempt: int) -> Path:
     filename = OUTPUT_DIR / f"test_{timestamp}_attempt{attempt}.csv"
     if not data:
         return filename
-    fields = ["time_s", "mode", "position_deg", "setpoint_deg",
-              "pend_position_deg", "pwm", "voltage_v", "current_mA", "power_mW"]
+    fields = [
+        "time_s",
+        "mode",
+        "position_deg",
+        "setpoint_deg",
+        "pend_position_deg",
+        "pwm",
+        "voltage_v",
+        "current_mA",
+        "power_mW",
+    ]
     with open(filename, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields, delimiter=";")
         w.writeheader()
@@ -201,7 +210,7 @@ def save_data(data: list, attempt: int) -> Path:
 
 
 def main():
-    print(f"QUBE Swing-Up Automated Test")
+    print("QUBE Swing-Up Automated Test")
     print(f"ESP32: {ESP32_IP}")
     print(f"Max attempts: {MAX_ATTEMPTS}, Duration: {TEST_DURATION_S}s each")
 
@@ -234,13 +243,13 @@ def main():
             if s:
                 print(f"  Settled. Pend={s.get('pend_position_deg')} Servo={s.get('position_deg')} PWM={s.get('pwm')}")
 
-    print(f"\n{'='*60}")
-    print(f"  SUMMARY")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print("  SUMMARY")
+    print(f"{'=' * 60}")
     for a, r, n in results:
         ok = "+" if "STABILIZED" in r else "-"
         print(f"  [{ok}] Attempt {a}: {r} ({n} samples)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

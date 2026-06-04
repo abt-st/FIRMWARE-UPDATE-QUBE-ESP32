@@ -110,6 +110,44 @@ def pio_clean(environment: str = "esp32dev") -> str:
     """
     return _run_pio(["run", "-e", environment, "--target", "clean"])
 
+@mcp.tool()
+def pio_ota_flash(
+    ip: str = "192.168.100.50",
+) -> str:
+    """Compila y flashea el firmware al ESP32 por WiFi (OTA).
+
+    Requiere que el ESP32 esté encendido, conectado a la red WiFi,
+    y ejecutando un firmware con ArduinoOTA habilitado.
+
+    Args:
+        ip: Dirección IP del ESP32 en la red local.
+
+    Returns:
+        Salida de la compilación y upload OTA con estado de éxito/error.
+    """
+    cmd = [
+        "pio", "run", "-e", "esp32dev_ota",
+        "--target", "upload",
+        "--upload-port", ip,
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(FIRMWARE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        output = result.stdout
+        if result.stderr:
+            output += "\n--- STDERR ---\n" + result.stderr
+        return f"[Exit code: {result.returncode}]\n{output}"
+    except FileNotFoundError:
+        return "Error: 'pio' (PlatformIO) no encontrado en PATH."
+    except subprocess.TimeoutExpired:
+        return "Error: Upload OTA excedió 3 minutos de timeout."
+
+
 
 @mcp.tool()
 def pio_serial_monitor(baud: int = 115200, _lines: int = 50) -> str:
@@ -380,35 +418,18 @@ def qube_set_mode(mode: int) -> str:
     """Cambia el modo de operación del QUBE.
 
     Args:
-        mode: 0=STOP, 1=PWM Manual, 2=PID Servo, 3=PID Péndulo, 4=LQR Invertido, 5=Swing-up.
+        mode: 0=STOP, 1=PWM Manual, 2=PID Servo, 4=LQR Invertido, 5=Swing-up.
 
     Returns:
         Confirmación del cambio de modo.
     """
-    mode_names = {0: "STOP", 1: "PWM Manual", 2: "PID Servo", 3: "PID Péndulo", 4: "LQR Invertido", 5: "Swing-up"}
+    mode_names = {0: "STOP", 1: "PWM Manual", 2: "PID Servo", 4: "LQR Invertido", 5: "Swing-up"}
     try:
         _http_get("cmd", params={"m": mode})
         return f"✅ Modo cambiado a: {mode_names.get(mode, f'Modo {mode}')}"
     except Exception as e:
         return f"❌ Error cambiando modo: {e}"
 
-
-@mcp.tool()
-def qube_set_swing_up(ke: float = 0.5, balance_threshold: float = 20.0) -> str:
-    """Configura los parámetros del controlador de swing-up.
-
-    Args:
-        ke: Ganancia del controlador de energía (0.1-2.0). Mayor = swing-up más agresivo.
-        balance_threshold: Umbral en grados para cambiar de swing-up a LQR (5-40°).
-
-    Returns:
-        Confirmación de los parámetros configurados.
-    """
-    try:
-        _http_get("cmd", params={"ke": ke, "bt": balance_threshold})
-        return f"✅ Swing-up configurado: ke={ke}, threshold={balance_threshold}°"
-    except Exception as e:
-        return f"❌ Error configurando swing-up: {e}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -46,6 +46,8 @@ class QubeState:
     pend_error_deg: float = 0.0
     # Motor & power
     pwm: int = 0
+    gain_scheduling: bool = False
+    gain_mode: int = 0
     ina_ok: bool = False
     v_bus: float = 0.0
     v_shunt_mv: float = 0.0
@@ -78,6 +80,8 @@ class QubeState:
             "pend_error_deg",
             # Motor & power
             "pwm",
+            "gain_scheduling",
+            "gain_mode",
             "ina_ok",
             "v_bus",
             "v_shunt_mv",
@@ -221,15 +225,6 @@ class ESP32Client:
         """Emergency stop."""
         return self.send_cmd(x=1)
 
-    # ── Pendulum commands ────────────────────────────────────────────
-
-    def set_pendulum_setpoint(self, degrees: float) -> bool:
-        """Set pendulum PID setpoint in degrees."""
-        return self.send_cmd(sp=f"{degrees:.2f}")
-
-    def set_pendulum_pid(self, kp: float, ki: float, kd: float) -> bool:
-        """Set pendulum PID gains."""
-        return self.send_cmd(kpp=kp, kip=ki, kdp=kd)
 
     def zero_pendulum(self) -> bool:
         """Zero the pendulum position."""
@@ -242,3 +237,49 @@ class ESP32Client:
     def set_swing_up_params(self, ke: float, balance_threshold: float) -> bool:
         """Set swing-up controller parameters."""
         return self.send_cmd(ke=ke, bt=balance_threshold)
+
+    # ── Calibration commands ────────────────────────────────────────
+
+    def set_pendulum_cpr(self, cpr: float) -> bool:
+        """Set pendulum encoder counts per revolution."""
+        return self.send_cmd(cprp=f"{cpr:.1f}")
+
+    def set_pendulum_encoder_dir(self, direction: int) -> bool:
+        """Set pendulum encoder direction multiplier (+1 or -1)."""
+        return self.send_cmd(edp=direction)
+
+    def set_pendulum_offset(self, degrees: float) -> bool:
+        """Set pendulum position offset in degrees."""
+        return self.send_cmd(op=round(degrees, 2))
+
+    # ── Gain scheduling (PID servo) ─────────────────────────────────
+
+    def set_gain_scheduling(self, enabled: bool) -> bool:
+        """Enable or disable dual-mode gain scheduling on servo PID."""
+        return self.send_cmd(gs=1 if enabled else 0)
+
+    def set_servo_pid_fine(self, kp: float, ki: float, kd: float) -> bool:
+        """Set fine-mode PID gains (low-error region)."""
+        return self.send_cmd(kpf=kp, kif=ki, kdf=kd)
+
+    def set_servo_pid_coarse(self, kp: float, ki: float, kd: float) -> bool:
+        """Set coarse-mode PID gains (high-error region)."""
+        return self.send_cmd(kpc=kp, kic=ki, kdc=kd)
+
+    # ── WiFi STA configuration ──────────────────────────────────────
+
+    def set_wifi_ssid(self, ssid: str) -> bool:
+        """Configure WiFi STA SSID (1-32 chars)."""
+        if not 1 <= len(ssid) <= 32:
+            return False
+        return self.send_cmd(wifi_ssid=ssid)
+
+    def set_wifi_password(self, password: str) -> bool:
+        """Configure WiFi STA password (>= 8 chars)."""
+        if len(password) < 8:
+            return False
+        return self.send_cmd(wifi_pass=password)
+
+    def wifi_reconnect(self) -> bool:
+        """Force ESP32 to reconnect to the configured STA network."""
+        return self.send_cmd(wifi_reconnect=1)

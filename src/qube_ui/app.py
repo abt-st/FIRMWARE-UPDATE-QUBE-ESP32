@@ -12,11 +12,14 @@ from __future__ import annotations
 
 import collections
 import csv
+import re
+import subprocess
 import threading
 import time
 import tkinter as tk
 from collections.abc import Callable
-from tkinter import filedialog, messagebox
+from pathlib import Path
+from tkinter import filedialog, messagebox, scrolledtext
 
 import matplotlib
 import numpy as np
@@ -53,7 +56,92 @@ COLORS = {
     "red": "#F44336",
     "yellow": "#FFC107",
 }
-MODE_NAMES = {0: "STOP", 1: "PWM Manual", 2: "PID Servo", 3: "PID Péndulo", 4: "LQR Invertido", 5: "Swing-up"}
+MODE_NAMES = {0: "STOP", 1: "PWM Manual", 2: "PID Servo", 4: "LQR Invertido", 5: "Swing-up"}
+FIRMWARE_DIR = Path(__file__).resolve().parent.parent.parent / "firmware"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Flasher de firmware via PlatformIO
+# ──────────────────────────────────────────────────────────────────────────────
+def list_serial_ports() -> list[tuple[str, str]]:
+    """Detectar puertos serie disponibles. Retorna lista de (device, description)."""
+    try:
+        from serial.tools.list_ports import comports
+
+        return [(p.device, f"{p.device} — {p.description}") for p in comports()]
+    except ImportError:
+        return []
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+class FirmwareFlasher:
+    """Ejecuta pio build/upload como subprocesso con output en tiempo real."""
+
+    def __init__(self) -> None:
+        self._proc: subprocess.Popen[str] | None = None
+
+    @property
+    def running(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None
+
+    def cancel(self) -> None:
+        if self._proc and self._proc.poll() is None:
+            self._proc.terminate()
+
+    def flash(
+        self,
+        env: str,
+        port: str,
+        on_line: Callable[[str], None],
+        on_done: Callable[[bool, str], None],
+    ) -> None:
+        """Flasheo completo: build + upload en thread background."""
+        threading.Thread(target=self._flash_worker, args=(env, port, on_line, on_done), daemon=True).start()
+
+    def _flash_worker(
+        self,
+        env: str,
+        port: str,
+        on_line: Callable[[str], None],
+        on_done: Callable[[bool, str], None],
+    ) -> None:
+        if not FIRMWARE_DIR.is_dir():
+            on_done(False, f"Directorio de firmware no encontrado:\n{FIRMWARE_DIR}")
+            return
+        for label, args in [
+            ("BUILD", ["pio", "run", "-e", env]),
+            ("UPLOAD", ["pio", "run", "-e", env, "--target", "upload", "--upload-port", port]),
+        ]:
+            on_line(f"\n{'═' * 50}\n  {label}: {' '.join(args)}\n{'═' * 50}\n")
+            try:
+                self._proc = subprocess.Popen(
+                    args,
+                    cwd=str(FIRMWARE_DIR),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+            except FileNotFoundError:
+                on_done(False, "PlatformIO no encontrado. Instala con:\npip install platformio")
+                return
+            except OSError as exc:
+                on_done(False, f"Error ejecutando PlatformIO:\n{exc}")
+                return
+            assert self._proc.stdout is not None
+            for raw_line in self._proc.stdout:
+                clean = _ANSI_RE.sub("", raw_line.rstrip("\r\n"))
+                if clean:
+                    on_line(clean)
+            self._proc.wait()
+            if self._proc.returncode != 0:
+                on_done(False, f"{label} falló (código {self._proc.returncode})")
+                self._proc = None
+                return
+            self._proc = None
+        on_done(True, "¡Firmware flasheado exitosamente!")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -179,6 +267,7 @@ class App(tk.Tk):
         self._last_state: QubeState = QubeState()
         self._connected = False
         self._recording = False
+        self._flasher = FirmwareFlasher()
 
         self._build_ui()
         self._start_animation()
@@ -313,11 +402,11 @@ class App(tk.Tk):
             4,
             1,
             figure=self._fig,
-            hspace=0.5,
-            top=0.96,
-            bottom=0.06,
-            left=0.08,
-            right=0.97,
+            hspace=0.28,
+            top=0.97,
+            bottom=0.07,
+            left=0.09,
+            right=0.95,
         )
 
         # Subplot 1: Posición Servo
@@ -439,6 +528,78 @@ class App(tk.Tk):
                 font=("Consolas", 10),
             ).pack(side="left")
 
+        # ── Flasheo de firmware ────────────────────────────────────────
+        section("⚡ FIRMWARE")
+        f_env = tk.Frame(inner, bg=COLORS["panel"])
+        f_env.pack(fill="x", padx=8, pady=2)
+        tk.Label(
+            f_env, text="Entorno:", bg=COLORS["panel"], fg=COLORS["text"], font=("Consolas", 9), width=10, anchor="w"
+        ).pack(side="left")
+        self._flash_env_var = tk.StringVar(value="esp32dev")
+        env_combo = tk.OptionMenu(f_env, self._flash_env_var, "esp32dev", "esp32dev_debug", "esp32dev_ota")
+        env_combo.config(bg=COLORS["accent"], fg=COLORS["text"], font=("Consolas", 9), width=11, highlightthickness=0)
+        env_combo["menu"].config(bg=COLORS["accent"], fg=COLORS["text"], font=("Consolas", 9))
+        env_combo.pack(side="left", padx=(2, 0))
+        f_port = tk.Frame(inner, bg=COLORS["panel"])
+        f_port.pack(fill="x", padx=8, pady=2)
+        tk.Label(
+            f_port, text="Puerto:", bg=COLORS["panel"], fg=COLORS["text"], font=("Consolas", 9), width=10, anchor="w"
+        ).pack(side="left")
+        self._flash_port_var = tk.StringVar()
+        self._flash_port_menu = tk.OptionMenu(f_port, self._flash_port_var, "")
+        self._flash_port_menu.config(
+            bg=COLORS["accent"], fg=COLORS["text"], font=("Consolas", 9), width=14, highlightthickness=0
+        )
+        self._flash_port_menu["menu"].config(bg=COLORS["accent"], fg=COLORS["text"], font=("Consolas", 9))
+        self._flash_port_menu.pack(side="left", padx=(2, 4))
+        tk.Button(
+            f_port,
+            text="⟳",
+            command=self._refresh_flash_ports,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 10, "bold"),
+            relief="flat",
+            width=2,
+        ).pack(side="left")
+        f_flash_btns = tk.Frame(inner, bg=COLORS["panel"])
+        f_flash_btns.pack(fill="x", padx=8, pady=4)
+        self._btn_flash = tk.Button(
+            f_flash_btns,
+            text="⚡ Flashear",
+            command=self._start_flash,
+            bg=COLORS["green"],
+            fg="white",
+            font=("Consolas", 10, "bold"),
+            relief="flat",
+            padx=10,
+        )
+        self._btn_flash.pack(side="left", padx=(0, 4))
+        self._btn_flash_cancel = tk.Button(
+            f_flash_btns,
+            text="✕ Cancelar",
+            command=self._cancel_flash,
+            bg=COLORS["red"],
+            fg="white",
+            font=("Consolas", 9),
+            relief="flat",
+            padx=6,
+            state="disabled",
+        )
+        self._btn_flash_cancel.pack(side="left")
+        self._flash_log = scrolledtext.ScrolledText(
+            inner,
+            height=8,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            insertbackground="white",
+            font=("Consolas", 8),
+            state="disabled",
+            wrap="word",
+            highlightthickness=0,
+        )
+        self._flash_log.pack(fill="x", padx=8, pady=(2, 6))
+        self._refresh_flash_ports()
         # ── Estado actual ─────────────────────────────────────────────
         section("ESTADO ACTUAL")
         self._lbl_mode = self._make_status_label("Modo:    STOP")
@@ -449,6 +610,8 @@ class App(tk.Tk):
         self._lbl_pwm_d = self._make_status_label("PWM:     —")
         self._lbl_ima_d = self._make_status_label("I:       — mA")
         self._lbl_vb_d = self._make_status_label("V bus:   — V")
+        self._lbl_gs_d = self._make_status_label("GainSch: off (—)")
+        self._lbl_cpr_d = self._make_status_label("CPR servo: —")
 
         # ── Modo ──────────────────────────────────────────────────────
         section("MODO DE OPERACIÓN")
@@ -494,29 +657,6 @@ class App(tk.Tk):
             relief="flat",
         ).pack(side="left")
 
-        # ── Setpoint Péndulo ──────────────────────────────────────────
-        section("SETPOINT PÉNDULO (°)")
-        f_psp = tk.Frame(inner, bg=COLORS["panel"])
-        f_psp.pack(fill="x", padx=8, pady=4)
-        self._psp_var = tk.StringVar(value="0")
-        tk.Entry(
-            f_psp,
-            textvariable=self._psp_var,
-            width=8,
-            bg=COLORS["accent"],
-            fg=COLORS["text"],
-            insertbackground="white",
-            font=("Consolas", 10),
-        ).pack(side="left", padx=(0, 4))
-        tk.Button(
-            f_psp,
-            text="Enviar",
-            command=self._send_pendulum_setpoint,
-            bg=COLORS["accent"],
-            fg=COLORS["text"],
-            font=("Consolas", 9),
-            relief="flat",
-        ).pack(side="left")
 
         # ── PWM Manual ────────────────────────────────────────────────
         section("PWM MANUAL (-255…255)")
@@ -560,23 +700,6 @@ class App(tk.Tk):
             relief="flat",
         ).pack(padx=8, pady=4, anchor="w")
 
-        # ── PID Péndulo ──────────────────────────────────────────────
-        section("PID PÉNDULO")
-        self._kp_p_var = tk.StringVar(value="15.0")
-        self._ki_p_var = tk.StringVar(value="0.5")
-        self._kd_p_var = tk.StringVar(value="2.0")
-        row("Kp:", lambda p: entry_widget(p, self._kp_p_var))
-        row("Ki:", lambda p: entry_widget(p, self._ki_p_var))
-        row("Kd:", lambda p: entry_widget(p, self._kd_p_var))
-        tk.Button(
-            inner,
-            text="Aplicar PID Péndulo",
-            command=self._send_pendulum_pid,
-            bg=COLORS["accent"],
-            fg=COLORS["text"],
-            font=("Consolas", 9),
-            relief="flat",
-        ).pack(padx=8, pady=4, anchor="w")
 
         # ── LQR Gains ────────────────────────────────────────────────
         section("LQR GANANCIAS")
@@ -598,7 +721,7 @@ class App(tk.Tk):
             relief="flat",
         ).pack(padx=8, pady=4, anchor="w")
 
-        # ── Swing-up Parameters ──────────────────────────────────────
+        # ── Swing-up Parameters
         section("SWING-UP")
         self._ke_var = tk.StringVar(value="0.5")
         self._bt_var = tk.StringVar(value="20.0")
@@ -614,10 +737,164 @@ class App(tk.Tk):
             relief="flat",
         ).pack(padx=8, pady=4, anchor="w")
 
+        # ── Calibración (CPR + dir encoder) ─────────────────────────
+        section("CALIBRACIÓN (CPR / DIR)")
+        self._cpr_s_var = tk.StringVar(value="2048")
+        self._cpr_p_var = tk.StringVar(value="2048")
+        self._ed_s_var = tk.IntVar(value=1)
+        self._ed_p_var = tk.IntVar(value=1)
+        row("CPR servo:", lambda p: entry_widget(p, self._cpr_s_var))
+        row("CPR pénd:", lambda p: entry_widget(p, self._cpr_p_var))
+        f_ed = tk.Frame(inner, bg=COLORS["panel"])
+        f_ed.pack(fill="x", padx=8, pady=2)
+        tk.Label(
+            f_ed, text="dir servo:", bg=COLORS["panel"], fg=COLORS["text"], font=("Consolas", 9), width=10, anchor="w"
+        ).pack(side="left")
+        for val, label in ((1, "+1"), (-1, "-1")):
+            tk.Radiobutton(
+                f_ed,
+                text=label,
+                variable=self._ed_s_var,
+                value=val,
+                command=self._send_encoder_dir,
+                bg=COLORS["panel"],
+                fg=COLORS["text"],
+                selectcolor=COLORS["accent"],
+                activebackground=COLORS["panel"],
+                activeforeground=COLORS["text"],
+                font=("Consolas", 9),
+            ).pack(side="left")
+        f_edp = tk.Frame(inner, bg=COLORS["panel"])
+        f_edp.pack(fill="x", padx=8, pady=2)
+        tk.Label(
+            f_edp, text="dir pénd:", bg=COLORS["panel"], fg=COLORS["text"], font=("Consolas", 9), width=10, anchor="w"
+        ).pack(side="left")
+        for val, label in ((1, "+1"), (-1, "-1")):
+            tk.Radiobutton(
+                f_edp,
+                text=label,
+                variable=self._ed_p_var,
+                value=val,
+                command=self._send_pendulum_encoder_dir,
+                bg=COLORS["panel"],
+                fg=COLORS["text"],
+                selectcolor=COLORS["accent"],
+                activebackground=COLORS["panel"],
+                activeforeground=COLORS["text"],
+                font=("Consolas", 9),
+            ).pack(side="left")
+        tk.Button(
+            inner,
+            text="Aplicar Calibración",
+            command=self._send_calibration,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(padx=8, pady=4, anchor="w")
+
+        # ── Gain Scheduling ────────────────────────────────────────
+        section("GAIN SCHEDULING (PID SERVO)")
+        self._gs_var = tk.BooleanVar(value=False)
+        f_gs = tk.Frame(inner, bg=COLORS["panel"])
+        f_gs.pack(fill="x", padx=8, pady=2)
+        tk.Checkbutton(
+            f_gs,
+            text="Activar dual-mode",
+            variable=self._gs_var,
+            command=self._send_gain_scheduling,
+            bg=COLORS["panel"],
+            fg=COLORS["text"],
+            selectcolor=COLORS["accent"],
+            activebackground=COLORS["panel"],
+            activeforeground=COLORS["text"],
+            font=("Consolas", 9),
+        ).pack(side="left")
+        section("  → Modo fino (|err| ≤ 10°)")
+        self._kpf_var = tk.StringVar(value="2.0")
+        self._kif_var = tk.StringVar(value="0.8")
+        self._kdf_var = tk.StringVar(value="0.2")
+        row("Kp:", lambda p: entry_widget(p, self._kpf_var))
+        row("Ki:", lambda p: entry_widget(p, self._kif_var))
+        row("Kd:", lambda p: entry_widget(p, self._kdf_var))
+        section("  → Modo grueso (|err| > 10°)")
+        self._kpc_var = tk.StringVar(value="4.0")
+        self._kic_var = tk.StringVar(value="0.2")
+        self._kdc_var = tk.StringVar(value="0.1")
+        row("Kp:", lambda p: entry_widget(p, self._kpc_var))
+        row("Ki:", lambda p: entry_widget(p, self._kic_var))
+        row("Kd:", lambda p: entry_widget(p, self._kdc_var))
+        tk.Button(
+            inner,
+            text="Aplicar Gains Fino/Grue.",
+            command=self._send_gain_gains,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(padx=8, pady=4, anchor="w")
+
+        # ── WiFi STA ──────────────────────────────────────────────
+        section("WIFI STA")
+        f_ssid = tk.Frame(inner, bg=COLORS["panel"])
+        f_ssid.pack(fill="x", padx=8, pady=2)
+        tk.Label(
+            f_ssid, text="SSID:", bg=COLORS["panel"], fg=COLORS["text"], font=("Consolas", 9), width=8, anchor="w"
+        ).pack(side="left")
+        self._ssid_var = tk.StringVar()
+        tk.Entry(
+            f_ssid,
+            textvariable=self._ssid_var,
+            width=18,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            insertbackground="white",
+            font=("Consolas", 9),
+        ).pack(side="left", padx=(2, 4))
+        f_pwd = tk.Frame(inner, bg=COLORS["panel"])
+        f_pwd.pack(fill="x", padx=8, pady=2)
+        tk.Label(
+            f_pwd, text="Pass:", bg=COLORS["panel"], fg=COLORS["text"], font=("Consolas", 9), width=8, anchor="w"
+        ).pack(side="left")
+        self._wifi_pwd_var = tk.StringVar()
+        tk.Entry(
+            f_pwd,
+            textvariable=self._wifi_pwd_var,
+            width=18,
+            show="•",
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            insertbackground="white",
+            font=("Consolas", 9),
+        ).pack(side="left", padx=(2, 4))
+        f_wifi = tk.Frame(inner, bg=COLORS["panel"])
+        f_wifi.pack(fill="x", padx=8, pady=4)
+        tk.Button(
+            f_wifi,
+            text="Aplicar WiFi",
+            command=self._send_wifi,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(side="left", padx=2)
+        tk.Button(
+            f_wifi,
+            text="Reconectar",
+            command=self._send_wifi_reconnect,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(side="left", padx=2)
+
         # ── Offset / Calibración ──────────────────────────────────────
         section("OFFSET (°)")
         f_ofs = tk.Frame(inner, bg=COLORS["panel"])
-        f_ofs.pack(fill="x", padx=8, pady=4)
+        f_ofs.pack(fill="x", padx=8, pady=2)
+        tk.Label(
+            f_ofs, text="servo:", bg=COLORS["panel"], fg=COLORS["text"], font=("Consolas", 9), width=8, anchor="w"
+        ).pack(side="left")
         self._ofs_var = tk.StringVar(value="0")
         tk.Entry(
             f_ofs,
@@ -630,8 +907,32 @@ class App(tk.Tk):
         ).pack(side="left", padx=(0, 4))
         tk.Button(
             f_ofs,
-            text="Set Offset",
+            text="Set",
             command=self._send_offset,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            font=("Consolas", 9),
+            relief="flat",
+        ).pack(side="left")
+        f_op = tk.Frame(inner, bg=COLORS["panel"])
+        f_op.pack(fill="x", padx=8, pady=2)
+        tk.Label(
+            f_op, text="péndulo:", bg=COLORS["panel"], fg=COLORS["text"], font=("Consolas", 9), width=8, anchor="w"
+        ).pack(side="left")
+        self._op_var = tk.StringVar(value="0")
+        tk.Entry(
+            f_op,
+            textvariable=self._op_var,
+            width=8,
+            bg=COLORS["accent"],
+            fg=COLORS["text"],
+            insertbackground="white",
+            font=("Consolas", 10),
+        ).pack(side="left", padx=(0, 4))
+        tk.Button(
+            f_op,
+            text="Set",
+            command=self._send_pendulum_offset,
             bg=COLORS["accent"],
             fg=COLORS["text"],
             font=("Consolas", 9),
@@ -737,17 +1038,20 @@ class App(tk.Tk):
         self._ln_sp.set_data(t, sp)
         self._ax_pos.set_xlim(t[0], max(t[-1], 1.0))
         all_pos = np.concatenate([pos, sp])
-        margin = max(np.std(all_pos) * 0.5, 5.0)
-        self._ax_pos.set_ylim(np.min(all_pos) - margin, np.max(all_pos) + margin)
-
+        pos_range = np.ptp(all_pos)
+        pos_margin = max(pos_range * 0.1, 5.0)
+        self._ax_pos.set_ylim(np.min(all_pos) - pos_margin, np.max(all_pos) + pos_margin)
         # Subplot 2: Péndulo
         self._ln_ppos.set_data(t, ppos)
         self._ln_psp.set_data(t, psp)
         self._ax_pend.set_xlim(t[0], max(t[-1], 1.0))
         if len(ppos) > 0:
             all_pend = np.concatenate([ppos, psp])
-            pmargin = max(np.std(all_pend) * 0.5, 5.0)
-            self._ax_pend.set_ylim(np.min(all_pend) - pmargin, np.max(all_pend) + pmargin)
+            pend_range = np.ptp(all_pend)
+            pend_margin = max(pend_range * 0.1, 5.0)
+            y_min = max(np.min(all_pend) - pend_margin, -200.0)
+            y_max = min(np.max(all_pend) + pend_margin, 200.0)
+            self._ax_pend.set_ylim(y_min, y_max)
 
         # Subplot 3: PWM
         self._ln_pwm.set_data(t, pwm)
@@ -774,6 +1078,10 @@ class App(tk.Tk):
         self._lbl_pwm_d.config(text=f"PWM:     {state.pwm}")
         self._lbl_ima_d.config(text=f"I:       {state.i_ma:.1f} mA")
         self._lbl_vb_d.config(text=f"V bus:   {state.v_bus:.2f} V")
+        gs_state = "on" if state.gain_scheduling else "off"
+        gs_mode = "fino" if state.gain_mode == 0 else "grueso"
+        self._lbl_gs_d.config(text=f"GainSch: {gs_state} ({gs_mode})")
+        self._lbl_cpr_d.config(text=f"CPR servo: {state.counts_per_rev:.0f}")
 
         self._canvas.draw_idle()
         return []
@@ -812,23 +1120,6 @@ class App(tk.Tk):
         except ValueError:
             messagebox.showerror("Error", "Los valores PID deben ser números")
 
-    def _send_pendulum_setpoint(self) -> None:
-        """Enviar setpoint del péndulo al ESP32."""
-        try:
-            val = float(self._psp_var.get())
-            self.client.set_pendulum_setpoint(val)
-        except ValueError:
-            messagebox.showerror("Error", "Setpoint debe ser un número")
-
-    def _send_pendulum_pid(self) -> None:
-        """Enviar ganancias PID péndulo al ESP32."""
-        try:
-            kp = float(self._kp_p_var.get())
-            ki = float(self._ki_p_var.get())
-            kd = float(self._kd_p_var.get())
-            self.client.set_pendulum_pid(kp, ki, kd)
-        except ValueError:
-            messagebox.showerror("Error", "Los valores PID deben ser números")
 
     def _send_lqr(self) -> None:
         """Enviar ganancias LQR al ESP32."""
@@ -866,6 +1157,75 @@ class App(tk.Tk):
         except ValueError:
             messagebox.showerror("Error", "Offset debe ser un numero")
 
+    def _send_pendulum_offset(self) -> None:
+        """Enviar offset manual del péndulo al ESP32."""
+        try:
+            val = float(self._op_var.get())
+            self.client.set_pendulum_offset(val)
+        except ValueError:
+            messagebox.showerror("Error", "Offset debe ser un numero")
+
+    def _send_encoder_dir(self) -> None:
+        """Enviar dirección de encoder servo al ESP32."""
+        self.client.set_encoder_dir(self._ed_s_var.get())
+
+    def _send_pendulum_encoder_dir(self) -> None:
+        """Enviar dirección de encoder péndulo al ESP32."""
+        self.client.set_pendulum_encoder_dir(self._ed_p_var.get())
+
+    def _send_calibration(self) -> None:
+        """Aplicar CPR servo y péndulo, y direcciones de encoder."""
+        try:
+            cpr_s = float(self._cpr_s_var.get())
+            cpr_p = float(self._cpr_p_var.get())
+            self.client.set_cpr(cpr_s)
+            self.client.set_pendulum_cpr(cpr_p)
+            self.client.set_encoder_dir(self._ed_s_var.get())
+            self.client.set_pendulum_encoder_dir(self._ed_p_var.get())
+        except ValueError:
+            messagebox.showerror("Error", "CPR debe ser un número")
+
+    def _send_gain_scheduling(self) -> None:
+        """Activar/desactivar gain scheduling dual-mode en PID servo."""
+        self.client.set_gain_scheduling(self._gs_var.get())
+
+    def _send_gain_gains(self) -> None:
+        """Enviar ganancias fino/grueso al firmware."""
+        try:
+            kp_f = float(self._kpf_var.get())
+            ki_f = float(self._kif_var.get())
+            kd_f = float(self._kdf_var.get())
+            kp_c = float(self._kpc_var.get())
+            ki_c = float(self._kic_var.get())
+            kd_c = float(self._kdc_var.get())
+            self.client.set_servo_pid_fine(kp_f, ki_f, kd_f)
+            self.client.set_servo_pid_coarse(kp_c, ki_c, kd_c)
+        except ValueError:
+            messagebox.showerror("Error", "Las ganancias deben ser números")
+
+    def _send_wifi(self) -> None:
+        """Aplicar configuración WiFi STA al ESP32."""
+        ssid = self._ssid_var.get().strip()
+        password = self._wifi_pwd_var.get()
+        if not ssid:
+            messagebox.showerror("Error", "SSID no puede estar vacío")
+            return
+        if password and len(password) < 8:
+            messagebox.showerror("Error", "Password debe tener al menos 8 caracteres")
+            return
+        if not self.client.set_wifi_ssid(ssid):
+            messagebox.showerror("Error", "SSID inválido (1-32 caracteres)")
+            return
+        if password and not self.client.set_wifi_password(password):
+            messagebox.showerror("Error", "Password inválido (>= 8 caracteres)")
+            return
+        messagebox.showinfo("WiFi", f"SSID '{ssid}' aplicado. Use 'Reconectar' para activar.")
+
+    def _send_wifi_reconnect(self) -> None:
+        """Forzar reconexión WiFi en el ESP32."""
+        if not self.client.wifi_reconnect():
+            messagebox.showerror("Error", "No se pudo enviar comando de reconexión")
+
     def _send_reset(self) -> None:
         """Enviar comando de reset."""
         self.client.send_cmd(r=1)
@@ -890,11 +1250,74 @@ class App(tk.Tk):
             messagebox.showinfo("Exportado", f"Datos guardados en:\n{path}")
 
     # ------------------------------------------------------------------ #
+    #  Flasheo de firmware                                                  #
+    # ------------------------------------------------------------------ #
+    def _refresh_flash_ports(self) -> None:
+        """Escanear puertos serie y actualizar el menú desplegable."""
+        ports = list_serial_ports()
+        menu = self._flash_port_menu["menu"]
+        menu.delete(0, "end")
+        for device, desc in ports:
+            menu.add_command(label=desc, command=lambda d=device: self._flash_port_var.set(d))
+        if ports:
+            self._flash_port_var.set(ports[0][0])
+        else:
+            self._flash_port_var.set("")
+
+    def _flash_log_line(self, line: str) -> None:
+        """Callback de línea de output del flasheo (ejecutado en thread)."""
+        self.after(0, self._flash_log_append, line)
+
+    def _flash_log_append(self, line: str) -> None:
+        """Insertar línea en el log de flasheo (debe correr en main thread)."""
+        self._flash_log.config(state="normal")
+        self._flash_log.insert("end", line + "\n")
+        self._flash_log.see("end")
+        self._flash_log.config(state="disabled")
+
+    def _flash_done(self, success: bool, msg: str) -> None:
+        """Callback de fin de flasheo (ejecutado en thread)."""
+        self.after(0, self._flash_finished, success, msg)
+
+    def _flash_finished(self, success: bool, msg: str) -> None:
+        """Procesar resultado del flasheo en el thread principal."""
+        self._btn_flash.config(state="normal")
+        self._btn_flash_cancel.config(state="disabled")
+        self._flash_log_append(msg)
+        if success:
+            messagebox.showinfo("Flasheo", msg)
+        else:
+            messagebox.showerror("Flasheo", msg)
+
+    def _start_flash(self) -> None:
+        """Iniciar proceso de flasheo."""
+        env = self._flash_env_var.get()
+        port = self._flash_port_var.get()
+        if not port:
+            messagebox.showwarning("Flasheo", "Seleccioná un puerto serie. Conectá el ESP32 y presioná ⟳.")
+            return
+        self._flash_log.config(state="normal")
+        self._flash_log.delete("1.0", "end")
+        self._flash_log.config(state="disabled")
+        self._btn_flash.config(state="disabled")
+        self._btn_flash_cancel.config(state="normal")
+        self._flasher.flash(env, port, self._flash_log_line, self._flash_done)
+
+    def _cancel_flash(self) -> None:
+        """Cancelar flasheo en progreso."""
+        self._flasher.cancel()
+
+    # ------------------------------------------------------------------ #
     #  Cierre de la aplicación                                             #
     # ------------------------------------------------------------------ #
 
     def _on_close(self) -> None:
         """Manejar cierre de la ventana."""
+        try:
+            if self._flasher.running:
+                self._flasher.cancel()
+        except Exception:
+            pass
         try:
             if self.client._running:
                 self.client.stop()

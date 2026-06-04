@@ -60,16 +60,13 @@ button.secondary{background:#30363d;color:#c9d1d9}
   <h2>Control</h2>
   <div class="row">
     <label>Modo:</label>
-    <select id="mode"><option value="0">STOP</option><option value="1">PWM</option><option value="2" selected>PID Servo</option><option value="3">PID P&eacute;ndulo</option><option value="4">LQR</option><option value="5">Swing-up</option></select>
+    <select id="mode"><option value="0">STOP</option><option value="1">PWM</option><option value="2" selected>PID Servo</option><option value="4">LQR</option><option value="5">Swing-up</option></select>
     <button onclick="cmd('m='+el('mode').value)">Aplicar</button>
     <button class="danger" onclick="cmd('x=1')">STOP</button>
   </div>
   <div class="row">
     <label>SP S:</label><input type="number" id="sp" value="0" step="1">
-    <button onclick="cmd('s='+el('sp').value+'&sp='+el('spP').value)">Set</button>
-  </div>
-  <div class="row">
-    <label>SP P:</label><input type="number" id="spP" value="0" step="1">
+    <button onclick="cmd('s='+el('sp').value)">Set</button>
   </div>
   <div class="row">
     <label>PWM:</label><input type="number" id="pwm" value="0" step="10" min="-255" max="255">
@@ -83,6 +80,19 @@ button.secondary{background:#30363d;color:#c9d1d9}
   </div>
 </div>
 
+
+<div class="panel">
+  <h2>Recolecci&oacute;n de datos</h2>
+  <div class="row">
+    <button id="btnRec" onclick="toggleRec()">&#9679; Grabar</button>
+    <button class="secondary" id="btnCSV" onclick="exportCSV()" disabled>Exportar CSV</button>
+    <button class="danger" onclick="clearRec()">Borrar</button>
+  </div>
+  <div style="font-size:.7rem;color:#8b949e;margin-top:4px">
+    <span id="recSt">Listo</span> &mdash; <span id="recCount">0</span> muestras &mdash; <span id="recTime">0.0 s</span>
+  </div>
+</div>
+
 <div class="panel">
   <h2>PID Servo</h2>
   <div class="grow">
@@ -90,16 +100,6 @@ button.secondary{background:#30363d;color:#c9d1d9}
     <div class="gi"><label>Ki</label><input type="number" id="ki" value="0.5" step="0.1"></div>
     <div class="gi"><label>Kd</label><input type="number" id="kd" value="0.15" step="0.01"></div>
     <button class="ok-btn" onclick="cmd('kp='+el('kp').value+'&ki='+el('ki').value+'&kd='+el('kd').value)">OK</button>
-  </div>
-</div>
-
-<div class="panel">
-  <h2>PID P&eacute;ndulo</h2>
-  <div class="grow">
-    <div class="gi"><label>Kp</label><input type="number" id="kpp" value="15.0" step="0.5"></div>
-    <div class="gi"><label>Ki</label><input type="number" id="kip" value="0.5" step="0.1"></div>
-    <div class="gi"><label>Kd</label><input type="number" id="kdp" value="2.0" step="0.1"></div>
-    <button class="ok-btn" onclick="cmd('kpp='+el('kpp').value+'&kip='+el('kip').value+'&kdp='+el('kdp').value)">OK</button>
   </div>
 </div>
 
@@ -154,6 +154,64 @@ var el=function(id){return document.getElementById(id)};
 var st=el('status');
 var t0=Date.now(),rows=[],MAX=200;
 
+/* ── Recording ─────────────────────────────────────────────── */
+var recording=false,recStart=0,recTimer=null;
+
+function updateRecUI(){
+  el('recCount').textContent=rows.length;
+  if(recording){
+    el('recSt').innerHTML='&#9679; Grabando';
+    el('recSt').style.color='#da3633';
+    el('btnRec').innerHTML='&#9632; Detener';
+    el('btnRec').style.background='#da3633';
+    el('recTime').textContent=((Date.now()-recStart)/1000).toFixed(1)+' s';
+  }else{
+    el('recSt').textContent=rows.length?'Pausado':'Listo';
+    el('recSt').style.color='#8b949e';
+    el('btnRec').innerHTML='&#9679; Grabar';
+    el('btnRec').style.background='';
+    if(rows.length){
+      el('recTime').textContent=((rows[rows.length-1]._ms-recStart)/1000).toFixed(1)+' s';
+    }else{
+      el('recTime').textContent='0.0 s';
+    }
+  }
+  el('btnCSV').disabled=!rows.length;
+}
+
+function toggleRec(){
+  if(recording){
+    recording=false;
+    clearInterval(recTimer);recTimer=null;
+  }else{
+    rows=[];
+    recording=true;
+    recStart=Date.now();
+    recTimer=setInterval(updateRecUI,200);
+  }
+  updateRecUI();
+}
+function clearRec(){
+  recording=false;
+  if(recTimer){clearInterval(recTimer);recTimer=null;}
+  rows=[];
+  updateRecUI();
+}
+function exportCSV(){
+  if(!rows.length)return;
+  var COLS=['time_s','mode','position_deg','setpoint_deg','pend_position_deg','pwm','voltage_v','current_mA','power_mW'];
+  var lines=[COLS.join(';')];
+  for(var i=0;i<rows.length;i++){
+    var r=rows[i];
+    lines.push(COLS.map(function(c){return r[c]===undefined?'':r[c];}).join(';'));
+  }
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download='qube_'+new Date().toISOString().slice(0,19).replace(/[:-]/g,'')+'.csv';
+  a.click();
+}
+
+/* ── Charts ────────────────────────────────────────────────── */
 function mkC(id,col,yMin,yMax){
   if(typeof Chart==='undefined')return null;
   var yAxis={ticks:{color:'#8b949e',font:{size:10}},grid:{color:'#21262d'},beginAtZero:false};
@@ -177,27 +235,37 @@ function pushChart(ch,v,t){
   if(!ch)return;
   ch.data.labels.push(t);
   ch.data.datasets[0].data.push(v);
-  if(ch.data.labels.length>MAX){ch.data.labels.shift();ch.data.datasets[0].data.shift();}
-  ch.update('none');
+  if(ch.data.labels.length>MAX){
+    var n=ch.data.labels.length-MAX;
+    ch.data.labels.splice(0,n);
+    ch.data.datasets[0].data.splice(0,n);
+  }
 }
 
-var COLS=['time_s','mode','position_deg','setpoint_deg','pend_position_deg','pwm','voltage_v','current_mA','power_mW'];
-el('btnCSV').onclick=function(){
-  if(!rows.length)return;
-  var csv=COLS.join(';')+'\n';
-  rows.forEach(function(r){csv+=COLS.map(function(c){return r[c]===undefined?'':r[c];}).join(';')+'\n';});
-  var a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  a.download='qube_'+new Date().toISOString().slice(0,19).replace(/[:-]/g,'')+'.csv';
-  a.click();
-  el('csvInfo').textContent='Exportado: '+rows.length+' pts';
-};
+var FLUSH_MS=200;
+var flushDirty=false;
+setInterval(function(){
+  if(!flushDirty)return;
+  flushDirty=false;
+  if(cS)cS.update('none');
+  if(cP)cP.update('none');
+  if(cW)cW.update('none');
+  if(cPw)cPw.update('none');
+},FLUSH_MS);
 
+/* ── WebSocket ─────────────────────────────────────────────── */
 var ws;
 var modeUserOverride=false;
+var modeOverrideTimer=null;
+el('mode').onchange=function(){
+  modeUserOverride=true;
+  clearTimeout(modeOverrideTimer);
+  modeOverrideTimer=setTimeout(function(){modeUserOverride=false;},8000);
+};
+
 function connect(){
   try{ws=new WebSocket('ws://'+location.hostname+'/ws');}catch(e){setTimeout(connect,2000);return;}
-  ws.onopen=function(){st.textContent='Conectado';st.className='status ok';t0=Date.now();rows=[];};
+  ws.onopen=function(){st.textContent='Conectado';st.className='status ok';t0=Date.now();};
   ws.onclose=function(){st.textContent='Desconectado';st.className='status err';setTimeout(connect,2000);};
   ws.onerror=function(){ws.close();};
   ws.onmessage=function(e){
@@ -208,15 +276,22 @@ function connect(){
       pushChart(cP,d.pend_position_deg||0,t);
       pushChart(cW,d.pwm||0,t);
       pushChart(cPw,d.p_mw||0,t);
-      rows.push({time_s:t,mode:d.mode,position_deg:d.position_deg,setpoint_deg:d.setpoint_deg,pend_position_deg:d.pend_position_deg,pwm:d.pwm,voltage_v:d.voltage_v,current_mA:d.i_ma,power_mW:d.p_mw});
-      el('csvInfo').textContent=rows.length+' pts';
+      flushDirty=true;
+      if(recording){
+        rows.push({time_s:t,mode:d.mode,position_deg:d.position_deg,setpoint_deg:d.setpoint_deg,pend_position_deg:d.pend_position_deg,pwm:d.pwm,voltage_v:d.voltage_v,current_mA:d.i_ma,power_mW:d.p_mw,_ms:Date.now()});
+      }
       if(d.gain_scheduling!==undefined)el('gs').value=d.gain_scheduling?'1':'0';
+      if(d.mode!==undefined&&!modeUserOverride)el('mode').value=d.mode;
     }catch(ex){}
   };
 }
 connect();
+updateRecUI();
 
+/* ── Commands ──────────────────────────────────────────────── */
 function cmd(qs){
+  modeUserOverride=false;
+  clearTimeout(modeOverrideTimer);
   fetch('/cmd?'+qs).then(function(r){return r.json();}).then(function(d){
     if(d.mode!==undefined)el('mode').value=d.mode;
   }).catch(function(){});
