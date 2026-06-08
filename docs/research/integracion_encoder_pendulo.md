@@ -7,7 +7,7 @@
 
 ## 1. Estado Actual del Sistema
 
-- Control motor por L298N (GPIO26/GPIO27)
+- Control motor por BTS7960 (GPIO26/GPIO27)
 - Encoder motor en cuadratura A/B (GPIO34/GPIO35)
 - INA219 por I2C (GPIO21/GPIO22)
 - Decodificación de encoder por polling LUT (X4), período de control 200 Hz

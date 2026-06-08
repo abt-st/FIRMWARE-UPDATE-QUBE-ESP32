@@ -65,3 +65,5 @@ logs/
 credentials.h
 # ── Notas personales / docs internos ─────────────────────────────────────────
 docs/mine/
+# ── Backup L298N (documentación antigua antes de migrar a BTS7960) ──────────
+backup_l298n/

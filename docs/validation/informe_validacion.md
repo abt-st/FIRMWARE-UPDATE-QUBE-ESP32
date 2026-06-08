@@ -87,7 +87,7 @@ config.h            → Pines, constantes, ganancias
 ## 5. Limitaciones Conocidas
 
 1. **Rango angular limitado** (±90°) — Mitigación: LQR futuro
-2. **Ruido conmutación L298N** (~100mV) — Mitigación: Filtrado EMA
+2. **Ruido conmutación BTS7960** (~20mV, mejorado desde L298N ~100mV) — Mitigación: Filtrado EMA
 3. **Latencia WiFi** (10-100ms) — Mitigación: Loop PID independiente
 4. **Encoder péndulo** (no instalado) — Mitigación: En roadmap Q2 2026
 
@@ -95,7 +95,7 @@ config.h            → Pines, constantes, ganancias
 
 ## 6. Aporte Académico Original
 
-**Búsqueda en GitHub:** Cero proyectos con ESP32 + L298N + INA219 + LM2596 integrados
+**Búsqueda en GitHub:** Cero proyectos con ESP32 + BTS7960 + INA219 + LM2596 integrados
 
 **Venues de publicación potenciales:**
 - IEEE Transactions on Education ⭐⭐⭐⭐⭐

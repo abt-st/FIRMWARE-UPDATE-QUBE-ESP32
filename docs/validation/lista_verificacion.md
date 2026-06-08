@@ -55,7 +55,7 @@ TOTAL                           ✅ 160/160
 
 ### Componentes Hardware (24/24 ✅)
 - [x] ESP32-WROOM-32: Datasheet oficial, 41+ proyectos ✅ (6/6)
-- [x] L298N: Datasheet STM, 53+ proyectos ✅ (6/6)
+- [x] BTS7960: Datasheet Infineon, Dual Half-Bridge MOSFET, RDS(on)≈16mΩ, 43A peak ✅ (6/6)
 - [x] INA219: Datasheet TI, 74+ proyectos ✅ (6/6)
 - [x] LM2596: Datasheet TI, 44+ proyectos ✅ (6/6)
 

@@ -1,6 +1,6 @@
 ---
 title: "Investigación Unificada: Modernización QUBE Servo"
-subtitle: "Arquitectura ESP32 + LM2596 + INA219 + L298N"
+subtitle: "Arquitectura ESP32 + LM2596 + INA219 + BTS7960"
 author: "Documento técnico consolidado para tesis"
 date: "2026-05-26"
 lang: "es-ES"
@@ -21,7 +21,7 @@ numbersections: true
 
 ### 1.1 Pregunta Central
 
-¿Existe un proyecto abierto que integre exactamente la combinación **ESP32 + LM2596 + INA219 + L298N** para emulación tipo QUBE Servo?
+¿Existe un proyecto abierto que integre exactamente la combinación **ESP32 + LM2596 + INA219 + BTS7960** para emulación tipo QUBE Servo? (Nota: la arquitectura original usaba L298N, migrada a BTS7960 por mejor eficiencia y capacidad de corriente.)
 
 ### 1.2 Respuesta Breve
 
@@ -71,7 +71,11 @@ Se realizó una búsqueda exhaustiva en GitHub (Abril–Mayo 2026) con los sigui
 | `buck converter power supply`    | 44          | 3                    |
 | `ESP32 + L298N + INA219`         | **0** | **Ninguno**    |
 
+> **Nota de migración (2026-06):** La arquitectura del proyecto migró de L298N a BTS7960 como etapa de potencia (dual half-bridge MOSFET, RDS(on) ≈ 16 mΩ, 43A pico). Los resultados de búsqueda mostrados corresponden a la investigación original realizada con L298N.
+
 ### 3.2 Proyectos de Referencia por Componente
+
+> **Nota:** Los proyectos listados a continuación son referencias históricas de la búsqueda original. El QUBE modernizado utiliza BTS7960 en lugar de L298N.
 
 #### Control PID + L298N (53 proyectos)
 
@@ -113,14 +117,14 @@ Se realizó una búsqueda exhaustiva en GitHub (Abril–Mayo 2026) con los sigui
 | Applied-Control-Systems-Module     | LabVIEW         | —                        | 2023 | LQR, MPC                         |
 | Motor-Pendulum-Control             | MATLAB/Simulink | —                        | 2025 | PID de péndulo rotatorio        |
 
-**Hallazgo Crítico:** El proyecto **ebrahimabdelghfar/Rotary-Inverted-Pendulum** (2023) es una VALIDACIÓN ACADÉMICA completa que usa Arduino + L298N + encoder, documentando modelado matemático, estimación de parámetros, control LQR y validación experimental.
+**Hallazgo Crítico:** El proyecto **ebrahimabdelghfar/Rotary-Inverted-Pendulum** (2023) es una VALIDACIÓN ACADÉMICA completa que usa Arduino + L298N + encoder (nota: el QUBE modernizado usa BTS7960), documentando modelado matemático, estimación de parámetros, control LQR y validación experimental.
 
 ### 3.3 Brecha Detectada
 
 No se encontró una implementación abierta que combine en un solo pipeline:
 
 - ✅ ESP32 como núcleo de control
-- ✅ L298N como etapa de potencia
+- ✅ BTS7960 como etapa de potencia (migrado de L298N)
 - ✅ INA219 como canal energético integrado
 - ✅ Regulación buck LM2596
 - ✅ Flujo completo de validación experimental con documentación consolidada
@@ -139,16 +143,16 @@ ENTRADA: 12-24V (batería o PSU)
     ├── [LM2596 Buck Converter] ──→ 5V para ESP32 + sensores
     │
     ├── [ESP32-WROOM-32]
-    │   ├─ GPIO 26/27 → L298N IN1/IN2 (PWM + dirección)
+    │   ├─ GPIO 26/27 → BTS7960 RPWM/LPWM (PWM)
     │   ├─ GPIO 34/35 → Encoder servo A/B
     │   ├─ GPIO 32/33 → Encoder péndulo A/B (futuro)
     │   ├─ GPIO 21/22 → INA219 SDA/SCL (I2C)
     │   └─ UART USB   → Depuración/telemetría
     │
-    ├── [L298N Motor Driver]
-    │   ├─ IN1/IN2: Dirección + PWM
-    │   ├─ ENA: Jumper habilitado (opción recomendada)
-    │   └─ OUT1/OUT2: Motor DC
+    ├── [BTS7960 Motor Driver]
+    │   ├─ RPWM/LPWM: PWM directo
+    │   ├─ EN: Pull-up interno (habilitado)
+    │   └─ M+/M-: Motor DC
     │
     ├── [INA219 Current Sensor] (I2C)
     │   ├─ VIN+ / VIN-: High-side sensing
@@ -163,7 +167,7 @@ ENTRADA: 12-24V (batería o PSU)
 ```
 Referencia → Controlador PID (ESP32, 200 Hz)
                  ↓
-           Acción PWM en L298N
+           Acción PWM en BTS7960
                  ↓
            Dinámica del motor DC
                  ↓
@@ -175,9 +179,9 @@ Referencia → Controlador PID (ESP32, 200 Hz)
 
 ### 4.3 Comparación con Alternativas
 
-| Aspecto                        | Arquitectura Propuesta              | Arduino+L298N       | Quanser QUBE        |
+| Aspecto                        | Arquitectura Propuesta (BTS7960)    | Arduino+L298N       | Quanser QUBE        |
 | ------------------------------ | ----------------------------------- | ------------------- | ------------------- |
-| **Costo**                | **$40–70 USD** | $30–40 USD | $2,500–3,500 USD   |                     |
+| **Costo**                | **$42–75 USD** | $30–40 USD | $2,500–3,500 USD   |                     |
 | **Conectividad**         | WiFi + BLE nativa                   | Opcional (shield)   | Ethernet            |
 | **Procesamiento**        | Dual-core, 240 MHz                  | Single-core, 16 MHz | DSP dedicado        |
 | **Telemetría potencia** | INA219 digital (I2C)                | Shunt + ADC         | Sensores integrados |
@@ -193,9 +197,9 @@ Referencia → Controlador PID (ESP32, 200 Hz)
 
 | Señal             | GPIO ESP32 | Tipo         | Destino                              | Notas |
 | ------------------ | ---------- | ------------ | ------------------------------------ | ----- |
-| L298N IN1          | GPIO26     | Salida (PWM) | Control dirección positiva          |       |
-| L298N IN2          | GPIO27     | Salida (PWM) | Control dirección negativa          |       |
-| L298N ENA          | —         | Jumper       | Habilitado (sin cable al ESP32)      |       |
+| BTS7960 RPWM      | GPIO26     | Salida (PWM) | PWM adelante                         |       |
+| BTS7960 LPWM      | GPIO27     | Salida (PWM) | PWM reversa                          |       |
+| BTS7960 EN         | —         | Pull-up      | Pull-up interno (habilitado)         |       |
 | Encoder servo A    | GPIO34     | Entrada      | Pull-up 4.7 kΩ a 3.3 V (open-drain) |       |
 | Encoder servo B    | GPIO35     | Entrada      | Pull-up 4.7 kΩ a 3.3 V (open-drain) |       |
 | Encoder péndulo A | GPIO32     | Entrada      | Futuro (pull-up según tipo)         |       |
@@ -206,14 +210,14 @@ Referencia → Controlador PID (ESP32, 200 Hz)
 ### 5.2 Conexión de Potencia
 
 ```
-Fuente 12V (+) ──┬── VIN+ [INA219] VIN- ──── L298N VS (12V)
+Fuente 12V (+) ──┬── VIN+ [INA219] VIN- ──── BTS7960 VS (12V)
                  │
                  ├── LM2596 IN
                  │      └── LM2596 OUT (5V) ──── ESP32 VIN
-                 │                            ──── L298N 5V (lógica)
+                 │                            ──── BTS7960 VCC (lógica)
                  │
 GND fuente  ─────┴── GND común (estrella)
-                    ├── L298N GND
+                    ├── BTS7960 GND
                     ├── ESP32 GND
                     ├── INA219 GND
                     └── Encoder GND
@@ -339,7 +343,7 @@ void setup() {
 ### 7.3 Filtrado Digital
 
 ```cpp
-// EMA filter para reducir ruido de conmutación del L298N
+// EMA filter para reducir ruido de conmutación del BTS7960
 float i_filtered = 0.9f * i_filtered_prev + 0.1f * i_measured;
 ```
 
@@ -419,7 +423,7 @@ La interfaz gráfica (`gui/app.py`) proporciona:
 
 | Fuente                  | Amplitud típica | Frecuencia     | Mitigación            |
 | ----------------------- | ---------------- | -------------- | ---------------------- |
-| L298N PWM switching     | 100 mV pico      | 20 kHz ±5 kHz | Filtro RC, bypass caps |
+| BTS7960 PWM switching   | ~20 mV pico      | 20 kHz ±5 kHz | Filtro RC, bypass caps |
 | LM2596 switching        | 50 mV pico       | 1.5 MHz        | Ferrite bead + bypass  |
 | Motor brush commutation | 200 mV pico      | Irregular      | Shielded cables        |
 | Power supply ripple     | 30 mV p-p        | 100 Hz         | Bulk capacitors        |
@@ -448,7 +452,7 @@ La interfaz gráfica (`gui/app.py`) proporciona:
 #### SW-FIX-2: Dirección del motor vs encoder
 
 - **Síntoma:** Lazo PID diverge inmediatamente
-- **Causa:** Conexión OUT1/OUT2 produce retroalimentación positiva
+- **Causa:** Conexión M+/M- produce retroalimentación positiva
 - **Solución:** Constante `MOTOR_DIR = -1` en firmware
 
 ---
@@ -462,18 +466,18 @@ La interfaz gráfica (`gui/app.py`) proporciona:
 | ESP32-WROOM-32                  | 1        | $6–10               | ⭐⭐⭐⭐⭐     |
 | LM2596 buck converter           | 1        | $1–3                | ⭐⭐⭐⭐⭐     |
 | INA219 breakout                 | 1        | $2–4                | ⭐⭐⭐⭐⭐     |
-| L298N motor driver              | 1        | $1.50–3             | ⭐⭐⭐⭐⭐     |
+| BTS7960 motor driver (IBT-2)   | 1        | $2–5                 | ⭐⭐⭐⭐⭐     |
 | Motor DC + encoder              | 1        | $15–30              | ⭐⭐⭐⭐       |
 | Resistencias varias             | Lote     | <$1                  | ⭐⭐⭐⭐⭐     |
 | Capacitores varios              | Lote     | <$1                  | ⭐⭐⭐⭐⭐     |
-| **Subtotal (sin fuente)** |          | **$26.50–51** |                |
-| **Con fuente/batería**   |          | **$50–80**    |                |
+| **Subtotal (sin fuente)** |          | **$27–53** |                |
+| **Con fuente/batería**   |          | **$50–82**    |                |
 
 ### 11.2 Comparación vs Quanser QUBE
 
 | Factor               | Este proyecto                             | Quanser QUBE        | Ventaja |
 | -------------------- | ----------------------------------------- | ------------------- | ------- |
-| Costo                | **$40–70 USD** | $2,500–3,500 USD | **98% menor** |         |
+| Costo                | **$42–75 USD** | $2,500–3,500 USD | **98% menor** |         |
 | Open-source          | **Sí**                             | No                  | ✅      |
 | Telemetría potencia | **INA219**                          | Integrado           | ✅      |
 | Escalabilidad        | **Alta**                            | Cerrada             | ✅      |
@@ -568,7 +572,7 @@ Etapa 5: Cierre académico (Q3–Q4 2026)
 ### Datasheets
 
 3. Espressif Systems. (2024). *ESP32-WROOM-32 Datasheet* (Rev. 3.3).
-4. STMicroelectronics. (2024). *L298 Dual Full-Bridge Driver* (Rev. 24).
+4. Infineon Technologies. (2024). *BTS7960 High Current PN Half Bridge Driver* (Rev. 1.0).
 5. Texas Instruments. (2024). *INA219 Current/Power Monitor* (SBOS400H, Rev. H).
 6. Texas Instruments. (2024). *LM2596 Step-Down Voltage Regulator* (SNVS033C, Rev. C).
 
@@ -587,4 +591,4 @@ Etapa 5: Cierre académico (Q3–Q4 2026)
 
 ---
 
-*Última actualización: Mayo 26, 2026*
+*Última actualización: Junio 08, 2026*

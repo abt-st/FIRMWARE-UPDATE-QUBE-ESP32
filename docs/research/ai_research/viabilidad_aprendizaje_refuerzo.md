@@ -640,7 +640,7 @@ Usar RL en el QUBE Servo ofrece un **aporte académico significativo**:
 
 1. **Metodología de sim-to-real transfer** para sistemas embebidos de bajo costo
 2. **Comparativa directa** PID vs. LQR vs. RL en la misma plataforma
-3. **Contribución original**: Nadie ha documentado RL en ESP32 + L298N + INA219
+3. **Contribución original**: Nadie ha documentado RL en ESP32 + BTS7960 + INA219
 4. **Relevancia**: RL para control es un campo de investigación activo (2024–2026)
 
 ---

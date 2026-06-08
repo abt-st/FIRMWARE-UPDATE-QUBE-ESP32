@@ -302,7 +302,7 @@ Procedimiento completo para investigar componentes o arquitecturas de hardware a
 | Componente | Modelo | Función |
 |------------|--------|---------|
 | Microcontrolador | ESP32-WROOM-32 | Control principal, WiFi, ADC |
-| Driver de motor | L298N (H-bridge) | Control del motor DC |
+| Driver de motor | BTS7960 (Dual Half-Bridge, MOSFET) | Control del motor DC |
 | Regulador de potencia | LM2596 (buck converter, 5V @ 3A) | Alimentación regulada |
 | Sensor corriente/potencia | INA219 (I2C) | Monitoreo de consumo |
 | Motor | DC con encoder incremental (Premotec 990412016913) | Actuador del péndulo |

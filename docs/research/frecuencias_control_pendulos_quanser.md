@@ -87,7 +87,7 @@ El QUBE-Servo 3 comparte la misma arquitectura DAQ integrada. El rate de control
 | Rate de control típico | 500 Hz – 1 kHz | **500 Hz** (`CONTROL_PERIOD_US = 2000`) |
 | Encoder CPR (cuadratura X4) | 2048 | 2048 (Premotec 990412016913) |
 | Resolución encoder tach | 13.8 ns (72 MHz counter) | Software (PCNT HW counter) |
-| Driver motor | Amplificador integrado | L298N (H-bridge externo) |
+| Driver motor | Amplificador integrado | BTS7960 (Dual Half-Bridge externo) |
 | ADC corriente | 12-bit, filtrado sincronizado PWM | INA219 via I2C |
 
 ### Observaciones

@@ -1,5 +1,5 @@
 """QUBE Signal Identifier — Interfaz gráfica de identificación de señales
-Arquitectura: ESP32 + L298N + INA219
+Arquitectura: ESP32 + BTS7960 + INA219
 
 Uso:
     python -m qube_ui
@@ -38,7 +38,7 @@ from .client import ESP32Client, QubeState
 #  Constantes de diseño
 # ──────────────────────────────────────────────────────────────────────────────
 
-WINDOW_TITLE = "QUBE Signal Identifier — ESP32 + L298N + INA219"
+WINDOW_TITLE = "QUBE Signal Identifier — ESP32 + BTS7960 + INA219"
 BUFFER_SIZE = 600  # muestras en memoria (~60 s @ 10 Hz)
 UPDATE_MS = 100  # refresco de la gráfica (ms)
 COLORS = {

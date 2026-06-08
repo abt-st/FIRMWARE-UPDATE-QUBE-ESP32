@@ -48,7 +48,7 @@
 COMPONENTE             DATASHEETS  GITHUB REPOS  PRODUCCIÓN  COSTO
 ─────────────────────────────────────────────────────────────────
 ESP32-WROOM-32         ✅ Oficial  41 proyectos  ✅ Millones  $6-10
-L298N H-Bridge         ✅ ST µE    53 proyectos  ✅ Industrial $1.50-3
+BTS7960 Half-Bridge    ✅ Infineon  43A peak       ✅ Industrial $2-5
 INA219 Monitor         ✅ TI       74 proyectos  ✅ Estándar   $2-4
 LM2596 Buck Converter  ✅ TI       44 proyectos  ✅ Estándar   $1-3
 ─────────────────────────────────────────────────────────────────
@@ -61,11 +61,11 @@ LM2596 Buck Converter  ✅ TI       44 proyectos  ✅ Estándar   $1-3
 GitHub Search Results:
 ✅ 41  → ESP32 + control DC motor
 ✅ 74  → INA219 + power monitoring
-✅ 53  → L298N + PID
+✅ 53  → BTS7960 + PID
 ✅ 44  → Buck converters
 ✅ 20  → Rotary inverted pendulum
 
-❌ 0   → ESP32 + L298N + INA219 + LM2596 (ESTA COMBINACIÓN)
+❌ 0   → ESP32 + BTS7960 + INA219 + LM2596 (ESTA COMBINACIÓN)
 
 CONCLUSIÓN: Integración INÉDITA en comunidad open-source
 ```
@@ -110,7 +110,7 @@ Métricas:
 | Componente | Cantidad | Costo USD |
 |------------|----------|-----------|
 | ESP32-WROOM-32 | 1 | $8 |
-| L298N Dual H-Bridge | 1 | $2 |
+| BTS7960 Dual Half-Bridge | 1 | $3 |
 | INA219 Breakout | 1 | $3 |
 | LM2596 Buck Converter | 1 | $2 |
 | Motor DC + Encoder | 1 | $25 |

@@ -20,7 +20,7 @@
 
 El nivel alto de 3.6V excediendo Vcc (3.3V) indica que **el encoder no está alimentado exclusivamente a 3.3V**, o que hay una fuente alternativa energizando la salida:
 
-1. **Causa más probable:** El encoder está conectado a **5V** (alimentación del L298N o bus de potencia) y su salida push-pull llega a ~4.7-5V. El voltaje medido de 3.6V podría ser:
+1. **Causa más probable:** El encoder está conectado a **5V** (alimentación del BTS7960 o bus de potencia) y su salida push-pull llega a ~4.7-5V. El voltaje medido de 3.6V podría ser:
    - Promedio RMS de una señal PWM/conmutada
    - Lectura en multímetro digital (respondiendo al duty cycle efectivo)
    - Señal con caída por carga/divisor no intencional
@@ -155,7 +155,7 @@ Esto usa 4 de los 6 inversores, dejando 2 disponibles para otros usos.
 |-----------|-------------|
 | Nivel alto | 3.6V ❌ (supera 3.3V) |
 | Flanco de subida | Lento (depende de pull-up) |
-| Ruido | Presente (conmutación L298N) |
+| Ruido | Presente (conmutación motor) |
 | Histéresis | 0V (sin protección) |
 | Falsos conteos | Probables |
 
@@ -177,7 +177,7 @@ Esto usa 4 de los 6 inversores, dejando 2 disponibles para otros usos.
 2. **El CD40106BE es una protección intrínseca**: su salida NUNCA excederá Vcc, sin importar la entrada
 3. **Alimentar el CD40106BE desde el ESP32** (3.3V) para garantizar compatibilidad de niveles
 4. **El bypass 100nF es obligatorio** para evitar oscilaciones del chip
-5. **Usar GND común** entre potencia (motor, L298N) y lógica (ESP32, CD40106BE)
+5. **Usar GND común** entre potencia (motor, BTS7960) y lógica (ESP32, CD40106BE)
 
 ---
 

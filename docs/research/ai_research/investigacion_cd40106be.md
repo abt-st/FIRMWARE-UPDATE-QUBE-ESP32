@@ -1,7 +1,7 @@
 # Investigación: CD40106BE — Schmitt Trigger Hex Inversor para Acondicionamiento de Señal
 
 **Fecha:** 2026-05-27  
-**Proyecto:** Modernización QUBE Servo (ESP32 + L298N + INA219)  
+**Proyecto:** Modernización QUBE Servo (ESP32 + BTS7960 + INA219)  *(migrado de L298N → BTS7960)*
 **Propósito:** Evaluar la implementación del CD40106BE como etapa de acondicionamiento de señales digitales en la arquitectura QUBE.  
 **Estado:** Investigación preliminar — propuesta técnica
 
@@ -83,7 +83,7 @@ Esta histéresis elimina el **rebote eléctrico** en señales ruidosas o de tran
 | Histéresis típica a 5 V | 0.8 V | Rechaza ruido de hasta ±400 mV en la entrada |
 | Histéresis típica a 12 V | 2.0 V | Robusto para señales de encoder en bus de potencia |
 | Fanout TTL a 5 V | ~2 cargas LS | Suficiente para excitar 1–2 GPIO de ESP32 |
-| Inmunidad a ruido | Muy alta (CMOS con histéresis) | Ideal para ambiente de motor DC con conmutación L298N |
+| Inmunidad a ruido | Muy alta (CMOS con histéresis) | Ideal para ambiente de motor DC con conmutación BTS7960 |
 
 ### 2.3 Ventajas frente a soluciones alternativas
 
@@ -106,7 +106,7 @@ El proyecto ha documentado múltiples incidentes de **nivel lógico insuficiente
 | **Divisor 4.7kΩ/8.2kΩ producía 35–40 mV** | Nivel alto insuficiente para detección | CHANGELOG |
 | **Salida open-drain sin pull-up efectivo** | El encoder no podía sostener nivel alto | docs/research/ |
 | **Encoder push-pull 5V** | Con divisor 10kΩ/10kΩ se obtenía ~2.5V (marginal) | INVESTIGACION.md |
-| **Ruido de conmutación L298N** | Los transitorios del H-bridge se acoplan a las líneas del encoder | (presencia de filtrado en firmware) |
+| **Ruido de conmutación del driver** | Los transitorios del H-bridge se acoplan a las líneas del encoder (BTS7960: ~20 mV pico, significativamente menor que L298N ~100 mV) | (presencia de filtrado en firmware) |
 | **Filtrado por software (VEL_ALPHA = 0.12)** | Se aplica filtro paso-bajo en derivada, pero no elimina falsos flancos | Firmware línea 141 |
 
 ### 3.1 Síntomas en el firmware actual
@@ -126,7 +126,7 @@ En `esp32_qube_l298n.ino`:
 
 La señal del encoder incremental (Premotec 990412016913) presenta:
 - Transiciones lentas (especialmente si la salida es open-drain con pull-up débil)
-- Ruido acoplado por conmutación del L298N (20 kHz PWM)
+- Ruido acoplado por conmutación del motor (20 kHz PWM, driver BTS7960)
 - Posibles falsos flancos que incrementan `encoderCount` erróneamente
 
 ### 4.2 Solución con CD40106BE
@@ -293,8 +293,8 @@ Encoder 5V ──┬── R_series (2.2kΩ) ──┬── INx (CD40106BE @ Vc
 └──────┬───────────────────────┬──────────────────────────┬───────┘
        │                       │                          │
        ▼                       ▼                          ▼
-   LM2596                   L298N                     Encoder servo
-   (12V→5V)                 (H-Bridge)                (5V push-pull)
+   LM2596                   BTS7960                    Encoder servo
+   (12V→5V)           (Dual Half-Bridge)              (5V push-pull)
        │                       │                          │
        ▼                       │                     ┌────┴────┐
    Reg 3.3V                   │                     │CD40106BE│
@@ -395,7 +395,7 @@ ENC_A (5V) ──── R1 (2.2kΩ) ────┬──── IN1 (CD40106BE p
 | Aspecto | Sin CD40106BE (divisor puro) | Con CD40106BE |
 |---------|------------------------------|----------------|
 | Histéresis | 0 V | 0.5 V (a 3.3 V) / 0.8 V (a 5 V) |
-| Protección contra ruido L298N | Ninguna | Excelente |
+| Protección contra ruido de conmutación | Ninguna | Excelente |
 | Nivel lógico a ESP32 | Marginal (~2.35 V) | 3.3 V compatible |
 | Complejidad de partes | Mínima (2 resistencias) | Moderada (1 IC + 4 R + 3 C) |
 | Costo incremental | ~$0.02 USD | ~$0.50–1.00 USD |

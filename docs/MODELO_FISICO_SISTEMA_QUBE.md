@@ -3,7 +3,7 @@
 **Autor:** Documento técnico para tesis  
 **Fecha:** 2026-06-01  
 **Versión del firmware:** v1.19.0+  
-**Plataforma:** ESP32-WROOM-32 + L298N + INA219 + LM2596  
+**Plataforma:** ESP32-WROOM-32 + BTS7960 + INA219 + LM2596  
 
 ---
 
@@ -12,7 +12,7 @@
 1. [Descripción General del Sistema](#1-descripción-general-del-sistema)
 2. [Modelo Físico del Motor DC](#2-modelo-físico-del-motor-dc)
 3. [Modelo del Encoder Cuadratura](#3-modelo-del-encoder-cuadratura)
-4. [Modelo del Puente H (L298N)](#4-modelo-del-puente-h-l298n)
+4. [Modelo del Puente H (BTS7960)](#4-modelo-del-puente-h-bts7960)
 5. [Modelo del Péndulo Rotatorio Invertido](#5-modelo-del-péndulo-rotatorio-invertido)
 6. [Modelo de Alimentación Eléctrica](#6-modelo-de-alimentación-eléctrica)
 7. [Modelo de Señales y Ruido](#7-modelo-de-señales-y-ruido)
@@ -38,8 +38,8 @@ El sistema QUBE Servo modernizado es una plataforma educativa de control de sist
                     └──────────────────────────────────────────────────┘
 
   ┌─────────┐    ┌──────────┐    ┌─────────┐    ┌──────────┐    ┌──────────┐
-  │  Fuente  │───►│  INA219  │───►│  L298N  │───►│ Motor DC │◄──►│ Encoder  │
-  │  12V DC  │    │ (I2C)    │    │(H-Bridge)│    │+ Péndulo │    │ Cuad.A/B │
+  │  Fuente  │───►│  INA219  │───►│ BTS7960 │───►│ Motor DC │◄──►│ Encoder  │
+  │  12V DC  │    │ (I2C)    │    │(Dual HB)│    │+ Péndulo │    │ Cuad.A/B │
   └─────────┘    └──────────┘    └─────────┘    └──────────┘    └──────────┘
        │                                             │                │
        ▼                                             │                │
@@ -48,7 +48,7 @@ El sistema QUBE Servo modernizado es una plataforma educativa de control de sist
   │  (Buck)  │            │  ESP32   │◄───────────────┘                │
   └──────────┘            │ WROOM-32 │◄────────────────────────────────┘
                           │          │
-                          │ GPIO 26/27──► L298N IN1/IN2 (PWM)
+                          │ GPIO 26/27──► BTS7960 RPWM/LPWM (PWM)
                           │ GPIO 34/35──► Encoder servo A/B
                           │ GPIO 32/33──► Encoder péndulo A/B
                           │ GPIO 21/22──► INA219 SDA/SCL (I2C)
@@ -66,7 +66,7 @@ El sistema QUBE Servo modernizado es una plataforma educativa de control de sist
 | Parámetro | Valor |
 |-----------|-------|
 | Microcontrolador | ESP32-WROOM-32 (Dual-core 240 MHz) |
-| Driver de motor | L298N (H-bridge dual) |
+| Driver de motor | BTS7960 (Dual Half-Bridge, IBT-2) |
 | Sensor de corriente | INA219 (I2C, 0x40) |
 | Regulador | LM2596 (Buck, 5V @ 3A) |
 | Motor | DC con encoder Premotec 990412016913 |
@@ -308,11 +308,11 @@ $$
 
 ---
 
-## 4. Modelo del Puente H (L298N)
+## 4. Modelo del Puente H (BTS7960)
 
 ### 4.1 Topología
 
-El L298N es un puente H dual que permite controlar la dirección y magnitud del voltaje aplicado al motor.
+El BTS7960 es un driver de motor dual half-bridge basado en MOSFET que permite controlar la dirección y magnitud del voltaje aplicado al motor. A diferencia del L298N (BJT), utiliza MOSFETs de canal N con RDS(on) extremadamente bajo.
 
 ```
             V_s (12V)
@@ -320,10 +320,11 @@ El L298N es un puente H dual que permite controlar la dirección y magnitud del 
      ┌───────┴───────┐
      │               │
   ┌──┴──┐         ┌──┴──┐
-  │ Q1  │         │ Q3  │
-  │(PNP)│         │(PNP)│
+  │ M1  │         │ M3  │
+  │(HS) │         │(HS) │
+  │ MOS │         │ MOS │
   └──┬──┘         └──┬──┘
-     │    OUT1    OUT2│
+     │    M+      M- │
      ├───────┬────────┤
      │    ┌──┴──┐     │
      │    │MOTOR│     │
@@ -331,13 +332,16 @@ El L298N es un puente H dual que permite controlar la dirección y magnitud del 
      │    └──┬──┘     │
      ├───────┴────────┤
   ┌──┴──┐         ┌──┴──┐
-  │ Q2  │         │ Q4  │
-  │(NPN)│         │(NPN)│
+  │ M2  │         │ M4  │
+  │(LS) │         │(LS) │
+  │ MOS │         │ MOS │
   └──┬──┘         └──┬──┘
      │               │
      └───────┬───────┘
             GND
 ```
+
+> HS = High-Side MOSFET, LS = Low-Side MOSFET. BTS7960 integra protecciones (overcurrent, overtemperature, undervoltage, short circuit).
 
 ### 4.2 Modulación PWM
 
@@ -351,34 +355,35 @@ Donde:
 - $D$ = ciclo de trabajo ($D \in [0, 1]$)
 - $V_s$ = voltaje de alimentación del motor
 
-Para PWM diferencial (IN1/IN2):
+El BTS7960 utiliza dos señales PWM independientes (RPWM y LPWM):
 
-| IN1 | IN2 | Movimiento |
-|-----|-----|-----------|
-| PWM | 0 | Giro horario (velocidad proporcional) |
-| 0 | PWM | Giro antihorario |
-| 0 | 0 | Freno (brake) |
-| 1 | 1 | Freno (brake) |
+| RPWM | LPWM | Movimiento |
+|------|------|------------|
+| PWM  | 0    | Giro horario (velocidad proporcional) |
+| 0    | PWM  | Giro antihorario |
+| 0    | 0    | Libre (coast) |
+| PWM  | PWM  | Freno (brake) |
 
-### 4.3 Pérdidas en el L298N
+### 4.3 Pérdidas en el BTS7960
 
 $$
-V_{out} = V_{in} - V_{drop,transistor} \times 2
+V_{out} = V_{in} - I \times R_{DS(on),total}
 $$
 
 | Parámetro | Valor | Notas |
 |-----------|-------|-------|
-| Caída de voltaje (saturación) | ~2.0 V (1.0 V × 2 transistores) | A 2A |
-| Resistencia RDS(on) | ~0.53 Ω por transistor | A 25°C |
-| Disipación máxima | 25 W (con disipador) | Sin disipador: ~2W |
-| Corriente máxima por canal | 2 A (continuo), 3 A (pico) | Con disipador |
+| RDS(on) por MOSFET | ~16 mΩ | A 25°C |
+| Caída de voltaje total | ~0.5 V (@ 2A) | Vs L298N: ~2V |
+| Disipación @ 2A | ~0.1 W | Sin disipador necesario |
+| Corriente máxima | 43 A (pico), 10 A (cont.) | Con disipador para >10A |
+| Protecciones integradas | Overcurrent, OTP, UVLO, SCP | Sin componentes externos |
 
-### 4.4 Modelo del L298N como Bloque
+### 4.4 Modelo del BTS7960 como Bloque
 
 $$
 V_{motor} = \begin{cases}
-D \cdot (V_s - 2V_{drop}) & \text{si } D > 0 \text{ (adelante)} \\
--D \cdot (V_s - 2V_{drop}) & \text{si } D < 0 \text{ (atrás)}
+D \cdot V_s - I \cdot R_{DS(on),total} & \text{si } D > 0 \text{ (adelante)} \\
+-D \cdot V_s + I \cdot R_{DS(on),total} & \text{si } D < 0 \text{ (atrás)}
 \end{cases}
 $$
 
@@ -554,11 +559,11 @@ $$
 ### 6.1 Topología de Potencia
 
 ```
-Fuente 12V ──┬── INA219 (serie) ──► L298N VS (motor 12V)
+Fuente 12V ──┬── INA219 (serie) ──► BTS7960 VS (motor 12V)
              │
              └── LM2596 (buck) ──► 5V rail
                                       ├── ESP32 VIN (→ 3.3V AMS1117)
-                                      ├── L298N VSS (lógica)
+                                      ├── BTS7960 VCC (lógica)
                                       ├── Encoder VCC
                                       └── CD40106BE VCC
 ```
@@ -614,7 +619,7 @@ El rango del INA219 es configurable:
 
 ```
                   470µF          100µF          10µF ceramic
-Fuente 12V ──┬──┤├──┬──┤├──┬──┤├──┬── V_s (L298N)
+Fuente 12V ──┬──┤├──┬──┤├──┬──┤├──┬── V_s (BTS7960)
              │       │       │       │
              │     100nF×4   │     100nF×2
              │       │       │       │
@@ -629,7 +634,7 @@ GND ─────────┴───────┴───────�
 
 | Fuente | Amplitud | Frecuencia | Mecanismo |
 |--------|----------|------------|-----------|
-| L298N PWM switching | ~100 mV pico | 20 kHz ±5 kHz | Conmutación de transistores |
+| BTS7960 PWM switching | ~20 mV pico | 20 kHz ±5 kHz | Conmutación MOSFET (menor ruido que BJT) |
 | LM2596 switching | ~50 mV pico | 150 kHz | Ripple de salida |
 | Motor brush commutation | ~200 mV pico | Irregular | Chisporroteo de escobillas |
 | Ripple 5V rail | ~30 mV p-p | 100 Hz | Rizado de fuente |
@@ -784,7 +789,7 @@ El PWM máximo se reduce progresivamente al acercarse al setpoint:
 ```
                                      ┌──────────────────────────────┐
                                      │          MOTOR DC             │
- r(k) ──►(+)──► PID ──► PWM ──► L298N ──►│  G(s) = Km/(τs+1) │──► θ
+ r(k) ──►(+)──► PID ──► PWM ──► BTS7960 ──►│  G(s) = Km/(τs+1) │──► θ
           ▲     │                    │     └──────────┬─────────────┘
           │     │                    │                │
           │     └────────────────────┼────────────────┘
@@ -1148,7 +1153,7 @@ $$
 
 4. Espressif Systems. (2024). *ESP32-WROOM-32 Datasheet* (Rev. 3.3).
 
-5. STMicroelectronics. (2024). *L298 Dual Full-Bridge Driver* (Rev. 24).
+5. Infineon. (2024). *BTS7960 High Current PN Half Bridge Driver* (Rev. 1.2).
 
 6. Texas Instruments. (2024). *INA219 Current/Power Monitor* (SBOS400H).
 

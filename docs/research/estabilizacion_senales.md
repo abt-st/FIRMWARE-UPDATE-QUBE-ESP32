@@ -11,8 +11,8 @@
 
 | Tipo | Frecuencia | Origen | Amplitud típica | Impacto |
 |------|-----------|--------|----------------|---------|
-| Alta (RF) | 100 kHz–20 MHz | L298N PWM (20 kHz), LM2596 (1.5 MHz) | 50–200 mV pico | Jitter en decodificación cuadratura |
-| Baja | 10 Hz–10 kHz | Ripple LM2596, transientes L298N | 10–50 mV | Offset en líneas A/B |
+| Alta (RF) | 100 kHz–20 MHz | BTS7960 PWM (20 kHz), LM2596 (1.5 MHz) | 20–200 mV pico | Jitter en decodificación cuadratura |
+| Baja | 10 Hz–10 kHz | Ripple LM2596, transientes BTS7960 | 10–50 mV | Offset en líneas A/B |
 | 1/f (Flicker) | < 1 Hz | Variación térmica, deriva componentes | 0.1–1°/min | Drift de posición |
 | Impulsivo | 100–500 ns | Conmutación motor DC (escobillas) | 0.5–2 V | **Riesgo mayor**: edges falsos en cuadratura |
 
@@ -20,7 +20,7 @@
 
 | Fuente | Amplitud | Frecuencia | Atenuación objetivo |
 |--------|----------|------------|---------------------|
-| L298N PWM | 100 mV pico | 20 kHz ±5 kHz | -30 dB (factor 30×) |
+| BTS7960 PWM | ~20 mV pico | 20 kHz ±5 kHz | -30 dB (factor 30×) |
 | LM2596 | 50 mV pico | 1.5 MHz | -40 dB (factor 100×) |
 | Motor brush | 200 mV pico | Irregular | -20 dB (factor 10×) |
 | Ripple 5V rail | 30 mV p-p | 100 Hz | -10 dB (factor 3×) |
@@ -108,7 +108,7 @@ Recomendado: FB-1206P800 (SMD 0805) o Murata BLM21BD600
 ### 4.1 Topología Incorrecta (Ground Loops)
 
 ```
-Motor + ──→ [L298N] ──→ Motor -
+Motor + ──→ [BTS7960] ──→ Motor -
     │                         │
 [GND 1] ─────────┬──────── [GND 2]  ← Loop: corrientes circulan por GND común
                  │
@@ -119,7 +119,7 @@ Motor + ──→ [L298N] ──→ Motor -
 
 ```
 ESP32 GND ──┐
-L298N GND ──┼─→ LM2596 GND (STAR POINT)
+BTS7960 GND ─┼─→ LM2596 GND (STAR POINT)
 Motor GND ──┤
 Encoder GND─┘
 ```

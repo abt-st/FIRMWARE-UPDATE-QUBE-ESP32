@@ -8,7 +8,7 @@
 ## 📋 Resumen Ejecutivo
 
 ### Pregunta de Investigación
-*¿Es el proyecto QUBE Servo Modernizado (ESP32 + L298N + INA219 + LM2596) científicamente sólido y apto para tesis?*
+*¿Es el proyecto QUBE Servo Modernizado (ESP32 + BTS7960 + INA219 + LM2596) científicamente sólido y apto para tesis?*
 
 ### Respuesta Directa
 **✅ SÍ — Calificación 91/100**
@@ -59,7 +59,7 @@ PROMEDIO FINAL                   91/100 ✅
 
 ### ✅ Hardware Maduro
 - Cada componente: 40-200+ proyectos en GitHub
-- Datasheets oficiales de 3 fabricantes (Espressif, STMicroelectronics, TI)
+- Datasheets oficiales de 3 fabricantes (Espressif, Infineon, TI)
 - Librería Adafruit INA219 con 229 estrellas
 
 ### ✅ Validación Experimental
@@ -74,7 +74,7 @@ PROMEDIO FINAL                   91/100 ✅
 - Documentación de investigación consolidada
 
 ### ✅ Aporte Original
-- **PRIMERO** en integrar exactamente: ESP32 + L298N + INA219 + LM2596
+- **PRIMERO** en integrar exactamente: ESP32 + BTS7960 + INA219 + LM2596
 - Cada componente validado independientemente
 - Oportunidad clara de publicación
 
@@ -85,7 +85,7 @@ PROMEDIO FINAL                   91/100 ✅
 | Limitación | Riesgo | Mitigación | Gravedad |
 |------------|--------|------------|----------|
 | Rango angular ±90° | Bajo | Diseño mecánico, futuro LQR | 🟡 Menor |
-| Ruido conmutación L298N | Bajo | Filtrado EMA, cap 100µF | 🟢 Manejable |
+| Ruido conmutación BTS7960 (~20mV) | Bajo | Filtrado EMA, cap 100µF | 🟢 Manejable |
 | Latencia WiFi 10-100ms | Bajo | Loop PID independiente | 🟢 Diseño correcto |
 | Encoder péndulo | Medio | En instalación Q2 2026 | 🟡 Planificado |
 

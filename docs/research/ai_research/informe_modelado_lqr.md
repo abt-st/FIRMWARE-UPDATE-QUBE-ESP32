@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-05-29  
 **Autor:** Asistente de Investigación AI  
-**Proyecto:** Modernización QUBE Servo con arquitectura ESP32 + L298N + INA219  
+**Proyecto:** Modernización QUBE Servo con arquitectura ESP32 + BTS7960 + INA219  *(migrado de L298N → BTS7960)*
 **Alcance:** Modelado matemático, diseño LQR, implementación en ESP32, comparación con PID
 
 ---
@@ -74,8 +74,8 @@ El QUBE Servo emula un péndulo invertido rotatorio compuesto por:
     ══════╪══════ ← Eje de rotación (servo)
           │
     [  MOTOR DC  ]
-    [   L298N    ]
-    [   ENCODER  ]
+    [  BTS7960   ] ← Dual Half-Bridge (MOSFET, RDS(on)≈16mΩ)
+    [  ENCODER   ]
 ```
 
 ### 2.2 Definición de Variables
@@ -87,7 +87,7 @@ El QUBE Servo emula un péndulo invertido rotatorio compuesto por:
 | Velocidad del servo | α̇ | rad/s | Velocidad angular del motor |
 | Velocidad del péndulo | θ̇ | rad/s | Velocidad angular del péndulo |
 | Torque del motor | τ | N·m | Torque aplicado por el motor |
-| Voltaje de entrada | V | V | Voltaje PWM aplicado al L298N |
+| Voltaje de entrada | V | V | Voltaje PWM aplicado al BTS7960 (RPWM/LPWM) |
 
 ### 2.3 Parámetros del Sistema
 

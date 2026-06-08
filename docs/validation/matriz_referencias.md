@@ -27,7 +27,7 @@
 ## Datasheets
 
 3. **Espressif Systems. (2024).** *ESP32-WROOM-32 Datasheet* (Rev. 3.3). [espressif.com](https://www.espressif.com/)
-4. **STMicroelectronics. (2000).** *L298 Dual Full-Bridge Driver* (Rev. 6). [st.com](https://www.st.com/resource/en/datasheet/l298.pdf)
+4. **Infineon.** *BTS7960 High Current PN Half Bridge Datasheet*. [infineon.com](https://www.infineon.com/) — Reemplaza L298N (RDS(on)≈16mΩ MOSFET vs ~530mΩ BJT)
 5. **Texas Instruments. (2015).** *INA219 Current/Power Monitor* (Rev. F). [ti.com](https://www.ti.com/product/INA219)
 6. **Texas Instruments. (2013).** *LM2596 Step-Down Voltage Regulator* (Rev. H). [ti.com](https://www.ti.com/product/LM2596)
 

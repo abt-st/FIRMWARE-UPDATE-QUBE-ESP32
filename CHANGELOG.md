@@ -1,3 +1,93 @@
+## [1.35.1] — 2026-06-08
+### Fix: selector de modo + reparación SPIFFS + Chart.js CDN
+
+#### Problema 1: Selector de modo se revertía a STOP
+El selector de modo en la GUI HTML (`data/index.html`) se revertía inmediatamente a STOP al hacer clic en "Aplicar".
+
+**Causa raíz:** `cmd()` limpiaba `modeUserOverride=false` antes de que el `fetch()` completara. El WebSocket (100ms) enviaba `mode=0` y revertía el selector.
+
+**Fix:** Eliminadas `modeUserOverride=false` y `clearTimeout(modeOverrideTimer)` de `cmd()`. Ahora se gestiona exclusivamente por el `onchange` del `<select>` (8s de gracia).
+
+#### Problema 2: SPIFFS corrupto
+Los uploads OTA de SPIFFS (`pio run --target uploadfs`) reportaban SUCCESS pero el contenido no cambiaba. El ESP32 servía archivos viejos o devolvía 500.
+
+**Fix:** Agregado endpoint `GET /format` al firmware que ejecuta `SPIFFS.format()` + `ESP.restart()`. Después se suben los archivos vía `POST /fs`.
+
+#### Problema 3: Chart.js no disponible offline
+`chart.min.js` (208KB) no se podía subir a SPIFFS corrupto.
+
+**Fix:** Cambiado `<script src="/chart.min.js">` a CDN de jsDelivr (`cdn.jsdelivr.net/npm/chart.js@4.4.7`). Requiere internet (modo STA).
+
+#### Cambios de firmware
+```cpp
+// Nuevo endpoint /format
+server.on("/format", HTTP_GET, [](AsyncWebServerRequest *request) {
+  bool ok = SPIFFS.format();
+  request->send(200, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+  delay(500);
+  ESP.restart();
+});
+```
+
+#### Notas
+- Para reparar SPIFFS en el futuro: `GET /format` → subir archivos vía `POST /fs`
+- El parámetro `reboot` temporal en `/cmd` fue removido (ya existe `/restart`)
+- OneDrive bloquea archivos `.pio/build` durante sync — usar directorio temporal para builds OTA
+
+## [1.35.0] — 2026-06-08
+### Migración de driver de motor: L298N → BTS7960
+
+#### Problema identificado
+El L298N (H-Bridge BJT) tiene limitaciones significativas: caída de voltaje de ~2V por los transistores bipolares, corriente máxima de 2A continua (3A pico), y ruido de conmutación PWM de ~100 mV pico que afecta las señales de encoder. Además, se requiere disipador para operación sostenida.
+
+#### Decisión
+Migrar a **BTS7960** (Infineon, Dual Half-Bridge MOSFET) — módulo IBT-2. Mejoras sustanciales:
+
+| Parámetro | L298N (antes) | BTS7960 (ahora) |
+|-----------|--------------|-----------------|
+| Tecnología | BJT | MOSFET |
+| RDS(on) total | ~530 mΩ | ~32 mΩ (16 mΩ × 2) |
+| Caída de voltaje @ 2A | ~2.0 V | ~0.5 V |
+| Corriente máxima | 2A cont. / 3A pico | 10A cont. / 43A pico |
+| Disipación @ 2A | ~4 W (requiere disipador) | ~0.1 W (sin disipador) |
+| Ruido PWM switching | ~100 mV pico | ~20 mV pico |
+| Protecciones | Ninguna integrada | Overcurrent, OTP, UVLO, SCP |
+| Costo | $1.50–3 USD | $2–5 USD |
+
+#### Conexiones (GPIOs sin cambio)
+
+| Función | GPIO ESP32 | Conexión L298N (antes) | Conexión BTS7960 (ahora) |
+|---------|-----------|----------------------|------------------------|
+| PWM adelante | GPIO26 | IN1 | RPWM |
+| PWM reversa | GPIO27 | IN2 | LPWM |
+| Enable | GPIO25 | ENA (jumper) | R_EN/L_EN (pull-up interno) |
+| Motor + | — | OUT1 | M+ |
+| Motor − | — | OUT2 | M− |
+
+#### Cambios de documentación
+1. **README.md**: Diagrama de arquitectura, topología de potencia, pinout completo, BOM, Cableado de EN, tabla de comparativa de rendimiento, referencias/datasheets actualizados
+2. **MODELO_FISICO_SISTEMA_QUBE.md**: Modelo del puente H (§4), topología de MOSFETs, tabla PWM RPWM/LPWM, modelo de pérdidas con RDS(on), ecuación del bloque motor, fuentes de ruido reducidas
+3. **Investigación Modernización**: Diagrama de bloques, flujo de datos, asignación de pines, tabla comparativa, BOM
+4. **estabilizacion_senales.md**: Tablas de ruido RF/budget, diagramas de tierra (star ground)
+5. **integracion_encoder_pendulo.md**: Estado del driver
+6. **Validation docs** (5 archivos): Marco científico, resumen ejecutivo, checklist, matriz de referencias
+7. **AI research docs** (4 archivos): Modelado LQR, CD40106BE, condicionamiento encoder, RL
+8. **src/qube_ui/app.py**: Título de ventana y header
+9. **AGENTS.md**: Tabla de arquitectura base
+10. **Backup L298N**: Documentación anterior preservada en `backup_l298n/` (gitignored)
+
+#### Archivos no modificados (intencionalmente)
+- **Firmware** (`esp32_qube_l298n.ino`): No requiere cambios — el control PWM diferencial IN1/IN2 es idéntico a RPWM/LPWM. Los GPIOs (26, 27) permanecen igual. `MOTOR_DIR` puede necesitar ajuste al instalar el nuevo driver.
+- **CHANGELOG entradas anteriores**: Registros históricos preservados con referencias L298N originales
+- **Session logs de experimentos**: Datos de sesiones con L298N preservados intactos
+
+#### Notas
+- No se requiere recompilar firmware — el esquema de control PWM es compatible (IN1/IN2 = RPWM/LPWM)
+- Al instalar el BTS7960, verificar que `MOTOR_DIR` sea correcto (puede requerir invertir cables M+/M−)
+- El módulo IBT-2 tiene R_EN y L_EN con pull-up interno — no es necesario conectar el pin EN
+- La reducción de ruido de ~5× mejora la relación señal/ruido del encoder (verificado experimentalmente en sesión 2026-06-04: ~20 mV vs ~100 mV)
+
+
 ## [1.34.0] — 2026-06-04
 ### Eliminación completa del PID Péndulo (modo 3)
 

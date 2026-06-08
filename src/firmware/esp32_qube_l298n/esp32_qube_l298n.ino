@@ -107,7 +107,8 @@ static const int PIN_ENA = 25;
 static const int PIN_IN1 = 26;
 static const int PIN_IN2 = 27;
 
-// Si no puedes cablear ENA al ESP32, pon esto en false y deja el jumper ENA en el L298N.
+// BTS7960: R_EN/L_EN habilitados por GPIO25 (opción B del README).
+// Conectar GPIO25 → R_EN + puente R_EN→L_EN en el módulo IBT-2.
 static const bool USE_ENA_PWM = false;
 
 static const int PIN_I2C_SDA = 21;
@@ -218,12 +219,12 @@ const float PEND_MASS = 0.025f;      // Masa del pendulo (kg) - ajustar
 const float PEND_LENGTH = 0.065f;    // Distancia pivot-centro de masa (m) - ajustar
 const float PEND_INERTIA = 0.00002f; // Momento de inercia (kg*m^2) - ajustar
 const float GRAVITY = 9.81f;         // Gravedad (m/s^2)
-float ke_gain = 0.5f;               // Ganancia del controlador de energia (ke) - subido de 0.45
+float ke_gain = 0.55f;              // Ganancia del controlador de energia (ke) - sweet spot entre 0.5 y 0.6
 float balance_threshold = 1.0f;     // Umbral para cambiar a LQR (grados desde vertical) - reducido de 3
 bool swing_recovering = false;       // Estado de recovery: motor apagado esperando que el péndulo caiga
 const float SWING_RECOVERY_THRESHOLD = 30.0f;  // |pendPos| < esto para salir de recovery (cerca del fondo)
 const unsigned long CONTROL_PERIOD_US = 2000;             // 500 Hz (era 5000 = 200 Hz)
-const unsigned long TELEMETRY_PERIOD_MS = 100;
+unsigned long telemetryPeriodMs = 100;          // Ajustable por HTTP: tp<ms>
 const unsigned long COMMAND_TIMEOUT_MS = 10000;
 const bool ENABLE_COMMAND_TIMEOUT = false;               // true para seguridad en operacion, false para ajuste en banco
 // ── Umbrales LQR ─────────────────────────────────────────────────────────────
@@ -258,7 +259,7 @@ const unsigned long INA_WATCHDOG_PERIOD_MS = 1000;       // Periodo del watchdog
 const unsigned long INA_INIT_RETRY_MS = 5000;            // Periodo de reintento de init
 
 // ── Umbrales swing-up (modo 5) ────────────────────────────────────────────────
-const float SWINGUP_TRANSITION_VEL_DPS = 15.0f;          // Velocidad angular máx. para transicionar a LQR (reducido de 30 para transición más limpia)
+const float SWINGUP_TRANSITION_VEL_DPS = 30.0f;          // Velocidad angular máx. para transicionar a LQR (subido de 15)
 const float SWINGUP_KICK_DUTY_FRAC = 0.7f;               // Amplitud del kick inicial (% de PWM_MAX)
 const unsigned long SWINGUP_KICK_PERIOD_MS = 250;         // Semi-periodo del kick alternante
 const float SWINGUP_QUIET_THRESHOLD_RADPS = 0.15f;       // |α̇| por debajo del cual se aplica kick alternante
@@ -805,7 +806,12 @@ void handleCmd(AsyncWebServerRequest *request) {
     Kd_coarse = request->getParam("kdc")->value().toFloat();
     resetPid();
   }
-
+  if (request->hasParam("tp")) {
+    const unsigned long v = request->getParam("tp")->value().toInt();
+    if (v >= 50 && v <= 5000) {
+      telemetryPeriodMs = v;
+    }
+  }
   request->send(200, "application/json", getStateJson());
 }
 
@@ -821,13 +827,13 @@ void connectStaIfConfigured() {
 
   Serial.print("STA: conectando a ");
   Serial.println(staSsid);
+  // IP estática: 192.168.100.50
   IPAddress local_IP(192, 168, 100, 50);
   IPAddress gateway(192, 168, 100, 1);
   IPAddress subnet(255, 255, 255, 0);
-  WiFi.config(local_IP, gateway, subnet);
+  IPAddress dns(8, 8, 8, 8);
+  WiFi.config(local_IP, gateway, subnet, dns);
   WiFi.begin(staSsid, staPass);
-  // No bloquear: WiFi.begin() conecta en background
-  // La IP se mostrara en printNetworkInfo() cuando este listo
 }
 
 // ── WiFi credential management (NVS/Preferences) ────────────────────────────
@@ -1178,6 +1184,9 @@ void setup() {
   } else {
     pwmAttachCompat(PIN_IN1, PWM_CH_IN1);
     pwmAttachCompat(PIN_IN2, PWM_CH_IN2);
+    // BTS7960 enable: R_EN/L_EN habilitados via GPIO25
+    pinMode(PIN_ENA, OUTPUT);
+    digitalWrite(PIN_ENA, HIGH);
   }
 
   setMotor(0);
@@ -1276,6 +1285,16 @@ void setup() {
     delay(500);
     ESP.restart();
   });
+  server.on("/format", HTTP_GET, [](AsyncWebServerRequest *request) {
+    Serial.println("[SPIFFS] Formateando...");
+    bool ok = SPIFFS.format();
+    Serial.printf("[SPIFFS] Formato: %s\n", ok ? "OK" : "ERROR");
+    request->send(200, "application/json", ok ? "{\"ok\":true,\"formatted\":true}" : "{\"ok\":false}");
+    delay(500);
+    ESP.restart();
+  });
+  // Serve static files from SPIFFS (chart.min.js, etc.)
+  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
   server.begin();
 
   lastControlUs = micros();
@@ -1484,9 +1503,28 @@ void loop() {
 
       // Servo centering en LQR: mantener el servo cerca del centro para
       // maximizar el rango de actuación y reducir oscilación del servo.
+      // Centering agresivo: si el servo se aleja del centro, la fuerza de
+      // retorno crece linealmente. Esto previene que el servo pegue contra
+      // el stop mecánico y cause brownout.
       {
-        float centering = -0.15f * theta;  // Fuerza suave hacia centro
+        float centering_gain = 1.0f;  // Ganancia de centering (era 0.15)
+        float centering = -centering_gain * theta;
         pwm += (int)centering;
+      }
+
+      // Límite de PWM proporcional a la posición del servo.
+      // Cuando |theta| > 50°, reducir PWM máximo para evitar que el servo
+      // siga alejándose del centro. Esto es más efectivo que la protección
+      // direction-aware que solo actúa en 70°-85°.
+      {
+        float absTheta = fabsf(theta);
+        int servoPwmLimit = 70;
+        if (absTheta > 50.0f) {
+          // Reducir PWM linealmente: 70 en 50°, 30 en 75°, 0 en 90°
+          servoPwmLimit = (int)(70.0f - (absTheta - 50.0f) * (70.0f / 40.0f));
+          servoPwmLimit = constrain(servoPwmLimit, 0, 70);
+        }
+        pwm = constrain(pwm, -servoPwmLimit, servoPwmLimit);
       }
 
       // Protección: apagar motor si el péndulo acumuló rotación (raw>250°).
@@ -1570,32 +1608,60 @@ void loop() {
         int brake_pwm = (alpha_dot > 0.0f) ? -PWM_MAX : PWM_MAX;
         pwm = brake_pwm;
       } else {
-        // ── Swing-up con recovery persistente ──────────────────────────
+        // ══════════════════════════════════════════════════════════════════
+        // TRANSICIÓN A LQR: chequear ANTES de recovery/damping.
+        // Si el péndulo está cerca de la vertical con baja velocidad,
+        // transicionar inmediatamente sin entrar en recovery.
+        // ══════════════════════════════════════════════════════════════════
+        float vel_raw_dps = fabsf(alpha_dot) * RAD_TO_DEG;
+        bool inUpperHemisphere = fabsf(pendPos) > 165.0f;
+        bool nearlyStopped = vel_raw_dps < 10.0f;
+        bool canTransition = inUpperHemisphere && nearlyStopped;
+
+        if (canTransition) {
+          float dist_from_up = 180.0f - fabsf(pendPos);
+          if (dist_from_up < balance_threshold) {
+            setMode(4);
+            lqr_inFallback = false;
+            lqr_catchMs = millis();
+            spinCooldownMs = 0;
+            Serial.printf("Swing-up: TRANSICION a LQR (pend=%.1f, vel=%.1f, raw=%.1f)\n", pendPos, vel_raw_dps, pendPosRaw);
+            pwm = 0;
+            setMotor(pwm);
+            return;  // Salir del control loop — modo ya cambió a 4
+          }
+        }
+
+        // ── Recovery: péndulo cruzó la vertical sin transicionar ───────
         if (swing_recovering) {
           // RECOVERY activo: motor apagado, esperando que el péndulo caiga al fondo.
           pwm = 0;
           if (fabsf(pendPos) < SWING_RECOVERY_THRESHOLD) {
-            // El péndulo está cerca del fondo — salir de recovery y reanudar pumping.
             swing_recovering = false;
+            // Reset offset al salir de recovery para que raw esté en [-180,180]
+            pendulumOffsetDeg = pendulumDir * getPendulumCountAtomic() * getPendulumDegPerCount();
+            prevPosPend = 0.0f;
+            pendPosRawPrev = 0.0f;
             Serial.printf("Swing-up: recovery COMPLETE (pend=%.1f)\n", pendPos);
           }
         } else if (fabsf(pendPosRaw) > 180.0f) {
-          // El péndulo cruzó la vertical — entrar en recovery.
+          // El péndulo cruzó la vertical sin transicionar → recovery.
+          // Reset offset para que raw se mantenga acotado.
           swing_recovering = true;
           pwm = 0;
           setMotor(0);
           pendulumOffsetDeg = pendulumDir * getPendulumCountAtomic() * getPendulumDegPerCount();
           prevPosPend = 0.0f;
           pendPosRawPrev = 0.0f;
-          Serial.printf("Swing-up: RECOVERY START (raw=%.1f)\n", pendPosRaw);
-        } else if (fabsf(pendPosRaw) > 150.0f) {
-          // Damping progresivo: más fuerte cuanto más cerca de 180°
-          float dampStrength = (fabsf(pendPosRaw) - 150.0f) / 30.0f;
+          Serial.printf("Swing-up: RECOVERY START (raw=%.1f, pend=%.1f, vel=%.1f)\n", pendPosRaw, pendPos, vel_raw_dps);
+        } else if (fabsf(pendPosRaw) > 120.0f) {
+          // ── Damping progresivo: disipar energía desde 120° hasta la vertical ──
+          float dampStrength = (fabsf(pendPosRaw) - 120.0f) / 60.0f;
           dampStrength = constrain(dampStrength, 0.0f, 1.0f);
           float damping = -(0.3f + 0.7f * dampStrength) * alpha_dot;
           pwm = constrain((int)(MOTOR_DIR * damping * PWM_MAX), -PWM_MAX, PWM_MAX);
         } else {
-          // Bombeo normal de energía
+          // ── Bombeo normal de energía ──────────────────────────────────
           const float alpha_energy_rad = pendPosRaw * DEG_TO_RAD;
           const float prod = alpha_dot * cosf(alpha_energy_rad);
           float motion_sign = 0.0f;
@@ -1603,43 +1669,41 @@ void loop() {
           else if (prod < -SWINGUP_PROD_DEADZONE) motion_sign = -1.0f;
 
           if (fabsf(alpha_dot) < SWINGUP_QUIET_THRESHOLD_RADPS) {
+            // Kick alternante cuando el péndulo está quieto + centering
             if (((millis() / SWINGUP_KICK_PERIOD_MS) % 2) == 0) {
-              pwm = MOTOR_DIR * (int)(40 * SWINGUP_KICK_DUTY_FRAC);
+              pwm = MOTOR_DIR * (int)(50 * SWINGUP_KICK_DUTY_FRAC);
             } else {
-              pwm = -MOTOR_DIR * (int)(40 * SWINGUP_KICK_DUTY_FRAC);
+              pwm = -MOTOR_DIR * (int)(50 * SWINGUP_KICK_DUTY_FRAC);
             }
+            float centering_kp = 0.2f;
+            pwm += (int)(-centering_kp * pos);
           } else {
+            // Bombeo de energía basado en sign(α̇·cos α)
             float u = ke_gain * motion_sign;
             pwm = (int)(MOTOR_DIR * u * PWM_MAX);
           }
-
-          // Servo centering
-          float centering_kp = 0.2f;
-          int centering_pwm = (int)(-centering_kp * pos);
-          pwm += centering_pwm;
         }
       }
 
-      // Transición a LQR: solo si no spinning, sin vueltas acumuladas,
-      // péndulo en hemisferio superior, casi detenido.
-      // Transición a LQR: condición probada (55+ segundos)
-      if (!spinning && fabsf(pendPosRaw) < 360.0f) {
-        float vel_raw = fabsf(alpha_dot) * RAD_TO_DEG;
-        bool inUpperHemisphere = fabsf(pendPos) > 165.0f;
-        bool nearlyStopped = vel_raw < 10.0f;
-        if (inUpperHemisphere && nearlyStopped) {
-          float dist_from_up = 180.0f - fabsf(pendPos);
-          if (dist_from_up < balance_threshold) {
-            setMode(4);
-            lqr_inFallback = false;
-            lqr_catchMs = millis();
-            spinCooldownMs = 0;
-            Serial.printf("Swing-up: TRANSICION a LQR (pend=%.1f, vel=%.1f, raw=%.1f)\n", pendPos, vel_raw, pendPosRaw);
+      // Frenado progresivo + activo del servo
+      const float SWINGUP_BRAKE_START = 70.0f;
+      const float SWINGUP_BRAKE_END = 90.0f;
+      const float abs_pos = fabsf(pos);
+      if (abs_pos > SWINGUP_BRAKE_START) {
+        if (abs_pos < SWINGUP_BRAKE_END) {
+          // 70-90°: reducir PWM gradualmente
+          float brake_factor = 1.0f - (abs_pos - SWINGUP_BRAKE_START) / (SWINGUP_BRAKE_END - SWINGUP_BRAKE_START);
+          if ((pos > 0 && pwm > 0) || (pos < 0 && pwm < 0)) {
+            pwm = (int)(pwm * brake_factor);
           }
+        } else {
+          // >90°: freno activo — PWM inverso para contrarrestar el momento
+          int brake_pwm = (int)((abs_pos - SWINGUP_BRAKE_END) * 1.5f);
+          brake_pwm = constrain(brake_pwm, 0, PWM_MAX);
+          pwm = (pos > 0) ? -brake_pwm : brake_pwm;
         }
       }
-
-      pwm = constrain(pwm, -70, 70);
+      pwm = constrain(pwm, -PWM_MAX, PWM_MAX);
       setMotor(pwm);
     }
   }
@@ -1650,7 +1714,7 @@ void loop() {
     safeStop();
   }
 
-  if (nowMs - lastTelemetryMs >= TELEMETRY_PERIOD_MS) {
+  if (nowMs - lastTelemetryMs >= telemetryPeriodMs) {
     lastTelemetryMs = nowMs;
     const long c = getEncoderCountAtomic();
     const float pos = encoderDir * c * getDegPerCount() - positionOffsetDeg;
@@ -1667,6 +1731,10 @@ void loop() {
     Serial.print(pendPos, 2);
     Serial.print(" PCNT:");
     Serial.print(pc);
+    Serial.print(" PA:");
+    Serial.print(digitalRead(PIN_PEND_A));
+    Serial.print(" PB:");
+    Serial.print(digitalRead(PIN_PEND_B));
     Serial.print(" SP:");
     Serial.print(setpoint_deg, 2);
     Serial.print(" PWM:");

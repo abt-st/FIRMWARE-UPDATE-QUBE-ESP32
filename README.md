@@ -1,6 +1,6 @@
 # QUBE ESP32
 
-Plataforma de control educativo de péndulo rotatorio invertido basada en **ESP32 + L298N + INA219 + LM2596 + CD40106BE**, con encoders duales, telemetría de potencia en tiempo real y conectividad WiFi. Alternativa open-source al Quanser QUBE Servo por **~$70 USD** frente a los $2,500–$3,500 USD del original.
+Plataforma de control educativo de péndulo rotatorio invertido basada en **ESP32 + BTS7960 + INA219 + LM2596 + CD40106BE**, con encoders duales, telemetría de potencia en tiempo real y conectividad WiFi. Alternativa open-source al Quanser QUBE Servo por **~$70 USD** frente a los $2,500–$3,500 USD del original.
 
 ---
 
@@ -133,7 +133,7 @@ El resultado es una plataforma funcional por **~$70 USD** (98% de reducción de 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                    QUBE SERVO MODERNIZADO                                │
-│                    ESP32 + L298N + INA219 + LM2596 + CD40106BE           │
+│                    ESP32 + BTS7960 + INA219 + LM2596 + CD40106BE         │
 └──────────────────────────────────────────────────────────────────────────┘
 
 ENTRADA: 12V (LiPo 3S o PSU de laboratorio)
@@ -141,32 +141,32 @@ ENTRADA: 12V (LiPo 3S o PSU de laboratorio)
     ├── [LM2596 Buck Converter] ──→ 5V rail para lógica
     │       │
     │       ├── ESP32 VIN (5V → 3.3V interno AMS1117)
-    │       ├── L298N 5V (lógica del driver)
+    │       ├── BTS7960 VCC (lógica)
     │       └── Encoder VCC (5V)
     │
     ├── [INA219] High-side current sensing
     │       VIN+ ← 12V fuente
-    │       VIN- → L298N VS (12V motor)
+    │       VIN- → BTS7960 VS (12V motor)
     │       I2C: SDA=GPIO21, SCL=GPIO22
     │
     ├── [ESP32-WROOM-32] Núcleo de control
     │       ├── Core 1: Control PID @ 200 Hz
     │       ├── Core 0: Telemetría + WiFi
-    │       ├── GPIO26 → L298N IN1 (PWM+)
-    │       ├── GPIO27 → L298N IN2 (PWM-)
+    │       ├── GPIO26 → BTS7960 RPWM (adelante)
+    │       ├── GPIO27 → BTS7960 LPWM (reversa)
     │       ├── GPIO34 → Encoder Servo A → Schmitt + RC
     │       ├── GPIO35 → Encoder Servo B → Schmitt + RC
     │       ├── GPIO32 → Encoder Péndulo A → Schmitt + RC
     │       ├── GPIO33 → Encoder Péndulo B → Schmitt + RC
     │       └── USB-UART → PC (depuración + GUI)
     │
-    ├── [L298N Dual H-Bridge] Etapa de potencia
-    │       ├── IN1/IN2: Dirección + PWM (jumper ENA habilitado)
-    │       ├── OUT1/OUT2 → Motor DC (+/-)
+    ├── [BTS7960 Dual Half-Bridge] Etapa de potencia
+    │       ├── RPWM/LPWM: PWM directo (ENA habilitado)
+    │       ├── M+/M- → Motor DC
     │       └── VS: 12V desde INA219 VIN-
     │
     └── [Motor DC + Encoder] Actuador
-            ├── M+ / M- (OUT1/OUT2 del L298N)
+            ├── M+ / M- (BTS7960 M+/M-)
             └── Encoder: A/B + GND + VCC (5V)
 ```
 
@@ -177,16 +177,16 @@ ENTRADA: 12V (LiPo 3S o PSU de laboratorio)
                     │          TOPOLOGÍA DE POTENCIA        │
                     └──────────────────────────────────────┘
 
-Fuente 12V (+) ──┬── VIN+ [INA219] VIN- ──── L298N VS (12V motor)
+Fuente 12V (+) ──┬── VIN+ [INA219] VIN- ──── BTS7960 VS (12V motor)
                  │
                  ├── LM2596 IN+
                  │      └── LM2596 OUT+ (5V) ──── ESP32 VIN
-                 │                             ──── L298N VSS (lógica)
+                 │                             ──── BTS7960 VCC (lógica)
                  │                             ──── Encoder VCC (5V)
                  │                             ──── CD40106BE Vcc (3.3V)
                  │
 Fuente GND  ─────┴── GND común (topología estrella)
-                    ├── L298N GND
+                    ├── BTS7960 GND
                     ├── LM2596 IN-
                     ├── ESP32 GND (pin GND)
                     ├── INA219 GND
@@ -199,7 +199,7 @@ Fuente GND  ─────┴── GND común (topología estrella)
 - Cable de retorno motor: AWG 16 mínimo (R < 0.05 Ω)
 - GND común en topología estrella (NO en cadena)
 - Bypass capacitors: 470 µF + 100 µF en rail 5V
-- Capacitor 100 µF cerca del L298N
+- Capacitor 100 nF cerca del BTS7960 (bypass)
 
 ### Flujo de datos
 
@@ -207,7 +207,7 @@ Fuente GND  ─────┴── GND común (topología estrella)
                           ESP32 (FreeRTOS)
                          ┌──────────────────┐
 Encoder Servo ─────►     │                  │
-(GPIO34/35 + Schmitt)    │  task_control    │──► L298N (PWM → Motor)
+(GPIO34/35 + Schmitt)    │  task_control    │──► BTS7960 (PWM → Motor)
                          │  200 Hz          │
 Encoder Péndulo ────►    │                  │
 (GPIO32/33 + Schmitt)    └────────┬─────────┘
@@ -230,7 +230,7 @@ Encoder Péndulo ────►    │                  │
 | Componente                    | Especificación                      | Cantidad | Precio aprox.     |
 | ----------------------------- | ------------------------------------ | -------- | ----------------- |
 | **ESP32-WROOM-32**      | Dual-core 240 MHz, WiFi+BLE          | 1        | $6–10 USD        |
-| **L298N**               | Dual H-bridge, 2 A/canal, 5–35 V    | 1        | $1.50–3 USD      |
+| **BTS7960**             | Dual Half-Bridge (IBT-2), 43A pico, 10A cont. | 1        | $2–5 USD          |
 | **INA219**              | Monitor I2C, 0–26 V, ±3.2 A        | 1        | $2–4 USD         |
 | **LM2596**              | Buck converter ajustable, 3 A        | 1        | $1–3 USD         |
 | **CD40106BE**           | Hex Schmitt Trigger Inverter, DIP-14 | 1        | ~$0.50 USD        |
@@ -255,13 +255,13 @@ Encoder Péndulo ────►    │                  │
 
 | Subsistema       | Origen                   | Destino                                                | Notas                                |
 | ---------------- | ------------------------ | ------------------------------------------------------ | ------------------------------------ |
-| Potencia motor   | Fuente 12 V (+)          | L298N VS                                               | Alimentación del puente H           |
-| Potencia motor   | GND fuente               | L298N GND                                              | GND común obligatorio               |
-| Lógica L298N    | LM2596 5 V               | L298N 5V                                               | Según jumper del módulo            |
-| Motor DC         | L298N OUT1               | Motor terminal (+)                                     | Salida de potencia                   |
-| Motor DC         | L298N OUT2               | Motor terminal (−)                                    | Salida de potencia                   |
-| Control motor    | ESP32 GPIO26             | L298N IN1                                              | Señal de control canal A            |
-| Control motor    | ESP32 GPIO27             | L298N IN2                                              | Señal de control canal A            |
+| Potencia motor   | Fuente 12 V (+)          | BTS7960 VS                                               | Alimentación del half-bridge        |
+| Potencia motor   | GND fuente               | BTS7960 GND                                              | GND común obligatorio               |
+| Lógica BTS7960  | LM2596 5 V               | BTS7960 VCC                                              | Lógica del módulo IBT-2            |
+| Motor DC         | BTS7960 M+               | Motor terminal (+)                                     | Salida de potencia                   |
+| Motor DC         | BTS7960 M-               | Motor terminal (−)                                    | Salida de potencia                   |
+| Control motor    | ESP32 GPIO26             | BTS7960 RPWM                                              | PWM adelante                        |
+| Control motor    | ESP32 GPIO27             | BTS7960 LPWM                                              | PWM reversa                        |
 | Encoder servo    | Canal A                  | 4.7 kΩ pull-up → Schmitt → 10 kΩ + 10 nF → GPIO34 | Ver acondicionamiento                |
 | Encoder servo    | Canal B                  | 4.7 kΩ pull-up → Schmitt → 10 kΩ + 10 nF → GPIO35 | Ver acondicionamiento                |
 | Encoder servo    | GND / +5V                | GND común / Alimentación                             | Referencia compartida                |
@@ -272,8 +272,8 @@ Encoder Péndulo ────►    │                  │
 | INA219           | ESP32 GPIO22             | INA219 SCL                                             | I2C reloj                            |
 | INA219           | ESP32 3V3                | INA219 VCC                                             | No conectar a 5 V                    |
 | INA219           | GND común               | INA219 GND                                             | Referencia común                    |
-| INA219           | (+) batería / LM2596 IN | INA219 VIN+                                            | Antes del L298N                      |
-| INA219           | L298N VS (pin 8)         | INA219 VIN−                                           | Después del shunt                   |
+| INA219           | (+) batería / LM2596 IN | INA219 VIN+                                            | Antes del BTS7960                    |
+| INA219           | BTS7960 VS              | INA219 VIN−                                           | Después del shunt                   |
 | Schmitt          | CD40106BE pin 14         | ESP32 3V3                                              | Vcc = 3.3 V (salida compatible GPIO) |
 | Schmitt          | CD40106BE pin 7          | GND común                                             | Tierra del chip                      |
 | Schmitt          | 100 nF                   | Pin 14 a pin 7                                         | Bypass, lo más cerca del chip       |
@@ -286,9 +286,9 @@ Pin     │ Función               │ Tipo         │ Notas
 ────────┼───────────────────────┼──────────────┼──────────────────────────────
 GPIO21  │ I2C SDA               │ Bidireccional│ Pull-up interno
 GPIO22  │ I2C SCL               │ Salida       │ Pull-up interno
-GPIO25  │ L298N ENA (PWM)       │ Salida       │ Solo opción B (jumper retirado)
-GPIO26  │ L298N IN1             │ Salida       │ Control canal A
-GPIO27  │ L298N IN2             │ Salida       │ Control canal A
+GPIO25  │ BTS7960 EN (habilitar) │ Salida       │ Solo opción B (pull-up interno)
+GPIO26  │ BTS7960 RPWM           │ Salida       │ PWM adelante
+GPIO27  │ BTS7960 LPWM           │ Salida       │ PWM reversa
 GPIO32  │ Encoder péndulo A     │ Entrada      │ Schmitt + RC (10 kΩ/10 nF)
 GPIO33  │ Encoder péndulo B     │ Entrada      │ Schmitt + RC (10 kΩ/10 nF)
 GPIO34  │ Encoder servo A       │ Entrada      │ Schmitt + RC (10 kΩ/10 nF), input-only
@@ -297,14 +297,14 @@ GPIO35  │ Encoder servo B       │ Entrada      │ Schmitt + RC (10 kΩ/10 n
 
 > **Nota:** GPIO34 y GPIO35 son pines input-only en el ESP32-WROOM-32. No soportan `INPUT_PULLUP` por firmware — los pull-ups deben ser externos.
 
-### Cableado de ENA
+### Cableado de EN
 
-| Opción                   | Jumper ENA   | Conexión ENA                | Cuándo usar        |
-| ------------------------- | ------------ | ---------------------------- | ------------------- |
-| **A (recomendada)** | Dejar puesto | No conectar al ESP32         | Control por IN1/IN2 |
-| B (alternativa)           | Retirar      | ESP32 GPIO25 → ENA (señal) | PWM directo por ENA |
+| Opción                   | Conexión EN              | Cuándo usar        |
+| ------------------------- | ------------------------ | ------------------- |
+| **A (recomendada)** | No conectar (pull-up interno) | PWM directo por RPWM/LPWM |
+| B (alternativa)           | ESP32 GPIO25 → EN       | Control por software del enable |
 
-> **Importante:** El bloque ENA tiene 2 pines físicos: ENA (señal) y +5V. Con jumper puesto quedan puenteados. Si retiras el jumper, conecta GPIO25 solo al pin ENA (señal), nunca al pin +5V.
+> **Importante:** El módulo IBT-2 tiene pines R_EN y L_EN que habilitan cada half-bridge. Vienen pull-up por defecto. Solo conectar GPIO25 si necesitas control por software del enable.
 
 ---
 
@@ -611,9 +611,9 @@ Guía paso a paso para poner en funcionamiento el sistema completo.
 | Componente                  | Estado mínimo                       |
 | --------------------------- | ------------------------------------ |
 | ESP32-WROOM-32              | Conectado por USB                    |
-| Fuente 12 V (LiPo 3S o PSU) | Alimentando el L298N                 |
-| L298N + LM2596              | Regulador ajustado a 5 V             |
-| Motor DC + encoder          | Conectado al L298N                   |
+| Fuente 12 V (LiPo 3S o PSU) | Alimentando el BTS7960                 |
+| BTS7960 + LM2596              | Regulador ajustado a 5 V             |
+| Motor DC + encoder          | Conectado al BTS7960                   |
 | CD40106BE + componentes RC  | Acondicionamiento de señal          |
 | Encoder péndulo (opcional) | Solo para modos `m3`/`m4`/`m5` |
 | INA219 (opcional)           | Solo para telemetría de potencia    |
@@ -669,7 +669,7 @@ pio device monitor --baud 115200  # Monitor serie
 Al encender, el monitor serie debe mostrar:
 
 ```
-=== QUBE ESP32 + L298N + INA219 ===
+=== QUBE ESP32 + BTS7960 + INA219 ===
 [ENC] Servo   CNT=0   POS=0.00°
 [ENC] Pendulo CNT=0   POS=0.00°
 [INA219] V=11.8V  I=0mA  P=0mW
@@ -815,7 +815,7 @@ Si el encoder retrocede con PWM positivo:
 #define MOTOR_DIR  (-1)   // +1 o -1
 ```
 
-O invertir cables `OUT1`/`OUT2` del L298N.
+O invertir cables `M+`/`M-` del BTS7960.
 
 ### 3. CPR (Counts Per Revolution)
 
@@ -844,7 +844,7 @@ $$
 
 ### Comparativa de rendimiento
 
-| Métrica                  | Arduino Uno + L298N      | ESP32 + L298N (este proyecto) | Quanser QUBE |
+| Métrica                  | Arduino Uno + BTS7960      | ESP32 + BTS7960 (este proyecto) | Quanser QUBE |
 | ------------------------- | ------------------------ | ----------------------------- | ------------ |
 | Frecuencia de control     | ~100 Hz                  | **200 Hz**              | 1000 Hz      |
 | Encoders simultáneos     | 1 (limitado)             | **2**                   | 2            |
@@ -888,7 +888,7 @@ $$
 
 **Síntoma:** PID diverge inmediatamente.
 **Causa:** Retroalimentación positiva.
-**Solución:** `MOTOR_DIR = -1` en firmware o invertir cables OUT1/OUT2.
+**Solución:** `MOTOR_DIR = -1` en firmware o invertir cables M+/M-.
 
 ---
 
@@ -930,13 +930,13 @@ $$
 ### Proyectos de referencia
 
 - [Esp32CameraRover2 — Ezward](https://github.com/Ezward/Esp32CameraRover2) — Framework closed-loop ESP32
-- [Rotary-Inverted-Pendulum — ebrahimabdelghfar](https://github.com/ebrahimabdelghfar/Rotary-Inverted-Pendulum) — LQR + Arduino + L298N
+- [Rotary-Inverted-Pendulum — ebrahimabdelghfar](https://github.com/ebrahimabdelghfar/Rotary-Inverted-Pendulum) — LQR + Arduino
 - [arduino_pid_controlled_motor — wty-yy](https://github.com/wty-yy/arduino_pid_controlled_motor) — PID + encoder documentado
 - [INA219_WE](https://github.com/wollewald/INA219_WE) — Librería INA219 (activamente mantenida)
 
 ### Datasheets
 
-- [L298 — STMicroelectronics](https://www.st.com/resource/en/datasheet/l298.pdf)
+- [BTS7960 — Infineon](https://www.infineon.com/dgdl/Infineon-BTS7960-DS-v01_00-en.pdf?fileId=5546d462518a448701518a525e3d3786)
 - [LM2596 — Texas Instruments](https://www.ti.com/product/LM2596)
 - [INA219 — Texas Instruments](https://www.ti.com/product/INA219)
 - [CD40106B — Texas Instruments](https://www.ti.com/lit/ds/symlink/cd40106b.pdf)
@@ -960,4 +960,4 @@ MIT License — ver [LICENSE](LICENSE) para detalles.
 
 ---
 
-*Última actualización: 1 de junio, 2026*
+*Última actualización: 8 de junio, 2026*
