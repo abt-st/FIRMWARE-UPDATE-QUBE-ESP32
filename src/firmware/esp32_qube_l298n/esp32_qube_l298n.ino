@@ -221,6 +221,12 @@ const float PEND_LENGTH = 0.065f;    // Distancia pivot-centro de masa (m) - aju
 const float PEND_INERTIA = 0.00002f; // Momento de inercia (kg*m^2) - ajustar
 const float GRAVITY = 9.81f;         // Gravedad (m/s^2)
 float ke_gain = 0.65f;  // Ganancia BTS7960: 25% catch rate, hold 86s
+// Adaptive ke_gain: increase energy gain when pendulum stalls
+float swing_maxAngleAchieved = 0.0f;    // Max absolute angle achieved since last reset
+unsigned long swing_lastImprovementMs = 0;  // Timestamp of last angle improvement
+const float KE_GAIN_BASE = 0.65f;       // Base energy gain
+const float KE_GAIN_BOOST = 1.2f;       // Boosted gain when stalled
+const unsigned long STALL_TIMEOUT_MS = 4000;  // 4s without improvement → boost
 float balance_threshold = 1.0f;     // Umbral para cambiar a LQR (grados desde vertical) - reducido de 3
 bool swing_recovering = false;       // Estado de recovery: motor apagado esperando que el péndulo caiga
 const float SWING_RECOVERY_THRESHOLD = 30.0f;  // |pendPos| < esto para salir de recovery (cerca del fondo)
@@ -532,6 +538,9 @@ void setMode(int newMode) {
   if (mode == 5) {
     swing_filteredVelAlpha = 0.0f;
     prev_alpha_dot_peak = 0.0f;  // Reset peak detection
+    swing_maxAngleAchieved = 0.0f;  // Reset adaptive ke_gain
+    swing_lastImprovementMs = millis();
+    ke_gain = KE_GAIN_BASE;
   }
 }
 
@@ -1744,6 +1753,17 @@ void loop() {
             float rawPos = getRawPositionDeg();
             float rawAbs = fabsf(rawPos);
             float servo_modulation = constrain(1.0f - (rawAbs / 200.0f) * (rawAbs / 200.0f), 0.0f, 1.0f);
+            // Adaptive ke_gain: boost when pendulum stalls (no angle improvement)
+            float currentAbsAngle = fabsf(pendPos);
+            if (currentAbsAngle > swing_maxAngleAchieved + 5.0f) {
+              // New achievement: reset timer, use base gain
+              swing_maxAngleAchieved = currentAbsAngle;
+              swing_lastImprovementMs = millis();
+              ke_gain = KE_GAIN_BASE;
+            } else if ((millis() - swing_lastImprovementMs) > STALL_TIMEOUT_MS) {
+              // Stalled: boost gain to break out of low-amplitude oscillation
+              ke_gain = KE_GAIN_BOOST;
+            }
             float u = ke_gain * motion_sign;
             pwm = (int)(MOTOR_DIR * u * PWM_MAX * servo_modulation);
             // Centering suave

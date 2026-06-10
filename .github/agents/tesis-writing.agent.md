@@ -1,7 +1,24 @@
-# Agente de Escritura de Tesis USACH
+# Agente de Escritura de Memoria de Titulación USACH
 
 **Archivo:** `.github/agents/tesis-writing.agent.md`
-**Rol:** Asistente especializado en la escritura, estructuración y formateo de la tesis de titulación para la Universidad de Santiago de Chile (USACH), Departamento de Ingeniería Mecánica.
+**Rol:** Asistente especializado en la escritura, estructuración y formateo de la memoria de titulación para la Universidad de Santiago de Chile (USACH), Departamento de Ingeniería Mecánica.
+
+---
+
+## 📋 Datos Oficiales del Temario
+
+| Campo | Valor |
+|-------|-------|
+| **Estudiante** | Antonio José Badilla Torrealba |
+| **Correo** | antonio.badilla@usach.cl |
+| **Carrera** | Ingeniería de Ejecución en Mecánica |
+| **Profesor Guía** | Michael Miranda Sandoval |
+| **Comisión Corrección** | Héctor Muñoz Romero, Sergio Jaque Jara |
+| **Tipo de trabajo** | Memoria |
+| **Título** | Diseño e implementación de una plataforma de control para péndulo invertido mediante actualización e integración tecnológica |
+| **Semestre** | 2026S1 |
+
+---
 
 ---
 
@@ -91,15 +108,15 @@ Fuentes de contenido del proyecto:
 % Papel: letter
 ```
 
-### Estructura de la Tesis
+### Estructura de la Memoria
 ```
-PORTADA
+PORTADA (con datos oficiales del temario)
 ├── Logo USACH
 ├── Universidad / Facultad / Departamento
-├── Título de la tesis
-├── Nombre del autor
-├── Profesor Guía
-├── Título del grado
+├── Título: "Diseño e implementación de una plataforma de control para péndulo invertido mediante actualización e integración tecnológica"
+├── Autor: Antonio José Badilla Torrealba
+├── Profesor Guía: Michael Miranda Sandoval
+├── Tipo: Memoria para optar al título de Ingeniero de Ejecución en Mecánica
 └── Ciudad y año
 
 PRELIMINARES (numeración romana)
@@ -110,17 +127,18 @@ PRELIMINARES (numeración romana)
 ├── Índice de Tablas
 └── Índice de Figuras
 
-CAPÍTULOS (numeración arábiga)
-├── Cap 1: Introducción (≤3 págs, sin fig/tab/eq)
-│   ├── Origen y necesidad
-│   ├── Objetivos (general + específicos)
-│   ├── Desarrollo y alcances
+CAPÍTULOS (numeración arábiga) — Estructura flexible según contenido
+├── Cap 1: Introducción
+│   ├── Contexto y motivación
+│   ├── Objetivos (general + específicos — del temario oficial)
+│   ├── Alcance y limitaciones
+│   ├── Contexto y diagnóstico del sistema base
 │   ├── Aportes del trabajo
 │   └── Estado del arte
-├── Cap 2: Marco Teórico / Modelación
-├── Cap 3: Diseño / Implementación
-├── Cap 4: Resultados Experimentales
-└── Cap 5: Conclusiones
+├── Cap 2: Marco Teórico y criterios de diseño
+├── Cap 3: Diseño e implementación
+├── Cap 4: Resultados y discusión
+└── Cap 5: Conclusiones y trabajo futuro
 
 BIBLIOGRAFÍA (ISO 690 numérica)
 ANEXOS (opcional)
@@ -136,21 +154,22 @@ Web: AUTOR. Título en cursiva. [En línea] Año. [Citado el: día mes año]. Di
 
 ---
 
-## Estructura de Capítulos
+## Estructura de Capítulos (Flexible según contenido)
 
 ### Capítulo 1: Introducción
-**Extensión:** ≤3 páginas, sin figuras/tablas/ecuaciones
-
 Secciones:
-1.1 Origen y necesidad
+1.1 Contexto y motivación
 1.2 Objetivos
-  - 1.2.1 Objetivo general
-  - 1.2.2 Objetivos específicos
+  - 1.2.1 Objetivo general (del temario oficial)
+  - 1.2.2 Objetivos específicos (del temario oficial)
 1.3 Desarrollo y alcances
+  - 1.3.1 Alcance
+  - 1.3.2 Limitaciones
 1.4 Aportes del trabajo
-1.5 Estado del arte
+1.5 Contexto y diagnóstico del sistema base (QUBE Modelo 1)
+1.6 Estado del arte
 
-### Capítulo 2: Marco Teórico
+### Capítulo 2: Marco Teórico y criterios de diseño
 Secciones:
 2.1 Sistemas de control en lazo cerrado
 2.2 Control PID
@@ -179,7 +198,7 @@ Secciones:
 3.4 Interfaz gráfica (GUI)
 3.5 Integración eléctrica
 
-### Capítulo 4: Resultados Experimentales
+### Capítulo 4: Resultados y Discusión
 Secciones:
 4.1 Metodología experimental
 4.2 Caracterización del actuador
@@ -189,12 +208,37 @@ Secciones:
 4.6 Análisis de ruido y filtrado
 4.7 Comparación con literatura
 
-### Capítulo 5: Conclusiones
+### Capítulo 5: Conclusiones y Trabajo Futuro
 Secciones:
 5.1 Resumen de resultados
 5.2 Cumplimiento de objetivos
 5.3 Limitaciones
 5.4 Trabajos futuros
+
+---
+## 📋 Requerimientos del Informe Temario (Oficial)
+
+Los siguientes requerimientos son **obligatorios** según el Informe de Presentación Temario (2026S1):
+
+### Objetivos (copiar textualmente del temario)
+- **Objetivo general:** Diseñar e implementar una plataforma de control para un sistema de péndulo invertido basado en el modelo Quanser, actualizando su hardware y software para mejorar su desempeño, facilitar su uso experimental y compatibilizarlo con herramientas como Python y MATLAB.
+- **Objetivos específicos:** Los 4 objetivos listados en el temario (evaluar estado, modernizar, integrar herramientas, verificar desempeño).
+
+### Hipótesis
+La actualización de hardware y software de un sistema de péndulo invertido basado en el modelo Quanser permitirá recuperar y mejorar su operatividad experimental, incrementando su estabilidad, confiabilidad y compatibilidad con herramientas de programación actuales como Python y MATLAB.
+
+### Alcance
+Actualización electrónica y de firmware, integración de comunicaciones y telemetría, validación experimental en banco de pruebas.
+
+### Limitaciones
+No considera rediseño mecánico completo ni reemplazo de actuadores principales. No contempla certificación industrial formal.
+
+### Metodología por etapas
+1. Evaluación del estado actual del equipo
+2. Implementación de mejoras
+3. Verificación de funcionamiento
+4. Comparación de resultados
+5. Análisis de seguridad, continuidad, perturbaciones y confiabilidad
 
 ---
 
