@@ -225,7 +225,7 @@ float ke_gain = 0.65f;  // Ganancia BTS7960: 25% catch rate, hold 86s
 float swing_maxAngleAchieved = 0.0f;    // Max absolute angle achieved since last reset
 unsigned long swing_lastImprovementMs = 0;  // Timestamp of last angle improvement
 const float KE_GAIN_BASE = 0.65f;       // Base energy gain
-const float KE_GAIN_BOOST = 1.2f;       // Boosted gain when stalled
+const float KE_GAIN_BOOST = 1.5f;       // Boosted gain when stalled (era 1.2)
 const unsigned long STALL_TIMEOUT_MS = 4000;  // 4s without improvement → boost
 // Complementary filter for velocity estimation (physics + measurement)
 float swing_predictedVelAlpha = 0.0f;  // Physics-model predicted velocity
@@ -1794,8 +1794,8 @@ void loop() {
             float angle_factor = 1.0f + 0.5f * (1.0f - fabsf(sinf(alpha_energy_rad)));
             float u = ke_gain * angle_factor * motion_sign;
             pwm = (int)(MOTOR_DIR * u * PWM_MAX * servo_modulation);
-            // Centering suave
-            pwm += (int)(-0.25f * rawPos);  // Centering más agresivo para mejorar bombeo
+            // Centering suave (reducido: permitir que el servo se mueva más libremente)
+            pwm += (int)(-0.15f * rawPos);
           }
         }
       }
