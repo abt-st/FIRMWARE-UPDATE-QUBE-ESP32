@@ -1482,13 +1482,18 @@ void loop() {
       setMotor(pwm);
     } else if (mode == 4) {
       // ── Catch mode: frenar péndulo al entrar a LQR ────────────────────
-      // Proportional braking: PWM scales with velocity to handle higher
-      // transition velocities from the widened transition window.
+      // Direction-locked proportional braking: locks brake direction on entry
+      // to prevent overshoot when pendulum crosses zero velocity.
       int pwm = 0;
       if (lqr_catchMs > 0 && (millis() - lqr_catchMs) < LQR_CATCH_MS) {
         float rawVelForCatch = -(pendPosRaw - lqr_prevAlpha) / dt;
-        // Proportional braking: ±100 PWM at 200°/s, ±40 PWM at 50°/s
-        float brake_pwm = rawVelForCatch * 0.5f;
+        // Lock brake direction on first call (use static variable)
+        static float lockedBrakeDir = 0.0f;
+        if ((millis() - lqr_catchMs) < 10) {  // First ~10ms: lock direction
+          lockedBrakeDir = (rawVelForCatch > 0) ? 1.0f : -1.0f;
+        }
+        // Proportional braking with locked direction: ±100 PWM at 200°/s
+        float brake_pwm = lockedBrakeDir * fabsf(rawVelForCatch) * 0.5f;
         pwm = constrain((int)brake_pwm, -100, 100);
         setMotor(pwm);
         return;
