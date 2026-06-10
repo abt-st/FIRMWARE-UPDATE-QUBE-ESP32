@@ -1788,9 +1788,7 @@ void loop() {
             } else if ((millis() - swing_lastImprovementMs) > STALL_TIMEOUT_MS) {
               ke_gain = KE_GAIN_BOOST;
             }
-            // Angle-dependent ke_gain: stronger at small angles (building oscillation)
-            float angle_factor = 1.0f + 0.5f * (1.0f - fabsf(sinf(alpha_energy_rad)));
-            float u = ke_gain * angle_factor * motion_sign;
+            float u = ke_gain * motion_sign;
             pwm = (int)(MOTOR_DIR * u * PWM_MAX);
             // Centering suave
             pwm += (int)(-0.15f * rawPos);
