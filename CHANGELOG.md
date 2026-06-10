@@ -1,3 +1,62 @@
+## [1.36.0] — 2026-06-08
+### Swing-up funcionando con driver BTS7960
+
+#### Problema identificado
+El swing-up con el nuevo driver BTS7960 no funcionaba: el servo se atascaba en los límites mecánicos, la bomba de energía no consideraba la posición del servo, y el frenado de emergencia era inefectivo por la soft saturation.
+
+#### Cambios aplicados
+
+**1. Filtro EMA para velocidad del péndulo en swing-up**
+- Antes: `alpha_dot` sin filtrar a 500Hz causaba ruido que impedía el kick alternante
+- Ahora: `swing_filteredVelAlpha` con misma constante que LQR (0.60)
+
+**2. `setMotorDirect()` — bypass de soft saturation**
+- Función nueva para frenado de emergencia sin la reducción de PWM por soft saturation
+- Hard stop a 150° motor-shaft usa `setMotorDirect` para frenado efectivo
+
+**3. Modulación por posición del servo en bomba de energía**
+- Amplitud del bombeo se reduce linealmente: 100% en centro, 0% a 200°
+- Previene que el servo se acumule en un lado del rango
+- Cutoff 200° (actúa solo cerca del hard stop 150°)
+
+**4. Centering suave del servo durante swing-up**
+- kp=0.15 proporcional a posición raw del servo
+- Guía el servo de vuelta al centro sin frenar la bomba de energía
+
+**5. Parámetros ajustados para BTS7960**
+- Soft saturation k: 80° → 120°
+- Damping threshold: 120° → 165°
+- LQR transition: hemisferio 165°→140°, velocidad 10→50°/s, distancia 1°→20°
+- Hard stop: 150° motor-shaft (≈80° output)
+
+**6. Bug Python 3.14 en scripts de sweep**
+- `urlopen(url, 5)` interpretaba 5 como data, no timeout → fix: `urlopen(url, timeout=5)`
+
+#### Resultados del entrenamiento (Fase 1-4)
+- **ke=0.65 optimo** (25-36% catch rate, hold promedio 82s)
+- **bt=1 optimo** (mejor catch rate, servo controlado)
+- **LQR hold: 59-88s** (de 90s posibles)
+- Transiciones: hemisferio >130°, vel <80°/s, dist <25°
+- **Peak detection**: detecta pico de posicion (alpha_dot zero crossing) — sin mejora significativa
+- **Forced transition a 165°+**: sin mejora significativa
+- **Angle-dependent PWM limit**: PEOR — mata transferencia de energia
+- **Ramp-down desde 60°**: PEOR — servo sin autoridad
+- **Hard stop final: 120° motor-shaft** con setMotorDirect
+
+#### Problema pendiente: brownout
+- Crash rate 20%: motor golpea limite mecanico, voltaje baja
+- Angle-dependent limit reduce energia — no es solucion firmware
+- **Solucion requerida: capacitor 470-1000uF en rail 5V**
+
+#### Analisis de 173 CSVs
+- Catch SOLO ocurre a 150°+ (28% catch rate en 150-180°, 100% en 200°+)
+- 85% de intentos no llegan a 150° — bottleneck es energia de bombeo
+
+#### Notas
+- Scripts: `test_lqr.py [ke] [attempts] [duration]`, `analyze_all.py`
+- Parámetros tuneables vía HTTP: `?ke=`, `?bt=`
+- Archivos: `COMPARISON.md` (historico), `SESSION_LOG.md` (detallado)
+
 ## [1.35.1] — 2026-06-08
 ### Fix: selector de modo + reparación SPIFFS + Chart.js CDN
 
@@ -27,7 +86,6 @@ server.on("/format", HTTP_GET, [](AsyncWebServerRequest *request) {
   delay(500);
   ESP.restart();
 });
-```
 
 #### Notas
 - Para reparar SPIFFS en el futuro: `GET /format` → subir archivos vía `POST /fs`
