@@ -227,6 +227,10 @@ unsigned long swing_lastImprovementMs = 0;  // Timestamp of last angle improveme
 const float KE_GAIN_BASE = 0.65f;       // Base energy gain
 const float KE_GAIN_BOOST = 1.2f;       // Boosted gain when stalled
 const unsigned long STALL_TIMEOUT_MS = 4000;  // 4s without improvement → boost
+// Complementary filter for velocity estimation (physics + measurement)
+float swing_predictedVelAlpha = 0.0f;  // Physics-model predicted velocity
+const float COMP_FILTER_ALPHA = 0.7f;  // Weight for measurement (0= pure model, 1= pure derivative)
+const float PEND_DAMPING = 0.02f;  // Estimated damping coefficient (N·m·s/rad)
 float balance_threshold = 1.0f;     // Umbral para cambiar a LQR (grados desde vertical) - reducido de 3
 bool swing_recovering = false;       // Estado de recovery: motor apagado esperando que el péndulo caiga
 const float SWING_RECOVERY_THRESHOLD = 30.0f;  // |pendPos| < esto para salir de recovery (cerca del fondo)
@@ -537,6 +541,7 @@ void setMode(int newMode) {
   }
   if (mode == 5) {
     swing_filteredVelAlpha = 0.0f;
+    swing_predictedVelAlpha = 0.0f;  // Reset complementary filter
     prev_alpha_dot_peak = 0.0f;  // Reset peak detection
     swing_maxAngleAchieved = 0.0f;  // Reset adaptive ke_gain
     swing_lastImprovementMs = millis();
@@ -1618,7 +1623,13 @@ void loop() {
       int pwm = 0;
       const float alpha = pendPos * DEG_TO_RAD;         // Wrapped para display
       const float alpha_dot_raw = (pendPosRaw - prevPosPend) / dt * DEG_TO_RAD;
-      swing_filteredVelAlpha = VEL_ALPHA_PEND * alpha_dot_raw + (1.0f - VEL_ALPHA_PEND) * swing_filteredVelAlpha;
+      // Complementary filter: combine physics model prediction + position derivative
+      // Physics: α̈ = -(g/l)*sin(α) - (b/J)*α̇
+      float accel = -(GRAVITY / PEND_LENGTH) * sinf(alpha) - (PEND_DAMPING / PEND_INERTIA) * swing_predictedVelAlpha;
+      swing_predictedVelAlpha += accel * dt;
+      // Blend: 70% measurement + 30% prediction
+      swing_filteredVelAlpha = COMP_FILTER_ALPHA * alpha_dot_raw + (1.0f - COMP_FILTER_ALPHA) * swing_predictedVelAlpha;
+      swing_predictedVelAlpha = swing_filteredVelAlpha;  // Sync prediction with blended result
       const float alpha_dot = swing_filteredVelAlpha;  // Filtrado para energy pumping
       prevPosPend = pendPosRaw;
 
