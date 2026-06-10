@@ -224,9 +224,9 @@ float ke_gain = 0.65f;  // Ganancia BTS7960: 25% catch rate, hold 86s
 // Adaptive ke_gain: increase energy gain when pendulum stalls
 float swing_maxAngleAchieved = 0.0f;    // Max absolute angle achieved since last reset
 unsigned long swing_lastImprovementMs = 0;  // Timestamp of last angle improvement
-const float KE_GAIN_BASE = 0.65f;       // Base energy gain
+const float KE_GAIN_BASE = 0.75f;       // Base energy gain (era 0.65)
 const float KE_GAIN_BOOST = 1.5f;       // Boosted gain when stalled (era 1.2)
-const unsigned long STALL_TIMEOUT_MS = 4000;  // 4s without improvement → boost
+const unsigned long STALL_TIMEOUT_MS = 6000;  // 6s without improvement → boost (era 4s)
 // Complementary filter for velocity estimation (physics + measurement)
 float swing_predictedVelAlpha = 0.0f;  // Physics-model predicted velocity
 const float COMP_FILTER_ALPHA = 0.7f;  // Weight for measurement (0= pure model, 1= pure derivative)
