@@ -273,7 +273,7 @@ const unsigned long INA_INIT_RETRY_MS = 5000;            // Periodo de reintento
 // ── Umbrales swing-up (modo 5) ────────────────────────────────────────────────
 const float SWINGUP_TRANSITION_VEL_DPS = 30.0f;          // Velocidad angular máx. para transicionar a LQR (subido de 15)
 const float SWINGUP_KICK_DUTY_FRAC = 0.7f;               // Amplitud del kick inicial (% de PWM_MAX)
-const unsigned long SWINGUP_KICK_PERIOD_MS = 250;         // Semi-periodo del kick alternante
+const unsigned long SWINGUP_KICK_PERIOD_MS = 450;         // Semi-periodo del kick (~frecuencia natural del péndulo)
 const float SWINGUP_QUIET_THRESHOLD_RADPS = 0.15f;       // |α̇| por debajo del cual se aplica kick alternante
 const float SWINGUP_PROD_DEADZONE = 0.001f;              // Dead-zone para sign(α̇·cos α)
 
@@ -1714,8 +1714,9 @@ void loop() {
 
         // ── Recovery: péndulo cruzó la vertical sin transicionar ───────
         if (swing_recovering) {
-          // RECOVERY activo: motor apagado, esperando que el péndulo caiga al fondo.
-          pwm = 0;
+          // Recovery con frenado proporcional a velocidad (preserva algo de energía)
+          float recover_brake = -0.4f * alpha_dot;  // Frenado proporcional
+          pwm = constrain((int)(MOTOR_DIR * recover_brake * PWM_MAX), -PWM_MAX, PWM_MAX);
           if (fabsf(pendPos) < SWING_RECOVERY_THRESHOLD) {
             swing_recovering = false;
             // Reset offset al salir de recovery para que raw esté en [-180,180]
@@ -1723,18 +1724,18 @@ void loop() {
             prevPosPend = 0.0f;
             pendPosRawPrev = 0.0f;
             swing_filteredVelAlpha = 0.0f;
+            swing_predictedVelAlpha = 0.0f;
             Serial.printf("Swing-up: recovery COMPLETE (pend=%.1f)\n", pendPos);
           }
         } else if (fabsf(pendPosRaw) > 180.0f) {
           // El péndulo cruzó la vertical sin transicionar → recovery.
           // Reset offset para que raw se mantenga acotado.
           swing_recovering = true;
-          pwm = 0;
-          setMotor(0);
           pendulumOffsetDeg = pendulumDir * getPendulumCountAtomic() * getPendulumDegPerCount();
           prevPosPend = 0.0f;
           pendPosRawPrev = 0.0f;
           swing_filteredVelAlpha = 0.0f;
+          swing_predictedVelAlpha = 0.0f;
           Serial.printf("Swing-up: RECOVERY START (raw=%.1f, pend=%.1f, vel=%.1f)\n", pendPosRaw, pendPos, vel_raw_dps);
         } else if (fabsf(pendPosRaw) > 165.0f) {
           // ── Damping: disipar energía desde 165° hasta la vertical ──
