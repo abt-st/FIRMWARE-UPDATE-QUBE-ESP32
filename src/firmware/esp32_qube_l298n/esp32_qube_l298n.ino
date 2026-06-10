@@ -1817,24 +1817,20 @@ void loop() {
         }
       }
 
-      // Hard stop del servo: corte breve en 120° para evitar brownout,
-      // luego reanudar bombeo para que el servo vuelva al centro.
+      // ── Servo limit: frenado proporcional en vez de corte abrupto ─────
+      // En vez de cortar motor 100ms (mata transferencia de energía),
+      // reducir PWM proporcionalmente al exceso sobre 120°.
       {
         const float rawPos = getRawPositionDeg();
-        static unsigned long lastHardStopMs = 0;
-        if (fabsf(rawPos) > 120.0f) {
-          unsigned long now = millis();
-          if (now - lastHardStopMs > 100) {  // Solo cortar 100ms cada vez
-            setMotorDirect(0);
-            lastHardStopMs = now;
-          }
-          // Despues del corte, dejar que el bombeo naturally mueva el servo
-          pwm = constrain(pwm, -PWM_MAX, PWM_MAX);
-          setMotor(pwm);
-        } else {
-          pwm = constrain(pwm, -PWM_MAX, PWM_MAX);
-          setMotor(pwm);
+        float servo_excess = fabsf(rawPos) - 120.0f;
+        if (servo_excess > 0.0f) {
+          // Frenado proporcional: 100% PWM en 120°, 0% en 150°
+          float brake_factor = 1.0f - servo_excess / 30.0f;
+          brake_factor = constrain(brake_factor, 0.0f, 1.0f);
+          pwm = (int)(pwm * brake_factor);
         }
+        pwm = constrain(pwm, -PWM_MAX, PWM_MAX);
+        setMotor(pwm);
       }
     }
   }
