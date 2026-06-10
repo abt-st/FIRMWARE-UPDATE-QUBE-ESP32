@@ -1592,7 +1592,7 @@ void loop() {
           lqr_inFallback = true;
           Serial.printf("LQR: FALLBACK (raw=%.1f, offset reset)\n", pendPosRaw);
         }
-      } else if (fabsf(pendPosRaw) < 30.0f) {
+      } else if (fabsf(pendPosRaw) < 45.0f) {
         // Rearm: péndulo cerca del fondo, listo para nuevo intento
         lqr_fallbackMs = 0;
         lqr_inFallback = false;
@@ -1789,7 +1789,10 @@ void loop() {
               // Stalled: boost gain to break out of low-amplitude oscillation
               ke_gain = KE_GAIN_BOOST;
             }
-            float u = ke_gain * motion_sign;
+            // Angle-dependent ke_gain: stronger at small angles (building oscillation),
+            // normal at large angles (servo modulation already limits power)
+            float angle_factor = 1.0f + 0.5f * (1.0f - fabsf(sinf(alpha_energy_rad)));
+            float u = ke_gain * angle_factor * motion_sign;
             pwm = (int)(MOTOR_DIR * u * PWM_MAX * servo_modulation);
             // Centering suave
             pwm += (int)(-0.25f * rawPos);  // Centering más agresivo para mejorar bombeo
