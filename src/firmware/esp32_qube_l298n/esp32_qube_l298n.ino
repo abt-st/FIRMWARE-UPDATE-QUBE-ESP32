@@ -1639,7 +1639,7 @@ void loop() {
         // ══════════════════════════════════════════════════════════════════
         float vel_raw_dps = fabsf(alpha_dot) * RAD_TO_DEG;
         bool inUpperHemisphere = fabsf(pendPos) > 130.0f;
-        bool nearlyStopped = vel_raw_dps < 80.0f;
+        bool nearlyStopped = vel_raw_dps < 120.0f;
         bool canTransition = inUpperHemisphere && nearlyStopped;
 
         // Peak detection: detect position peak (alpha_dot crosses zero = pendulum at max height)
@@ -1648,15 +1648,15 @@ void loop() {
         prev_alpha_dot_peak = alpha_dot;
 
         // At position peak: velocity is ~0, only need hemisphere + distance check
-        bool atPeakTransition = atPeak && inUpperHemisphere && (180.0f - fabsf(pendPos) < 25.0f);
+        bool atPeakTransition = atPeak && inUpperHemisphere && (180.0f - fabsf(pendPos) < 40.0f);
 
-        // FORCED transition: si el pendulo llega a 165°+, forzar transicion
+        // FORCED transition: si el pendulo llega a 150°+, forzar transicion
         // sin verificar velocidad. El LQR catch mode frenara.
-        bool forcedTransition = fabsf(pendPos) > 165.0f;
+        bool forcedTransition = fabsf(pendPos) > 150.0f;
 
         if (canTransition || atPeakTransition || forcedTransition) {
           float dist_from_up = 180.0f - fabsf(pendPos);
-          if (forcedTransition || dist_from_up < 25.0f) {
+          if (forcedTransition || dist_from_up < 40.0f) {
             setMode(4);
             lqr_inFallback = false;
             lqr_catchMs = millis();
