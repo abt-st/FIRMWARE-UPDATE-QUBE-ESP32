@@ -1468,13 +1468,14 @@ void loop() {
       setMotor(pwm);
     } else if (mode == 4) {
       // ── Catch mode: frenar péndulo al entrar a LQR ────────────────────
+      // Proportional braking: PWM scales with velocity to handle higher
+      // transition velocities from the widened transition window.
       int pwm = 0;
       if (lqr_catchMs > 0 && (millis() - lqr_catchMs) < LQR_CATCH_MS) {
         float rawVelForCatch = -(pendPosRaw - lqr_prevAlpha) / dt;
-        if (rawVelForCatch > 50.0f) pwm = -60;
-        else if (rawVelForCatch < -50.0f) pwm = 60;
-        else pwm = 0;
-        pwm = constrain(pwm, -60, 60);
+        // Proportional braking: ±100 PWM at 200°/s, ±40 PWM at 50°/s
+        float brake_pwm = rawVelForCatch * 0.5f;
+        pwm = constrain((int)brake_pwm, -100, 100);
         setMotor(pwm);
         return;
       }
@@ -1664,15 +1665,27 @@ void loop() {
         // FORCED transition: si el pendulo llega a 150°+, forzar transicion
         // sin verificar velocidad. El LQR catch mode frenara.
         bool forcedTransition = fabsf(pendPos) > 150.0f;
+        // Energy-based transition: if energy is close to target, transition
+        // regardless of angle. Allows transitions at lower angles when the
+        // pendulum has enough total energy (kinetic + potential).
+        const float mgl_eb = PEND_MASS * GRAVITY * PEND_LENGTH;
+        const float alpha_eb_rad = pendPosRaw * DEG_TO_RAD;
+        float E_current = 0.5f * PEND_INERTIA * alpha_dot * alpha_dot +
+                          mgl_eb * (1.0f - cosf(alpha_eb_rad));
+        float E_target_eb = 2.0f * mgl_eb;  // Energy needed to reach vertical
+        bool energyReady = (E_target_eb > 0.0f) &&
+                           (fabsf(E_current - E_target_eb) / E_target_eb < 0.15f) &&
+                           fabsf(pendPos) > 100.0f;  // At least above horizontal
 
-        if (canTransition || atPeakTransition || forcedTransition) {
+
+        if (canTransition || atPeakTransition || forcedTransition || energyReady) {
           float dist_from_up = 180.0f - fabsf(pendPos);
-          if (forcedTransition || dist_from_up < 40.0f) {
+          if (forcedTransition || energyReady || dist_from_up < 40.0f) {
             setMode(4);
             lqr_inFallback = false;
             lqr_catchMs = millis();
             spinCooldownMs = 0;
-            Serial.printf("LQR TRANS (pend=%.1f vel=%.1f peak=%d forced=%d raw=%.1f)\n", pendPos, vel_raw_dps, atPeakTransition, forcedTransition, pendPosRaw);
+            Serial.printf("LQR TRANS (pend=%.1f vel=%.1f peak=%d forced=%d energy=%.3f raw=%.1f)\n", pendPos, vel_raw_dps, atPeakTransition, forcedTransition, E_current / E_target_eb, pendPosRaw);
             pwm = 0;
             setMotor(pwm);
             return;
