@@ -1527,6 +1527,14 @@ void loop() {
         k2_eff = LQR_K2_NEAR;
         k4_eff = LQR_K4_NEAR;
       }
+      // Velocity-dependent gain scaling: boost damping for high-velocity entries
+      // Failures had 2x higher velocity (356°/s) than catches (174°/s)
+      float vel_alpha_dps = fabsf(lqr_filteredVelAlpha) * RAD_TO_DEG;
+      if (vel_alpha_dps > 200.0f) {
+        float vel_scale = 1.0f + (vel_alpha_dps - 200.0f) / 300.0f;  // 1.0 at 200°/s, 2.0 at 500°/s
+        vel_scale = constrain(vel_scale, 1.0f, 2.0f);
+        k4_eff *= vel_scale;  // Boost velocity gain for high-speed entries
+      }
 
       // LQR: u = -(K1*theta + K2*alpha + K3*theta_dot + K4*alpha_dot)
       // alpha=0 es la posición vertical (invertido)
