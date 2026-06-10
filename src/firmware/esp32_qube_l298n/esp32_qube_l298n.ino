@@ -1774,27 +1774,25 @@ void loop() {
             float centering_kp = 0.2f;
             pwm += (int)(-centering_kp * pos);
           } else {
-            // Bombeo de energia con modulacion por posicion del servo.
+            // Bombeo de energia SIN modulacion por posicion del servo.
+            // La proteccion por voltaje y el frenado proporcional ya protegen
+            // contra brownout y limits mecanicos. Remover modulacion permite
+            // transferencia de energia completa en todas las posiciones del servo.
             float rawPos = getRawPositionDeg();
-            float rawAbs = fabsf(rawPos);
-            float servo_modulation = constrain(1.0f - (rawAbs / 250.0f) * (rawAbs / 250.0f), 0.0f, 1.0f);
             // Adaptive ke_gain: boost when pendulum stalls (no angle improvement)
             float currentAbsAngle = fabsf(pendPos);
             if (currentAbsAngle > swing_maxAngleAchieved + 5.0f) {
-              // New achievement: reset timer, use base gain
               swing_maxAngleAchieved = currentAbsAngle;
               swing_lastImprovementMs = millis();
               ke_gain = KE_GAIN_BASE;
             } else if ((millis() - swing_lastImprovementMs) > STALL_TIMEOUT_MS) {
-              // Stalled: boost gain to break out of low-amplitude oscillation
               ke_gain = KE_GAIN_BOOST;
             }
-            // Angle-dependent ke_gain: stronger at small angles (building oscillation),
-            // normal at large angles (servo modulation already limits power)
+            // Angle-dependent ke_gain: stronger at small angles (building oscillation)
             float angle_factor = 1.0f + 0.5f * (1.0f - fabsf(sinf(alpha_energy_rad)));
             float u = ke_gain * angle_factor * motion_sign;
-            pwm = (int)(MOTOR_DIR * u * PWM_MAX * servo_modulation);
-            // Centering suave (reducido: permitir que el servo se mueva más libremente)
+            pwm = (int)(MOTOR_DIR * u * PWM_MAX);
+            // Centering suave
             pwm += (int)(-0.15f * rawPos);
           }
         }
