@@ -1586,6 +1586,17 @@ void loop() {
           pwm = (int)(pwm * constrain(factor, 0.0f, 1.0f));
         }
       }
+      // ── Voltage-based brownout protection (LQR) ───────────────────────
+      if (inaOk && busVoltageV > 0.1f) {
+        if (busVoltageV < 12.5f) {
+          pwm = 0;
+          setMotor(0);
+          return;
+        } else if (busVoltageV < 13.5f) {
+          float factor = (busVoltageV - 12.5f) / 1.0f;
+          pwm = (int)(pwm * constrain(factor, 0.3f, 1.0f));
+        }
+      }
       pwm = constrain(pwm, -PWM_MAX, PWM_MAX);
       setMotor(pwm);
 
@@ -1725,6 +1736,23 @@ void loop() {
             // Centering suave
             pwm += (int)(-0.15f * rawPos);  // Centering suave
           }
+        }
+      }
+
+      // ── Voltage-based brownout protection ──────────────────────────────
+      // Read INA219 voltage (updated at telemetry rate, ~100ms)
+      // If v_bus drops, reduce PWM proportionally to prevent brownout.
+      // Normal: ~14.8V. Brownout threshold: ~12.5V (ESP32 minimum ~3.0V on 5V rail).
+      if (inaOk && busVoltageV > 0.1f) {
+        if (busVoltageV < 12.5f) {
+          // Critical: motor stalled against hard stop → cut completely
+          pwm = 0;
+          setMotor(0);
+          return;
+        } else if (busVoltageV < 13.5f) {
+          // Warning: reduce PWM to 50% to prevent further drop
+          float factor = (busVoltageV - 12.5f) / 1.0f;  // 0.0 at 12.5V, 1.0 at 13.5V
+          pwm = (int)(pwm * constrain(factor, 0.3f, 1.0f));
         }
       }
 
