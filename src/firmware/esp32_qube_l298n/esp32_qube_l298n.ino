@@ -1743,11 +1743,11 @@ void loop() {
             // Bombeo de energia con modulacion por posicion del servo.
             float rawPos = getRawPositionDeg();
             float rawAbs = fabsf(rawPos);
-            float servo_modulation = constrain(1.0f - rawAbs / 200.0f, 0.0f, 1.0f);
+            float servo_modulation = constrain(1.0f - (rawAbs / 200.0f) * (rawAbs / 200.0f), 0.0f, 1.0f);
             float u = ke_gain * motion_sign;
             pwm = (int)(MOTOR_DIR * u * PWM_MAX * servo_modulation);
             // Centering suave
-            pwm += (int)(-0.15f * rawPos);  // Centering suave
+            pwm += (int)(-0.25f * rawPos);  // Centering más agresivo para mejorar bombeo
           }
         }
       }
