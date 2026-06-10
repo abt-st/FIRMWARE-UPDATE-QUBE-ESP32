@@ -1777,7 +1777,7 @@ void loop() {
             // Bombeo de energia con modulacion por posicion del servo.
             float rawPos = getRawPositionDeg();
             float rawAbs = fabsf(rawPos);
-            float servo_modulation = constrain(1.0f - (rawAbs / 200.0f) * (rawAbs / 200.0f), 0.0f, 1.0f);
+            float servo_modulation = constrain(1.0f - (rawAbs / 250.0f) * (rawAbs / 250.0f), 0.0f, 1.0f);
             // Adaptive ke_gain: boost when pendulum stalls (no angle improvement)
             float currentAbsAngle = fabsf(pendPos);
             if (currentAbsAngle > swing_maxAngleAchieved + 5.0f) {
