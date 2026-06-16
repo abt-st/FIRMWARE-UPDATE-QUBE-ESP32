@@ -3,7 +3,7 @@
 #  Usa `uv` para gestionar el entorno Python y ejecutar herramientas.
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: install run lint format check typecheck clean test help
+.PHONY: install run lint format check typecheck clean test help flash flash-build flash-upload
 
 # ── Configuración ──────────────────────────────────────────────────────────
 PYTHON     := uv run python
@@ -43,6 +43,13 @@ clean:             ## Limpiar archivos temporales de Python
 	rm -rf .pytest_cache
 	rm -rf .ruff_cache
 	rm -rf *.egg-info
+
+flash:             ## Build + upload firmware via HTTP (OneDrive-safe)
+	$(PYTHON) src/firmware/flash.py
+flash-build:       ## Build firmware only
+	$(PYTHON) src/firmware/flash.py --build-only
+flash-upload:      ## Upload last build (skip compile)
+	$(PYTHON) src/firmware/flash.py --upload-only
 
 help:              ## Mostrar esta ayuda
 	@grep -Eh '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \

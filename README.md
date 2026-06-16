@@ -212,8 +212,8 @@ Encoder Servo ─────►     │                  │
 Encoder Péndulo ────►    │                  │
 (GPIO32/33 + Schmitt)    └────────┬─────────┘
                                   │
-                    INA219 (I2C)───┤──► task_ina219 (100 Hz)
-                    (GPIO21/22)    │
+                   INA219 (I2C)───┤──► task_ina219 (100 Hz)
+                   (GPIO21/22)    │
                                   │
                                   ├──► task_telemetry (10 Hz)
                                   │         │
@@ -227,22 +227,22 @@ Encoder Péndulo ────►    │                  │
 
 ## Hardware Requerido
 
-| Componente                    | Especificación                      | Cantidad | Precio aprox.     |
-| ----------------------------- | ------------------------------------ | -------- | ----------------- |
-| **ESP32-WROOM-32**      | Dual-core 240 MHz, WiFi+BLE          | 1        | $6–10 USD        |
-| **BTS7960**             | Dual Half-Bridge (IBT-2), 43A pico, 10A cont. | 1        | $2–5 USD          |
-| **INA219**              | Monitor I2C, 0–26 V, ±3.2 A        | 1        | $2–4 USD         |
-| **LM2596**              | Buck converter ajustable, 3 A        | 1        | $1–3 USD         |
-| **CD40106BE**           | Hex Schmitt Trigger Inverter, DIP-14 | 1        | ~$0.50 USD        |
-| **Motor DC + reductor** | 12 V, 25 W, 100–300 RPM             | 1        | $15–30 USD       |
-| **Encoder servo**       | Incremental, open-drain, ≥200 CPR   | 1        | Incluido en motor |
-| **Encoder péndulo**    | Incremental, open-drain, ≥200 CPR   | 1        | $5–15 USD        |
-| **Resistores 4.7 kΩ**  | Pull-up para encoders (×4)          | 4        | < $0.10 USD       |
-| **Resistores 10 kΩ**   | Filtro RC post-Schmitt (×4)         | 4        | < $0.10 USD       |
-| **Capacitores 10 nF**   | Filtro RC post-Schmitt a GND (×4)   | 4        | < $0.10 USD       |
-| **Capacitor 100 nF**    | Bypass Vcc CD40106BE                 | 1        | < $0.05 USD       |
-| **Capacitor 100 µF**   | Filtro salida LM2596                 | 1        | < $0.20 USD       |
-| **Fuente 12V**          | LiPo 3S o PSU laboratorio            | 1        | Variable          |
+| Componente                    | Especificación                               | Cantidad | Precio aprox.     |
+| ----------------------------- | --------------------------------------------- | -------- | ----------------- |
+| **ESP32-WROOM-32**      | Dual-core 240 MHz, WiFi+BLE                   | 1        | $6–10 USD        |
+| **BTS7960**             | Dual Half-Bridge (IBT-2), 43A pico, 10A cont. | 1        | $2–5 USD         |
+| **INA219**              | Monitor I2C, 0–26 V, ±3.2 A                 | 1        | $2–4 USD         |
+| **LM2596**              | Buck converter ajustable, 3 A                 | 1        | $1–3 USD         |
+| **CD40106BE**           | Hex Schmitt Trigger Inverter, DIP-14          | 1        | ~$0.50 USD        |
+| **Motor DC + reductor** | 12 V, 25 W, 100–300 RPM                      | 1        | $15–30 USD       |
+| **Encoder servo**       | Incremental, open-drain, ≥200 CPR            | 1        | Incluido en motor |
+| **Encoder péndulo**    | Incremental, open-drain, ≥200 CPR            | 1        | $5–15 USD        |
+| **Resistores 4.7 kΩ**  | Pull-up para encoders (×4)                   | 4        | < $0.10 USD       |
+| **Resistores 10 kΩ**   | Filtro RC post-Schmitt (×4)                  | 4        | < $0.10 USD       |
+| **Capacitores 10 nF**   | Filtro RC post-Schmitt a GND (×4)            | 4        | < $0.10 USD       |
+| **Capacitor 100 nF**    | Bypass Vcc CD40106BE                          | 1        | < $0.05 USD       |
+| **Capacitor 100 µF**   | Filtro salida LM2596                          | 1        | < $0.20 USD       |
+| **Fuente 12V**          | LiPo 3S o PSU laboratorio                     | 1        | Variable          |
 
 **Costo total estimado (sin fuente):** $35–70 USD
 **Comparación:** Quanser QUBE Servo = $2,500–$3,500 USD
@@ -255,13 +255,13 @@ Encoder Péndulo ────►    │                  │
 
 | Subsistema       | Origen                   | Destino                                                | Notas                                |
 | ---------------- | ------------------------ | ------------------------------------------------------ | ------------------------------------ |
-| Potencia motor   | Fuente 12 V (+)          | BTS7960 VS                                               | Alimentación del half-bridge        |
-| Potencia motor   | GND fuente               | BTS7960 GND                                              | GND común obligatorio               |
-| Lógica BTS7960  | LM2596 5 V               | BTS7960 VCC                                              | Lógica del módulo IBT-2            |
+| Potencia motor   | Fuente 12 V (+)          | BTS7960 VS                                             | Alimentación del half-bridge        |
+| Potencia motor   | GND fuente               | BTS7960 GND                                            | GND común obligatorio               |
+| Lógica BTS7960  | LM2596 5 V               | BTS7960 VCC                                            | Lógica del módulo IBT-2            |
 | Motor DC         | BTS7960 M+               | Motor terminal (+)                                     | Salida de potencia                   |
 | Motor DC         | BTS7960 M-               | Motor terminal (−)                                    | Salida de potencia                   |
-| Control motor    | ESP32 GPIO26             | BTS7960 RPWM                                              | PWM adelante                        |
-| Control motor    | ESP32 GPIO27             | BTS7960 LPWM                                              | PWM reversa                        |
+| Control motor    | ESP32 GPIO26             | BTS7960 RPWM                                           | PWM adelante                         |
+| Control motor    | ESP32 GPIO27             | BTS7960 LPWM                                           | PWM reversa                          |
 | Encoder servo    | Canal A                  | 4.7 kΩ pull-up → Schmitt → 10 kΩ + 10 nF → GPIO34 | Ver acondicionamiento                |
 | Encoder servo    | Canal B                  | 4.7 kΩ pull-up → Schmitt → 10 kΩ + 10 nF → GPIO35 | Ver acondicionamiento                |
 | Encoder servo    | GND / +5V                | GND común / Alimentación                             | Referencia compartida                |
@@ -273,7 +273,7 @@ Encoder Péndulo ────►    │                  │
 | INA219           | ESP32 3V3                | INA219 VCC                                             | No conectar a 5 V                    |
 | INA219           | GND común               | INA219 GND                                             | Referencia común                    |
 | INA219           | (+) batería / LM2596 IN | INA219 VIN+                                            | Antes del BTS7960                    |
-| INA219           | BTS7960 VS              | INA219 VIN−                                           | Después del shunt                   |
+| INA219           | BTS7960 VS               | INA219 VIN−                                           | Después del shunt                   |
 | Schmitt          | CD40106BE pin 14         | ESP32 3V3                                              | Vcc = 3.3 V (salida compatible GPIO) |
 | Schmitt          | CD40106BE pin 7          | GND común                                             | Tierra del chip                      |
 | Schmitt          | 100 nF                   | Pin 14 a pin 7                                         | Bypass, lo más cerca del chip       |
@@ -299,10 +299,10 @@ GPIO35  │ Encoder servo B       │ Entrada      │ Schmitt + RC (10 kΩ/10 n
 
 ### Cableado de EN
 
-| Opción                   | Conexión EN              | Cuándo usar        |
-| ------------------------- | ------------------------ | ------------------- |
-| **A (recomendada)** | No conectar (pull-up interno) | PWM directo por RPWM/LPWM |
-| B (alternativa)           | ESP32 GPIO25 → EN       | Control por software del enable |
+| Opción                   | Conexión EN                  | Cuándo usar                    |
+| ------------------------- | ----------------------------- | ------------------------------- |
+| **A (recomendada)** | No conectar (pull-up interno) | PWM directo por RPWM/LPWM       |
+| B (alternativa)           | ESP32 GPIO25 → EN            | Control por software del enable |
 
 > **Importante:** El módulo IBT-2 tiene pines R_EN y L_EN que habilitan cada half-bridge. Vienen pull-up por defecto. Solo conectar GPIO25 si necesitas control por software del enable.
 
@@ -329,22 +329,23 @@ El circuito de acondicionamiento combina **Schmitt Trigger** (histéresis para r
 Encoder A (~5V) ────────────────┤ pin 1  (IN_A)    │
                 		│        (OUT_A) pin 2 ├──┐
   		                │                  │   │  │
-   	                        │        (IN_B) pin 3 ◄─┘
-                                │        (OUT_B) pin 4 ├──► 10kΩ ──┬──► GPIO34
-                                │                  │              │
-                                │                  │            10nF
-                                │                  │              │
-                                │                  │             GND
+   	                        │       (IN_B) pin 3 ◄─┘
+                                │    (OUT_B) pin 4 ├──► 10kΩ ──┬──► GPIO34
+                                │                  │           │
+                                │                  │          10nF
+                                │                  │           │
+                                │                  │          GND
                                 │                  │
 Encoder B (~5V) ────────────────┤ pin 5  (IN_C)    │
                                 │        (OUT_C) pin 6 ├──┐
-                                │                  │  │  │
-                                │        (IN_D) pin 9 ◄─┘
-                                │        (OUT_D) pin 8 ├──► 10kΩ ──┬──► GPIO35
-                                │                  │              │
-                                │                  │            10nF
-                                │                  │              │
-         GND ───────────────────┤ pin 7       pin 14├──── 3.3V   GND
+                                │                  │   │  │
+                                │       (IN_D) pin 9 ◄─┘
+                                │    (OUT_D) pin 8 ├──► 10kΩ ──┬──► GPIO35
+                                │                  │           │
+                                │                  │          10nF
+                                │                  │           |
+				|		   |	      GND
+         GND ───────────────────┤ pin 7      pin 14├──── 3.3V  
                                 └──────────────────┘
                                        │
                                    100nF (bypass Vcc)
@@ -357,8 +358,8 @@ Encoder B (~5V) ────────────────┤ pin 5  (IN_C
 ```
                             CD40106BE                    Filtro RC
                            ┌─────────┐
-
-Encoder (~5V) ──► IN_A ──►│ INV_A   │
+			   │         │
+Encoder (~5V) ──► IN_A ──► │ INV_A   │
                   (pin 1)  │         │──► OUT_A (pin 2) ──┐
                            │  INV_B  │                     │
                            │         │◄── IN_B (pin 3) ◄──┘
@@ -611,9 +612,9 @@ Guía paso a paso para poner en funcionamiento el sistema completo.
 | Componente                  | Estado mínimo                       |
 | --------------------------- | ------------------------------------ |
 | ESP32-WROOM-32              | Conectado por USB                    |
-| Fuente 12 V (LiPo 3S o PSU) | Alimentando el BTS7960                 |
-| BTS7960 + LM2596              | Regulador ajustado a 5 V             |
-| Motor DC + encoder          | Conectado al BTS7960                   |
+| Fuente 12 V (LiPo 3S o PSU) | Alimentando el BTS7960               |
+| BTS7960 + LM2596            | Regulador ajustado a 5 V             |
+| Motor DC + encoder          | Conectado al BTS7960                 |
 | CD40106BE + componentes RC  | Acondicionamiento de señal          |
 | Encoder péndulo (opcional) | Solo para modos `m3`/`m4`/`m5` |
 | INA219 (opcional)           | Solo para telemetría de potencia    |
@@ -844,14 +845,14 @@ $$
 
 ### Comparativa de rendimiento
 
-| Métrica                  | Arduino Uno + BTS7960      | ESP32 + BTS7960 (este proyecto) | Quanser QUBE |
-| ------------------------- | ------------------------ | ----------------------------- | ------------ |
-| Frecuencia de control     | ~100 Hz                  | **200 Hz**              | 1000 Hz      |
-| Encoders simultáneos     | 1 (limitado)             | **2**                   | 2            |
-| Telemetría de potencia   | No                       | **Sí (INA219)**        | Sí          |
-| Conectividad inalámbrica | No                       | **WiFi + BLE**          | Ethernet     |
-| Swing-up automático      | No                       | **Sí (modo 5)**        | Sí          |
-| Costo                     | ~$35 USD | **~$70 USD** | ~$3,000 USD                   |              |
+| Métrica                  | Arduino Uno + BTS7960    | ESP32 + BTS7960 (este proyecto) | Quanser QUBE |
+| ------------------------- | ------------------------ | ------------------------------- | ------------ |
+| Frecuencia de control     | ~100 Hz                  | **200 Hz**                | 1000 Hz      |
+| Encoders simultáneos     | 1 (limitado)             | **2**                     | 2            |
+| Telemetría de potencia   | No                       | **Sí (INA219)**          | Sí          |
+| Conectividad inalámbrica | No                       | **WiFi + BLE**            | Ethernet     |
+| Swing-up automático      | No                       | **Sí (modo 5)**          | Sí          |
+| Costo                     | ~$35 USD | **~$70 USD** | ~$3,000 USD                     |              |
 
 ### Validación del encoder (post HW-FIX)
 
@@ -956,7 +957,7 @@ $$
 
 ## Licencia
 
-MIT License — ver [LICENSE](LICENSE) para detalles.
+CCBY4.0 License — ver [LICENSE](LICENSE) para detalles.
 
 ---
 

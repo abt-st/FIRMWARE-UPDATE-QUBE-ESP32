@@ -22,6 +22,7 @@ Este repositorio cuenta con un ecosistema de **agentes, skills, instrucciones y 
 | **Analista de Investigación QUBE** | `.github/agents/analista-investigacion.agent.md` | Analiza PDFs/papers académicos y extrae puntos relevantes para la tesis de modernización del QUBE Servo | "analiza el pdf", "extrae puntos del paper", "puntos relevantes del paper", "revisar referencias" |
 | **Analista PID QUBE** | `.github/agents/analista-pid-qube.agent.md` | Analiza datos CSV de control PID, identifica desempeño, overshoot, oscilaciones y sugiere ajustes | "analiza los datos del PID", "explica el desempeño del control", "grafica la respuesta del sistema", "sugiere ajustes PID" |
 | **Changelog Manager** | `.github/agents/changelog-manager.agent.md` | Mantiene el CHANGELOG.md sincronizado con cambios reales del proyecto, clasifica por SemVer y genera entradas con formato correcto | "actualiza el changelog", "mantén el changelog actualizado", "revisa el changelog", "changelog", "qué falta en el changelog", "versiona el proyecto" |
+| **Auditor de Experimentos** | `.github/agents/auditor-experimentos.agent.md` | Audita datos experimentales, detecta clasificaciones incorrectas (catch vs chatter), verifica calidad de datos y genera reporte estructurado | "audita los datos", "audita el experimento", "revisa la calidad de los datos", "verifica las clasificaciones", "audit", "hay errores en los datos" |
 
 ### Analista de Investigación QUBE
 
@@ -120,6 +121,31 @@ Este repositorio cuenta con un ecosistema de **agentes, skills, instrucciones y 
 - _"Actualiza el changelog con los cambios que hicimos hoy."_
 - _"Revisa si el changelog refleja todos los cambios recientes."_
 - _"¿Falta documentar algún cambio en el CHANGELOG?"_
+
+---
+
+### Auditor de Experimentos QUBE
+
+**Archivo:** `.github/agents/auditor-experimentos.agent.md`
+**Rol:** Ingeniero de pruebas escéptico que audita datos experimentales del QUBE Servo.
+
+**Capacidades:**
+- Detección de clasificaciones incorrectas (CATCH vs CHATTER vs MISS)
+- Verificación de calidad de datos (poll rate, samples faltantes, datos truncados)
+- Reconstrucción de clasificaciones desde datos crudos (NO confía en la del script)
+- Generación de reporte estructurado con hallazgos por severidad
+- Checklist de verificación que evoluciona con cada auditoría (aprendizaje por refuerzo)
+
+**Severidad de hallazgos:**
+- CRITICAL: Cambia la conclusión del experimento
+- HIGH: Afecta la confiabilidad de los datos
+- MEDIUM: Afecta la precisión pero no cambia conclusiones
+- LOW: Mejora de proceso
+
+**Ejemplos de uso:**
+- _"Audita el sweep de swing-up y verifica que las clasificaciones sean correctas."_
+- _"Revisa si el poll rate real coincide con el configurado."_
+- _"¿Los catches reportados son reales o hay chatter?"_
 
 ---
 

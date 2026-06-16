@@ -1,0 +1,19 @@
+=== Stability Test sp=60 ===
+
+Date: 2026-06-15T14:14:19.089667
+Total time: 10min
+Attempts: 17
+
+Catches: 13/17 (76%)
+Chatters: 3/17 (18%)
+Transients: 0/17
+Misses: 1/17
+
+Avg catch time: 4.4s
+Avg max angle: 179°
+
+=== Degradation Check ===
+First half catch rate: 62%
+Second half catch rate: 89%
+Degradation: -26%
+OK: No significant degradation.

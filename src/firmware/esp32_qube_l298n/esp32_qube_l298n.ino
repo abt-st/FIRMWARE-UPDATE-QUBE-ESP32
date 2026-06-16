@@ -183,9 +183,9 @@ float pendulumOffsetDeg = 0.0f;
 // LQR Péndulo Invertido (modo 4)
 // Ganancias LQR base (lejos del equilibrio)
 float lqr_K1 = 2.0f;    // Ganancia posición servo
-float lqr_K2 = 22.0f;   // Ganancia ángulo péndulo
-float lqr_K3 = 1.5f;    // Ganancia velocidad servo
-float lqr_K4 = 9.0f;    // Ganancia velocidad péndulo
+float lqr_K2 = 22.0f;   // Ganancia ángulo péndulo (valor original calibrado)
+float lqr_K3 = 1.5f;
+float lqr_K4 = 9.0f;    // Ganancia velocidad péndulo (valor original calibrado)
 
 // Gain scheduling: gains moderados cerca del equilibrio
 const float LQR_K2_NEAR = 30.0f;     // K2 cerca de vertical (probado: 55+ segundos)
@@ -219,6 +219,7 @@ const int PWM_MAX = 100;
 const float PEND_MASS = 0.025f;      // Masa del pendulo (kg) - ajustar
 const float PEND_LENGTH = 0.065f;    // Distancia pivot-centro de masa (m) - ajustar
 const float PEND_INERTIA = 0.00002f; // Momento de inercia (kg*m^2) - ajustar
+const float PEND_LIMIT_DEG = 90.0f;    // Limite fisico del pendulo (±90° desde reposo)
 const float GRAVITY = 9.81f;         // Gravedad (m/s^2)
 float ke_gain = 0.65f;  // Ganancia BTS7960: 25% catch rate, hold 86s
 // Adaptive ke_gain: increase energy gain when pendulum stalls
@@ -235,6 +236,7 @@ float balance_threshold = 1.0f;     // Umbral para cambiar a LQR (grados desde v
 bool swing_recovering = false;       // Estado de recovery: motor apagado esperando que el péndulo caiga
 const float SWING_RECOVERY_THRESHOLD = 30.0f;  // |pendPos| < esto para salir de recovery (cerca del fondo)
 const unsigned long CONTROL_PERIOD_US = 2000;             // 500 Hz (era 5000 = 200 Hz)
+int swingupPwmMax = 50;  // PWM limit para swing-up (configurable por HTTP: sp<val>)
 unsigned long telemetryPeriodMs = 100;          // Ajustable por HTTP: tp<ms>
 float prev_alpha_dot_peak = 0.0f;  // Peak detection para transicion LQR
 const unsigned long COMMAND_TIMEOUT_MS = 10000;
@@ -464,7 +466,7 @@ void setMotor(int pwmValue) {
   // Soft saturation: reducir PWM gradualmente cerca de los límites mecánicos del servo.
   // Factor = 1 / (1 + (|pos|/k)^y), con k=120° (umbral BTS7960) y y=2 (agresividad).
   // En pos=0: factor=1.0. En pos=60°: factor=0.80. En pos=90°: factor=0.64.
-  float pos_factor = 1.0f / (1.0f + powf(fabsf(lastServoPos) / 120.0f, 2.0f));
+  float pos_factor = 1.0f / (1.0f + powf(fabsf(lastServoPos) / 200.0f, 2.0f));
   pwmValue = (int)(pwmValue * pos_factor);
   pwmValue = constrain(pwmValue, -255, 255);
   lastPwmCmd = pwmValue;
@@ -520,6 +522,20 @@ void setMotorDirect(int pwmValue) {
   if (pwmValue < 0) { pwmWriteCompat(PIN_IN1, PWM_CH_IN1, 0); pwmWriteCompat(PIN_IN2, PWM_CH_IN2, -pwmValue); return; }
   pwmWriteCompat(PIN_IN1, PWM_CH_IN1, 0); pwmWriteCompat(PIN_IN2, PWM_CH_IN2, 0);
 }
+// brakeMotor: frenado ACTIVO (ambos H-bridge HIGH = cortocircuito del motor).
+// Detiene el servo mucho más rápido que coast (PWM=0).
+void brakeMotor() {
+  if (USE_ENA_PWM) {
+    digitalWrite(PIN_IN1, HIGH);
+    digitalWrite(PIN_IN2, HIGH);
+    pwmWriteCompat(PIN_ENA, PWM_CH_ENA, 255);
+    Serial.println("[BRAKE] ENA brake");
+    return;
+  }
+  Serial.printf("[BRAKE] IN1=255 IN2=255 sv=%.1f\n", getRawPositionDeg());
+  pwmWriteCompat(PIN_IN1, PWM_CH_IN1, 255);
+  pwmWriteCompat(PIN_IN2, PWM_CH_IN2, 255);
+}
 
 
 void setMode(int newMode) {
@@ -545,7 +561,8 @@ void setMode(int newMode) {
     prev_alpha_dot_peak = 0.0f;  // Reset peak detection
     swing_maxAngleAchieved = 0.0f;  // Reset adaptive ke_gain
     swing_lastImprovementMs = millis();
-    ke_gain = KE_GAIN_BASE;
+    // Solo reset ke_gain si no fue configurado por HTTP
+    // (ke_gain fue seteado por cmd?ke= antes de cmd?m=5)
   }
 }
 
@@ -806,6 +823,9 @@ void handleCmd(AsyncWebServerRequest *request) {
 
   if (request->hasParam("ke")) {
     ke_gain = request->getParam("ke")->value().toFloat();
+  }
+  if (request->hasParam("sp")) {
+    swingupPwmMax = constrain(request->getParam("sp")->value().toInt(), 10, 100);
   }
   if (request->hasParam("bt")) {
     balance_threshold = request->getParam("bt")->value().toFloat();
@@ -1492,9 +1512,9 @@ void loop() {
         if ((millis() - lqr_catchMs) < 10) {  // First ~10ms: lock direction
           lockedBrakeDir = (rawVelForCatch > 0) ? 1.0f : -1.0f;
         }
-        // Proportional braking with locked direction: ±100 PWM at 200°/s
-        float brake_pwm = lockedBrakeDir * fabsf(rawVelForCatch) * 0.5f;
-        pwm = constrain((int)brake_pwm, -100, 100);
+        // Proportional braking with locked direction: ±25 PWM max, gain suave
+        float brake_pwm = lockedBrakeDir * fabsf(rawVelForCatch) * 0.10f;
+        pwm = constrain((int)brake_pwm, -25, 25);
         setMotor(pwm);
         return;
       }
@@ -1555,22 +1575,59 @@ void loop() {
       // retorno crece linealmente. Esto previene que el servo pegue contra
       // el stop mecánico y cause brownout.
       {
-        float centering_gain = 1.0f;  // Ganancia de centering (era 0.15)
-        float centering = -centering_gain * theta;
-        pwm += (int)centering;
+        // Centering: solo activo 2+ segundos después del catch.
+        // Durante los primeros 2s, el LQR necesita control total del servo
+        // para estabilizar el péndulo sin interferencia del centering.
+        float centering_sec = (millis() - lqr_catchMs) / 1000.0f;
+        if (centering_sec > 2.0f) {
+          float absTheta = fabsf(theta);
+          // Ramp: centering crece gradualmente de 0 a full en 2s adicionales
+          float ramp = constrain((centering_sec - 2.0f) / 2.0f, 0.0f, 1.0f);
+          float centering_gain = 0.5f * ramp;
+          if (absTheta > 40.0f) centering_gain = 1.0f * ramp;
+          else if (absTheta > 20.0f) centering_gain = 0.75f * ramp;
+          float centering = -centering_gain * theta;
+          centering = constrain(centering, -25.0f, 25.0f);
+          pwm += (int)centering;
+        }
       }
 
-      // Límite de PWM proporcional a la posición del servo.
-      // Cuando |theta| > 50°, reducir PWM máximo para evitar que el servo
-      // siga alejándose del centro. Esto es más efectivo que la protección
-      // direction-aware que solo actúa en 70°-85°.
+      // Límite de PWM del servo en LQR.
+      // CRITICO: solo forzar centering cuando el péndulo NO está cerca
+      // de la vertical. Si el péndulo está arriba, el LQR necesita
+      // control completo del servo para mantener el equilibrio.
       {
+        float absAlpha = fabsf(alpha);
         float absTheta = fabsf(theta);
+        bool pendulumNearVertical = (absAlpha < 30.0f);  // alpha≈0 = vertical arriba
         int servoPwmLimit = 70;
-        if (absTheta > 50.0f) {
-          // Reducir PWM linealmente: 70 en 50°, 30 en 75°, 0 en 90°
-          servoPwmLimit = (int)(70.0f - (absTheta - 50.0f) * (70.0f / 40.0f));
-          servoPwmLimit = constrain(servoPwmLimit, 0, 70);
+
+        if (absTheta > 70.0f && !pendulumNearVertical) {
+          // FORZAR centro solo cuando el péndulo NO está arriba.
+          // Cuando el péndulo está en la vertical, dejar al LQR decidir.
+          float center_dir = (theta > 0) ? -1.0f : 1.0f;
+          pwm = (int)(center_dir * 70.0f);
+          servoPwmLimit = 70;
+        } else if (absTheta > 70.0f && pendulumNearVertical) {
+          // Péndulo arriba + servo lejos: limitar PWM que se ALEJA del centro,
+          // pero permitir PWM que va AL centro. No reemplazar el output del LQR.
+          float stop_dir = (theta > 0) ? 1.0f : -1.0f;
+          float pwm_dir = (pwm > 0) ? 1.0f : ((pwm < 0) ? -1.0f : 0.0f);
+          if (pwm_dir == stop_dir) {
+            // PWM va contra stop: limitar fuertemente
+            servoPwmLimit = 30;
+          } else {
+            // PWM va al centro: permitir hasta 70
+            servoPwmLimit = 70;
+          }
+        } else if (absTheta > 50.0f) {
+          // Región transicional: limitar PWM que se aleja
+          float stop_dir = (theta > 0) ? 1.0f : -1.0f;
+          float pwm_dir = (pwm > 0) ? 1.0f : ((pwm < 0) ? -1.0f : 0.0f);
+          if (pwm_dir == stop_dir) {
+            servoPwmLimit = (int)(70.0f - (absTheta - 50.0f) * (70.0f / 20.0f));
+            servoPwmLimit = constrain(servoPwmLimit, 10, 70);
+          }
         }
         pwm = constrain(pwm, -servoPwmLimit, servoPwmLimit);
       }
@@ -1598,19 +1655,30 @@ void loop() {
         lqr_inFallback = false;
       }
 
-      // Protección anti-brownout: CORTAR PWM si el servo está contra el stop.
-      // Un motor stalled contra hard stop dispara corriente → brownout ESP32.
-      // Regla: si |pos| > 80°, cortar cualquier PWM que empuje hacia el stop.
-      // Si |pos| > 85°, cortar TODO el PWM (el servo ya pegó).
-      if (fabsf(pos) > 85.0f) {
-        pwm = 0;
+      // HARD CLAMP: cuando |pos| > 100°, solo permitir PWM hacia centro.
+      // NO override si el PWM ya va al centro (forced centering lo hace).
+      if (fabsf(pos) > 100.0f) {
+        float stop_dir = (pos > 0) ? 1.0f : -1.0f;
+        float pwm_dir = (pwm > 0) ? 1.0f : ((pwm < 0) ? -1.0f : 0.0f);
+        if (pwm_dir == stop_dir) {
+          pwm = (int)(stop_dir * -30.0f);  // Solo cortar si va contra stop
+        }
+        // Si va al centro → permitir sin cambio
+      } else if (fabsf(pos) > 85.0f) {
+        // Direction-aware: solo cortar PWM que empuja contra el stop.
+        // PWM que va AL centro se permite SIN reducción.
+        float stop_dir = (pos > 0) ? 1.0f : -1.0f;
+        float pwm_dir = (pwm > 0) ? 1.0f : ((pwm < 0) ? -1.0f : 0.0f);
+        if (pwm_dir == stop_dir) {
+          pwm = 0;  // Empuja contra stop → cortar
+        }
+        // Si va al centro → permitir sin restricción (para recuperar)
       } else if (fabsf(pos) > 70.0f) {
         // Cortar solo el PWM que empuja hacia el stop (direction-aware)
         float stop_dir = (pos > 0) ? 1.0f : -1.0f;
         float pwm_dir = (pwm > 0) ? 1.0f : ((pwm < 0) ? -1.0f : 0.0f);
         if (pwm_dir == stop_dir) {
-          // PWM empuja hacia el stop — reducir proporcionalmente
-          float factor = 1.0f - (fabsf(pos) - 70.0f) / 15.0f;  // 1.0 en 70°, 0 en 85°
+          float factor = 1.0f - (fabsf(pos) - 70.0f) / 15.0f;
           pwm = (int)(pwm * constrain(factor, 0.0f, 1.0f));
         }
       }
@@ -1628,20 +1696,18 @@ void loop() {
       pwm = constrain(pwm, -PWM_MAX, PWM_MAX);
       setMotor(pwm);
 
-
+    } else if (mode == 5) {
     // ══════════════════════════════════════════════════════════════════════════
     // MODO 5: Swing-up por energia con kick continuo
-    // ══════════════════════════════════════════════════════════════════════════
-    } else if (mode == 5) {
       int pwm = 0;
-      const float alpha = pendPos * DEG_TO_RAD;         // Wrapped para display
-      const float alpha_dot_raw = (pendPosRaw - prevPosPend) / dt * DEG_TO_RAD;
-      // Complementary filter: combine physics model prediction + position derivative
-      // Physics: α̈ = -(g/l)*sin(α) - (b/J)*α̇
-      float accel = -(GRAVITY / PEND_LENGTH) * sinf(alpha) - (PEND_DAMPING / PEND_INERTIA) * swing_predictedVelAlpha;
-      swing_predictedVelAlpha += accel * dt;
-      // Blend: 70% measurement + 30% prediction
-      swing_filteredVelAlpha = COMP_FILTER_ALPHA * alpha_dot_raw + (1.0f - COMP_FILTER_ALPHA) * swing_predictedVelAlpha;
+      // ── HARD SAFETY: frenar si servo > 85° (prevenir atasco) ──────
+      {
+        if (fabsf(pos) > 90.0f) {
+          float brake_dir = (pos > 0) ? -1.0f : 1.0f;
+          setMotor((int)(brake_dir * 70.0f));
+          return;
+        }
+      }
       swing_predictedVelAlpha = swing_filteredVelAlpha;  // Sync prediction with blended result
       const float alpha_dot = swing_filteredVelAlpha;  // Filtrado para energy pumping
       prevPosPend = pendPosRaw;
@@ -1677,59 +1743,54 @@ void loop() {
         pwm = brake_pwm;
       } else {
         // ══════════════════════════════════════════════════════════════════
-        // ══════════════════════════════════════════════════════════════════
-        // TRANSICION A LQR: deteccion de pico + condiciones tradicionales.
-        // El pico de oscilacion (alpha_dot cambia de signo) = velocidad ~0.
-        // Si el pico es >130°, capturar inmediatamente.
+        // TRANSICION A LQR: solo cuando el péndulo está cerca de la vertical.
+        // Transicion a LQR cuando el pendulo esta dentro de ±60° de vertical.
+        // Vertical = |pendPos| ≈ 180°. ±60° = |pendPos| > 120°.
         // ══════════════════════════════════════════════════════════════════
         float vel_raw_dps = fabsf(alpha_dot) * RAD_TO_DEG;
-        bool inUpperHemisphere = fabsf(pendPos) > 130.0f;
-        bool nearlyStopped = vel_raw_dps < 120.0f;
-        bool canTransition = inUpperHemisphere && nearlyStopped;
+        bool nearVertical = fabsf(pendPos) > 120.0f;
+        bool verySlow = vel_raw_dps < 30.0f;
+        bool canTransition = nearVertical && verySlow;
 
-        // Peak detection: detect position peak (alpha_dot crosses zero = pendulum at max height)
+        // Peak detection: detect position peak (alpha_dot crosses zero)
         bool atPeak = (prev_alpha_dot_peak > 0.0f && alpha_dot <= 0.0f) ||
                        (prev_alpha_dot_peak < 0.0f && alpha_dot >= 0.0f);
         prev_alpha_dot_peak = alpha_dot;
 
-        // At position peak: velocity is ~0, only need hemisphere + distance check
-        bool atPeakTransition = atPeak && inUpperHemisphere && (180.0f - fabsf(pendPos) < 40.0f);
+        // At position peak AND near vertical
+        bool atPeakTransition = atPeak && (180.0f - fabsf(pendPos) < 60.0f);
 
-        // FORCED transition: si el pendulo llega a 150°+, forzar transicion
-        // sin verificar velocidad. El LQR catch mode frenara.
-        bool forcedTransition = fabsf(pendPos) > 150.0f;
-        // Energy-based transition: if energy is close to target, transition
-        // regardless of angle. Allows transitions at lower angles when the
-        // pendulum has enough total energy (kinetic + potential).
+        // FORCED transition
+        bool forcedTransition = fabsf(pendPos) > 125.0f;
+
+        // Energy-based
         const float mgl_eb = PEND_MASS * GRAVITY * PEND_LENGTH;
         const float alpha_eb_rad = pendPosRaw * DEG_TO_RAD;
         float E_current = 0.5f * PEND_INERTIA * alpha_dot * alpha_dot +
                           mgl_eb * (1.0f - cosf(alpha_eb_rad));
-        float E_target_eb = 2.0f * mgl_eb;  // Energy needed to reach vertical
+        float E_target_eb = 2.0f * mgl_eb;
         bool energyReady = (E_target_eb > 0.0f) &&
-                           (fabsf(E_current - E_target_eb) / E_target_eb < 0.15f) &&
-                           fabsf(pendPos) > 100.0f;  // At least above horizontal
+                           (fabsf(E_current - E_target_eb) / E_target_eb < 0.10f) &&
+                           fabsf(pendPos) > 120.0f &&
+                           (vel_raw_dps < 60.0f);
 
 
         if (canTransition || atPeakTransition || forcedTransition || energyReady) {
-          float dist_from_up = 180.0f - fabsf(pendPos);
-          if (forcedTransition || energyReady || dist_from_up < 40.0f) {
-            setMode(4);
-            lqr_inFallback = false;
-            lqr_catchMs = millis();
-            spinCooldownMs = 0;
-            Serial.printf("LQR TRANS (pend=%.1f vel=%.1f peak=%d forced=%d energy=%.3f raw=%.1f)\n", pendPos, vel_raw_dps, atPeakTransition, forcedTransition, E_current / E_target_eb, pendPosRaw);
-            pwm = 0;
-            setMotor(pwm);
-            return;
-          }
+          setMode(4);
+          lqr_inFallback = false;
+          lqr_catchMs = millis();
+          spinCooldownMs = 0;
+          Serial.printf("LQR TRANS (pend=%.1f vel=%.1f peak=%d forced=%d energy=%.3f raw=%.1f)\n", pendPos, vel_raw_dps, atPeakTransition, forcedTransition, E_current / E_target_eb, pendPosRaw);
+          pwm = 0;
+          setMotor(pwm);
+          return;
         }
 
         // ── Recovery: péndulo cruzó la vertical sin transicionar ───────
         if (swing_recovering) {
           // Recovery con frenado proporcional a velocidad (preserva algo de energía)
           float recover_brake = -0.4f * alpha_dot;  // Frenado proporcional
-          pwm = constrain((int)(MOTOR_DIR * recover_brake * PWM_MAX), -PWM_MAX, PWM_MAX);
+          pwm = constrain((int)(MOTOR_DIR * recover_brake * swingupPwmMax), -swingupPwmMax, swingupPwmMax);
           if (fabsf(pendPos) < SWING_RECOVERY_THRESHOLD) {
             swing_recovering = false;
             // Reset offset al salir de recovery para que raw esté en [-180,180]
@@ -1755,31 +1816,21 @@ void loop() {
           float dampStrength = (fabsf(pendPosRaw) - 165.0f) / 15.0f;
           dampStrength = constrain(dampStrength, 0.0f, 1.0f);
           float damping = -(0.3f + 0.7f * dampStrength) * alpha_dot;
-          pwm = constrain((int)(MOTOR_DIR * damping * PWM_MAX), -PWM_MAX, PWM_MAX);
+          pwm = constrain((int)(MOTOR_DIR * damping * swingupPwmMax), -swingupPwmMax, swingupPwmMax);
         } else {
-          // ── Bombeo normal de energía ──────────────────────────────────
-          const float alpha_energy_rad = pendPosRaw * DEG_TO_RAD;
-          const float prod = alpha_dot * cosf(alpha_energy_rad);
-          float motion_sign = 0.0f;
-          if (prod > SWINGUP_PROD_DEADZONE) motion_sign = 1.0f;
-          else if (prod < -SWINGUP_PROD_DEADZONE) motion_sign = -1.0f;
-
+          // ── Resonant pumping: servo oscila a frecuencia del péndulo ────
           if (fabsf(alpha_dot) < SWINGUP_QUIET_THRESHOLD_RADPS) {
-            // Kick alternante cuando el péndulo está quieto + centering
-            if (((millis() / SWINGUP_KICK_PERIOD_MS) % 2) == 0) {
-              pwm = MOTOR_DIR * (int)(50 * SWINGUP_KICK_DUTY_FRAC);
-            } else {
-              pwm = -MOTOR_DIR * (int)(50 * SWINGUP_KICK_DUTY_FRAC);
-            }
-            float centering_kp = 0.2f;
-            pwm += (int)(-centering_kp * pos);
+            // Péndulo quieto: kick sinusoidal para iniciar oscilación
+            float t_sec = millis() / 1000.0f;
+            float kick_ref = 40.0f * sinf(2.0f * PI * 2.0f * t_sec);
+            float error = kick_ref - pos;
+            pwm = (int)(MOTOR_DIR * error * 3.0f);
+            pwm = constrain(pwm, -swingupPwmMax, swingupPwmMax);
           } else {
-            // Bombeo de energia SIN modulacion por posicion del servo.
-            // La proteccion por voltaje y el frenado proporcional ya protegen
-            // contra brownout y limits mecanicos. Remover modulacion permite
-            // transferencia de energia completa en todas las posiciones del servo.
-            float rawPos = getRawPositionDeg();
-            // Adaptive ke_gain: boost when pendulum stalls (no angle improvement)
+            // Péndulo oscilando: resonant pumping
+            float pump_ref = alpha_dot * 120.0f;
+            pump_ref = constrain(pump_ref, -70.0f, 70.0f);  // ±70° (hard safety a 85° protege)
+            // Adaptive gain: boost when pendulum stalls
             float currentAbsAngle = fabsf(pendPos);
             if (currentAbsAngle > swing_maxAngleAchieved + 5.0f) {
               swing_maxAngleAchieved = currentAbsAngle;
@@ -1788,10 +1839,11 @@ void loop() {
             } else if ((millis() - swing_lastImprovementMs) > STALL_TIMEOUT_MS) {
               ke_gain = KE_GAIN_BOOST;
             }
-            float u = ke_gain * motion_sign;
-            pwm = (int)(MOTOR_DIR * u * PWM_MAX);
-            // Centering suave
-            pwm += (int)(-0.15f * rawPos);
+
+            float error = pump_ref - pos;
+            float Kp_pump = ke_gain * 4.0f;
+            pwm = (int)(MOTOR_DIR * error * Kp_pump);
+            pwm = constrain(pwm, -swingupPwmMax, swingupPwmMax);
           }
         }
       }
@@ -1813,21 +1865,8 @@ void loop() {
         }
       }
 
-      // ── Servo limit: frenado proporcional en vez de corte abrupto ─────
-      // En vez de cortar motor 100ms (mata transferencia de energía),
-      // reducir PWM proporcionalmente al exceso sobre 120°.
-      {
-        const float rawPos = getRawPositionDeg();
-        float servo_excess = fabsf(rawPos) - 120.0f;
-        if (servo_excess > 0.0f) {
-          // Frenado proporcional: 100% PWM en 120°, 0% en 150°
-          float brake_factor = 1.0f - servo_excess / 30.0f;
-          brake_factor = constrain(brake_factor, 0.0f, 1.0f);
-          pwm = (int)(pwm * brake_factor);
-        }
-        pwm = constrain(pwm, -PWM_MAX, PWM_MAX);
-        setMotor(pwm);
-      }
+      pwm = constrain(pwm, -PWM_MAX, PWM_MAX);
+      setMotor(pwm);
     }
   }
   const unsigned long nowMs = millis();

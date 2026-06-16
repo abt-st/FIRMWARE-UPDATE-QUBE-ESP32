@@ -1,3 +1,66 @@
+## [1.37.0] — 2026-06-11
+### Swing-up: PWM acotado + param HTTP ajustable en vivo
+
+#### Problema identificado
+El servo golpeaba el tope mecánico izquierdo durante el swing-up porque PWM_MAX=100
+era excesivo para resonant pumping. El servo se saturaba en el borde y no podía
+oscilar en fase con el péndulo. Además, no había forma de ajustar el PWM sin
+recompilar el firmware.
+
+#### Cambios aplicados
+
+**1. `SWINGUP_PWM_MAX` → `swingupPwmMax` (mutable)**
+- Antes: `const int SWINGUP_PWM_MAX = 100` (const, inmutable)
+- Ahora: `int swingupPwmMax = 50` (configurable vía HTTP en runtime)
+- Rango aceptado: 10–100
+
+**2. HTTP param `sp<val>`**
+- Nuevo handler en `handleCmd`: `?sp=55` ajusta `swingupPwmMax` en tiempo real
+- Permite encontrar el sweet spot sin recompilar
+- Formato: `GET /cmd?sp=55`
+
+**3. Todos los paths de modo 5 usan `swingupPwmMax`**
+- Kick sinusoidal (péndulo quieto): `constrain(pwm, -swingupPwmMax, swingupPwmMax)`
+- Resonant pump (péndulo oscilando): `constrain(pwm, -swingupPwmMax, swingupPwmMax)`
+- Damping (próximo a vertical): `constrain(..., -swingupPwmMax, swingupPwmMax)`
+- Recovery brake: `constrain(..., -swingupPwmMax, swingupPwmMax)`
+- Servo limit brake: `constrain(center_pwm, -swingupPwmMax, swingupPwmMax)`
+- Anti-spin brake se mantiene en `PWM_MAX` (frenado máximo para parar spinning)
+
+**4. Servo limit reducido: 80° → 60°**
+- Brakes antes de llegar al tope mecánico
+- Previene que el servo se acumule en el borde durante pumping
+
+**5. Fix bug pre-existente: `sv` → `pos`**
+- Variable `sv` no existía en el scope del modo 5
+- Corregida a `pos` (la variable real de posición del servo, línea 1407)
+
+**6. Script `flash.py` — build+upload vía HTTP**
+- Usa `POST /update` en vez de espota.py/esptool
+- Soluciona el lock de OneDrive sobre `firmware.bin`
+- Si `.bin` está bloqueado, convierte `.elf`→`.bin` en `/tmp`
+- Args: `--ip`, `--build-only`, `--upload-only`
+
+#### Cambios de firmware
+```cpp
+// Constante mutable (antes era const)
+int swingupPwmMax = 50;  // configurable por HTTP: sp<val>
+
+// Handler HTTP nuevo
+if (request->hasParam("sp")) {
+  swingupPwmMax = constrain(request->getParam("sp")->value().toInt(), 10, 100);
+}
+
+// Todos los constrain del modo 5 ahora usan swingupPwmMax
+pwm = constrain(pwm, -swingupPwmMax, swingupPwmMax);
+```
+
+#### Notas
+- Default: `swingupPwmMax=50` (punto medio entre 35=insuficiente y 65=excesivo)
+- Para ajustar en vivo: `curl "http://IP/cmd?sp=55"`
+- Compilación: RAM 15.0%, Flash 73.1%
+- Sweep parcial: sp=45 → 80% catch rate
+
 ## [1.36.0] — 2026-06-08
 ### Swing-up funcionando con driver BTS7960
 
