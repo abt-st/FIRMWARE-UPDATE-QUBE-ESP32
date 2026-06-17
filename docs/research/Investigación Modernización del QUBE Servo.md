@@ -210,7 +210,7 @@ Referencia → Controlador PID (ESP32, 200 Hz)
 ### 5.2 Conexión de Potencia
 
 ```
-Fuente 12V (+) ──┬── VIN+ [INA219] VIN- ──── BTS7960 VS (12V)
+Fuente 15V (+) ──┬── VIN+ [INA219] VIN- ──── BTS7960 VS (15V)
                  │
                  ├── LM2596 IN
                  │      └── LM2596 OUT (5V) ──── ESP32 VIN

@@ -705,7 +705,7 @@ g = 9.81           # Gravedad [m/s²]
 K_t = 0.01         # Constante de torque [N·m/A]
 K_e = 0.01         # Constante de FCE [V·s/rad]
 R_motor = 5.0      # Resistencia del motor [Ω]
-k_pwm = 12.0 / 255.0  # Conversión duty→voltaje (12V bus)
+k_pwm = 15.0 / 255.0  # Conversión duty→voltaje (15V bus)
 
 # ── Parámetros derivados ───────────────────────────────────
 J_p = m * l**2     # Inercia del péndulo (barra puntual)
@@ -1179,7 +1179,7 @@ void updateControlMode(float theta) {
 - [ ] Encoder péndulo instalado y validado (GPIO32/33)
 - [ ] Pull-ups configurados (4.7 kΩ o según tipo de salida)
 - [ ] Conexiones verificadas (sin falsos contactos)
-- [ ] Alimentación estable (12V, ripple < 100 mV)
+- [ ] Alimentación estable (15V, ripple < 100 mV)
 
 ### Firmware
 - [ ] Lectura dual de encoders funcionando

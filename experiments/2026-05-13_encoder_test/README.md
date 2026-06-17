@@ -15,7 +15,7 @@
 | Sensor de corriente | INA219 (I2C, dirección 0x40) |
 | Motor | DC con encoder incremental (Premotec 990412016913) |
 | Encoder servo | Push-pull 5V (medido: ~4.7V en reposo) |
-| Alimentación | 12V LiPo 3S |
+| Alimentación | 15V LiPo 4S |
 
 ## Pruebas Realizadas
 

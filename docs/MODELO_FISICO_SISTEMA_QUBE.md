@@ -1,9 +1,9 @@
 # Modelo Físico del Sistema QUBE Servo — ESP32
 
-**Autor:** Documento técnico para tesis  
-**Fecha:** 2026-06-01  
-**Versión del firmware:** v1.19.0+  
-**Plataforma:** ESP32-WROOM-32 + BTS7960 + INA219 + LM2596  
+**Autor:** Documento técnico para tesis
+**Fecha:** 2026-06-01
+**Versión del firmware:** v1.19.0+
+**Plataforma:** ESP32-WROOM-32 + BTS7960 + INA219 + LM2596
 
 ---
 
@@ -37,16 +37,16 @@ El sistema QUBE Servo modernizado es una plataforma educativa de control de sist
                     │            QUBE SERVO MODERNIZADO                │
                     └──────────────────────────────────────────────────┘
 
-  ┌─────────┐    ┌──────────┐    ┌─────────┐    ┌──────────┐    ┌──────────┐
+  ┌─────────┐     ┌──────────┐    ┌─────────┐    ┌──────────┐    ┌──────────┐
   │  Fuente  │───►│  INA219  │───►│ BTS7960 │───►│ Motor DC │◄──►│ Encoder  │
   │  12V DC  │    │ (I2C)    │    │(Dual HB)│    │+ Péndulo │    │ Cuad.A/B │
-  └─────────┘    └──────────┘    └─────────┘    └──────────┘    └──────────┘
+  └─────────┘     └──────────┘    └─────────┘    └──────────┘    └──────────┘
        │                                             │                │
        ▼                                             │                │
-  ┌──────────┐                                        │                │
-  │  LM2596  │──── 5V ──►┌──────────┐                │                │
-  │  (Buck)  │            │  ESP32   │◄───────────────┘                │
-  └──────────┘            │ WROOM-32 │◄────────────────────────────────┘
+  ┌──────────┐                                       │                │
+  │  LM2596  │──── 5V ──► ┌──────────┐               │                │
+  │  (Buck)  │            │  ESP32   │◄──────────────┘                │
+  └──────────┘            │ WROOM-32 │◄───────────────────────────────┘
                           │          │
                           │ GPIO 26/27──► BTS7960 RPWM/LPWM (PWM)
                           │ GPIO 34/35──► Encoder servo A/B
@@ -63,17 +63,17 @@ El sistema QUBE Servo modernizado es una plataforma educativa de control de sist
 
 ### 1.2 Especificaciones del Sistema Completo
 
-| Parámetro | Valor |
-|-----------|-------|
-| Microcontrolador | ESP32-WROOM-32 (Dual-core 240 MHz) |
-| Driver de motor | BTS7960 (Dual Half-Bridge, IBT-2) |
-| Sensor de corriente | INA219 (I2C, 0x40) |
-| Regulador | LM2596 (Buck, 5V @ 3A) |
-| Motor | DC con encoder Premotec 990412016913 |
-| Encoder CPR | 2048 counts/rev (X4 → 8192 counts/rev) |
-| Frecuencia de control | 200 Hz (5 ms) |
-| PWM | 20 kHz, 8-bit (0–255) |
-| Comunicación | WiFi AP (192.168.4.1), HTTP REST |
+| Parámetro            | Valor                                   |
+| --------------------- | --------------------------------------- |
+| Microcontrolador      | ESP32-WROOM-32 (Dual-core 240 MHz)      |
+| Driver de motor       | BTS7960 (Dual Half-Bridge, IBT-2)       |
+| Sensor de corriente   | INA219 (I2C, 0x40)                      |
+| Regulador             | LM2596 (Buck, 5V @ 3A)                  |
+| Motor                 | DC con encoder Premotec 990412016913    |
+| Encoder CPR           | 2048 counts/rev (X4 → 8192 counts/rev) |
+| Frecuencia de control | 200 Hz (5 ms)                           |
+| PWM                   | 20 kHz, 8-bit (0–255)                  |
+| Comunicación         | WiFi AP (192.168.4.1), HTTP REST        |
 
 ---
 
@@ -90,6 +90,7 @@ V_a = R_a \cdot i_a + L_a \cdot \frac{di_a}{dt} + e_b
 $$
 
 Donde:
+
 - $V_a$ = voltaje aplicado a la armadura [V]
 - $R_a$ = resistencia del devanado de armadura [Ω]
 - $L_a$ = inductancia del devanado de armadura [H]
@@ -111,6 +112,7 @@ J \cdot \frac{d\omega}{dt} = \tau_m - b \cdot \omega - \tau_{ext}
 $$
 
 Donde:
+
 - $J$ = momento de inercia del rotor + carga [kg·m²]
 - $\tau_m$ = torque motor [N·m]
 - $b$ = coeficiente de fricción viscosa [N·m·s/rad]
@@ -159,6 +161,7 @@ $$
 $$
 
 Donde:
+
 - $\tau_m = \frac{J \cdot R_a}{K_t \cdot K_e + R_a \cdot b}$ = constante de tiempo mecánica [s]
 - $K_m = \frac{K_t}{K_t \cdot K_e + R_a \cdot b}$ = ganancia estática del motor [rad/s/V]
 
@@ -180,23 +183,23 @@ $$
 
 ### 2.4 Constantes y Parámetros Estimados
 
-| Parámetro | Símbolo | Rango típico | Unidades | Método de estimación |
-|-----------|---------|-------------|----------|---------------------|
-| Constante de torque | $K_t$ | 0.01–0.05 | N·m/A | Escalón de corriente |
-| Constante back-EMF | $K_e$ | 0.01–0.05 | V·s/rad | Curva velocidad-voltaje |
-| Resistencia armadura | $R_a$ | 1–10 | Ω | Multímetro estático |
-| Inductancia armadura | $L_a$ | 0.1–1.0 | mH | LCR meter |
-| Inercia rotor | $J$ | 1e-6–1e-4 | kg·m² | Péndulo libre |
-| Fricción viscosa | $b$ | 1e-5–1e-3 | N·m·s/rad | Decaimiento libre |
-| Fricción estática | $T_f$ | 0.001–0.01 | N·m | Umbral de movimiento |
+| Parámetro           | Símbolo | Rango típico | Unidades    | Método de estimación  |
+| -------------------- | -------- | ------------- | ----------- | ----------------------- |
+| Constante de torque  | $K_t$  | 0.01–0.05    | N·m/A      | Escalón de corriente   |
+| Constante back-EMF   | $K_e$  | 0.01–0.05    | V·s/rad    | Curva velocidad-voltaje |
+| Resistencia armadura | $R_a$  | 1–10         | Ω          | Multímetro estático   |
+| Inductancia armadura | $L_a$  | 0.1–1.0      | mH          | LCR meter               |
+| Inercia rotor        | $J$    | 1e-6–1e-4    | kg·m²     | Péndulo libre          |
+| Fricción viscosa    | $b$    | 1e-5–1e-3    | N·m·s/rad | Decaimiento libre       |
+| Fricción estática  | $T_f$  | 0.001–0.01   | N·m        | Umbral de movimiento    |
 
 ### 2.5 Diagrama de Bloques del Motor
 
 ```
                  ┌───────────────────────────────────┐
-                 │           MOTOR DC                 │
+                 │           MOTOR DC                │
                  │                                   │
- V_a ──►(+)─────┤  1/R_a  ──► K_t ──►  1/(Js+b) ──┤──► ω
+ V_a ──►(+)───── ┤  1/R_a  ──► K_t ──►  1/(Js+b) ────┤──► ω
          ▲       │                                   │    │
          │       │       ◄──── K_e ◄─────────────────┘    │
          │       └───────────────────────────────────┘    │
@@ -239,6 +242,7 @@ $$
 $$
 
 Donde:
+
 - $D_{enc}$ = dirección del encoder (+1 o -1)
 - $C$ = contador acumulado de cuentas
 - $N_{CPR}$ = cuentas por revolución del encoder
@@ -257,6 +261,7 @@ $$
 $$
 
 Donde:
+
 - $T_s$ = período de muestreo (5 ms @ 200 Hz)
 - $\alpha$ = factor de suavizado EMA ($\alpha = 0.12$ para servo, $\alpha = 0.15$ para péndulo)
 
@@ -278,11 +283,11 @@ Estado anterior → Estado actual | ΔCuentas
 
 ### 3.6 Limitaciones y Riesgos
 
-| Problema | Causa | Solución |
-|----------|-------|---------|
-| Pérdida de pulsos | Polling más lento que transiciones | PCNT (hardware counter) o ISR |
-| Edges falsos por ruido | Conmutación PWM, escobillas | Schmitt trigger + RC filter |
-| Alias de muestreo | $f_{sampling} < 2 \times f_{encoder}$ | Aumentar frecuencia o usar ISR |
+| Problema               | Causa                                   | Solución                      |
+| ---------------------- | --------------------------------------- | ------------------------------ |
+| Pérdida de pulsos     | Polling más lento que transiciones     | PCNT (hardware counter) o ISR  |
+| Edges falsos por ruido | Conmutación PWM, escobillas            | Schmitt trigger + RC filter    |
+| Alias de muestreo      | $f_{sampling} < 2 \times f_{encoder}$ | Aumentar frecuencia o usar ISR |
 
 **Criterio de Nyquist para encoder:**
 
@@ -352,17 +357,18 @@ V_{motor,avg} = D \times V_s
 $$
 
 Donde:
+
 - $D$ = ciclo de trabajo ($D \in [0, 1]$)
 - $V_s$ = voltaje de alimentación del motor
 
 El BTS7960 utiliza dos señales PWM independientes (RPWM y LPWM):
 
-| RPWM | LPWM | Movimiento |
-|------|------|------------|
+| RPWM | LPWM | Movimiento                            |
+| ---- | ---- | ------------------------------------- |
 | PWM  | 0    | Giro horario (velocidad proporcional) |
-| 0    | PWM  | Giro antihorario |
-| 0    | 0    | Libre (coast) |
-| PWM  | PWM  | Freno (brake) |
+| 0    | PWM  | Giro antihorario                      |
+| 0    | 0    | Libre (coast)                         |
+| PWM  | PWM  | Freno (brake)                         |
 
 ### 4.3 Pérdidas en el BTS7960
 
@@ -370,12 +376,12 @@ $$
 V_{out} = V_{in} - I \times R_{DS(on),total}
 $$
 
-| Parámetro | Valor | Notas |
-|-----------|-------|-------|
-| RDS(on) por MOSFET | ~16 mΩ | A 25°C |
-| Caída de voltaje total | ~0.5 V (@ 2A) | Vs L298N: ~2V |
-| Disipación @ 2A | ~0.1 W | Sin disipador necesario |
-| Corriente máxima | 43 A (pico), 10 A (cont.) | Con disipador para >10A |
+| Parámetro              | Valor                       | Notas                    |
+| ----------------------- | --------------------------- | ------------------------ |
+| RDS(on) por MOSFET      | ~16 mΩ                     | A 25°C                  |
+| Caída de voltaje total | ~0.5 V (@ 2A)               | Vs L298N: ~2V            |
+| Disipación @ 2A        | ~0.1 W                      | Sin disipador necesario  |
+| Corriente máxima       | 43 A (pico), 10 A (cont.)   | Con disipador para >10A  |
 | Protecciones integradas | Overcurrent, OTP, UVLO, SCP | Sin componentes externos |
 
 ### 4.4 Modelo del BTS7960 como Bloque
@@ -410,6 +416,7 @@ El péndulo rotatorio invertido consiste en un péndulo simple articulado al fin
 - $\alpha$: ángulo del péndulo respecto a la vertical ascendente [rad]
 
 **Convención de signos:**
+
 - $\alpha = 0$: péndulo en la vertical invertida (equilibrio inestable)
 - $\alpha = \pi$: péndulo colgando (estable)
 
@@ -424,6 +431,7 @@ T = \frac{1}{2}(J_{arm} + m_p L^2)\dot{\theta}^2 + \frac{1}{2}J_p \dot{\alpha}^2
 $$
 
 Donde:
+
 - $J_{arm}$ = momento de inercia del brazo servo [kg·m²]
 - $m_p$ = masa del péndulo [kg]
 - $L$ = distancia del eje del motor al eje del péndulo [m]
@@ -453,6 +461,7 @@ m_p L d \cdot \ddot{\theta} \cos(\alpha) + J_p \ddot{\alpha} - m_p g d \sin(\alp
 $$
 
 Donde:
+
 - $\tau$ = torque aplicado por el motor [N·m]
 - $b_1$ = fricción viscosa del brazo [N·m·s/rad]
 - $b_2$ = fricción viscosa del péndulo [N·m·s/rad]
@@ -539,16 +548,16 @@ $$
 
 ### 5.6 Valores Numéricos Estimados (Premotec 990412016913)
 
-| Parámetro | Símbolo | Valor estimado | Unidades |
-|-----------|---------|---------------|----------|
-| Masa péndulo | $m_p$ | 0.025 | kg |
-| Distancia pivot-CM | $d$ | 0.065 | m |
-| Distancia motor-pivot | $L$ | 0.078 | m |
-| Inercia péndulo | $J_p$ | 2.0 × 10⁻⁵ | kg·m² |
-| Inercia brazo | $J_{arm}$ | 1.0 × 10⁻⁴ | kg·m² |
-| Gravedad | $g$ | 9.81 | m/s² |
-| Fricción brazo | $b_1$ | 1.0 × 10⁻³ | N·m·s/rad |
-| Fricción péndulo | $b_2$ | 5.0 × 10⁻⁴ | N·m·s/rad |
+| Parámetro            | Símbolo    | Valor estimado | Unidades    |
+| --------------------- | ----------- | -------------- | ----------- |
+| Masa péndulo         | $m_p$     | 0.025          | kg          |
+| Distancia pivot-CM    | $d$       | 0.065          | m           |
+| Distancia motor-pivot | $L$       | 0.078          | m           |
+| Inercia péndulo      | $J_p$     | 2.0 × 10⁻⁵  | kg·m²     |
+| Inercia brazo         | $J_{arm}$ | 1.0 × 10⁻⁴  | kg·m²     |
+| Gravedad              | $g$       | 9.81           | m/s²       |
+| Fricción brazo       | $b_1$     | 1.0 × 10⁻³  | N·m·s/rad |
+| Fricción péndulo    | $b_2$     | 5.0 × 10⁻⁴  | N·m·s/rad |
 
 > ⚠️ **Nota:** Estos valores son estimaciones iniciales. Se requiere identificación experimental con datos del sistema real.
 
@@ -580,14 +589,14 @@ Donde $D_{buck}$ es el ciclo de trabajo interno del regulador.
 
 **Características clave:**
 
-| Parámetro | Valor |
-|-----------|-------|
-| Entrada | 4.5V–40V |
-| Salida | 1.23V–37V (ajustable) |
-| Corriente de salida | 3A (continuo) |
-| Frecuencia de conmutación | 150 kHz |
-| Eficiencia típica | 80–92% |
-| Ripple de salida | <50 mV p-p (con filtro adecuado) |
+| Parámetro                 | Valor                            |
+| -------------------------- | -------------------------------- |
+| Entrada                    | 4.5V–40V                        |
+| Salida                     | 1.23V–37V (ajustable)           |
+| Corriente de salida        | 3A (continuo)                    |
+| Frecuencia de conmutación | 150 kHz                          |
+| Eficiencia típica         | 80–92%                          |
+| Ripple de salida           | <50 mV p-p (con filtro adecuado) |
 
 ### 6.3 INA219 — Sensor de Corriente
 
@@ -609,11 +618,11 @@ $$
 
 El rango del INA219 es configurable:
 
-| Rango | LSB Corriente | LSB Voltaje | Resolución |
-|-------|--------------|-------------|------------|
-| ±32 mA | 0.01 mA | 0.04 mV | Alta |
-| ±320 mA | 0.1 mA | 0.4 mV | Media |
-| ±3.2 A | 1 mA | 4 mV | Baja |
+| Rango    | LSB Corriente | LSB Voltaje | Resolución |
+| -------- | ------------- | ----------- | ----------- |
+| ±32 mA  | 0.01 mA       | 0.04 mV     | Alta        |
+| ±320 mA | 0.1 mA        | 0.4 mV      | Media       |
+| ±3.2 A  | 1 mA          | 4 mV        | Baja        |
 
 ### 6.4 Red de Desacoplo
 
@@ -632,12 +641,12 @@ GND ─────────┴───────┴───────�
 
 ### 7.1 Fuentes de Ruido Identificadas
 
-| Fuente | Amplitud | Frecuencia | Mecanismo |
-|--------|----------|------------|-----------|
-| BTS7960 PWM switching | ~20 mV pico | 20 kHz ±5 kHz | Conmutación MOSFET (menor ruido que BJT) |
-| LM2596 switching | ~50 mV pico | 150 kHz | Ripple de salida |
-| Motor brush commutation | ~200 mV pico | Irregular | Chisporroteo de escobillas |
-| Ripple 5V rail | ~30 mV p-p | 100 Hz | Rizado de fuente |
+| Fuente                  | Amplitud     | Frecuencia     | Mecanismo                                 |
+| ----------------------- | ------------ | -------------- | ----------------------------------------- |
+| BTS7960 PWM switching   | ~20 mV pico  | 20 kHz ±5 kHz | Conmutación MOSFET (menor ruido que BJT) |
+| LM2596 switching        | ~50 mV pico  | 150 kHz        | Ripple de salida                          |
+| Motor brush commutation | ~200 mV pico | Irregular      | Chisporroteo de escobillas                |
+| Ripple 5V rail          | ~30 mV p-p   | 100 Hz         | Rizado de fuente                          |
 
 ### 7.2 Modelo del Filtro EMA
 
@@ -720,6 +729,7 @@ $$
 **Condición de habilitación de la integral (firmware v1.17.0+):**
 
 La integral solo se acumula cuando:
+
 - $|e(k)| < 45°$ (servo) o $|e(k)| < 90°$ (péndulo)
 - $|\omega(k)| < 60°/\text{s}$ (servo) o $|\omega(k)| < 120°/\text{s}$ (péndulo)
 
@@ -760,6 +770,7 @@ $$
 $$
 \text{Si } |e(k)| \leq 0.8° \text{ (servo) o } |e(k)| \leq 0.5° \text{ (péndulo):}
 $$
+
 $$
 \text{PWM} = 0
 $$
@@ -769,6 +780,7 @@ $$
 $$
 \text{Si } |PWM| < PWM_{min} \text{ y } |e(k)| > umbral:
 $$
+
 $$
 PWM = \text{signo}(PWM) \times PWM_{min}
 $$
@@ -777,12 +789,12 @@ $$
 
 El PWM máximo se reduce progresivamente al acercarse al setpoint:
 
-| Error | PWM máximo |
-|-------|-----------|
-| > 20° | 100 |
-| < 20° | 80 |
-| < 10° | 55 |
-| < 5° | 35 |
+| Error  | PWM máximo |
+| ------ | ----------- |
+| > 20° | 100         |
+| < 20° | 80          |
+| < 10° | 55          |
+| < 5°  | 35          |
 
 ### 8.4 Diagrama de Bloques del PID
 
@@ -807,6 +819,7 @@ L(s) = C(s) \cdot G(s) = \left(K_p + \frac{K_i}{s} + K_d \cdot s \cdot \frac{\al
 $$
 
 **Criterio de estabilidad de Bode:**
+
 - Margen de ganancia > 6 dB
 - Margen de fase > 30°
 
@@ -825,6 +838,7 @@ J = \int_0^{\infty} \left(x^T Q x + u^T R u\right) dt
 $$
 
 Donde:
+
 - $Q$ = matriz de peso del estado (positiva semidefinida)
 - $R$ = peso del esfuerzo de control (positiva definida)
 
@@ -849,6 +863,7 @@ x = [\theta, \alpha, \dot{\theta}, \dot{\alpha}]^T
 $$
 
 Donde:
+
 - $\theta$ = posición del servo (brazo) [grados]
 - $\alpha$ = ángulo del péndulo desde la vertical [grados]
 - $\dot{\theta}$ = velocidad angular del servo [°/s]
@@ -862,12 +877,12 @@ $$
 
 ### 9.4 Ganancias Actuales del Firmware
 
-| Ganancia | Símbolo | Valor | Interpretación |
-|----------|---------|-------|---------------|
-| $K_1$ | `lqr_K1` | 1.0 | Peso de posición servo |
-| $K_2$ | `lqr_K2` | 25.0 | Peso de ángulo péndulo |
-| $K_3$ | `lqr_K3` | 0.5 | Peso de velocidad servo |
-| $K_4$ | `lqr_K4` | 3.0 | Peso de velocidad péndulo |
+| Ganancia | Símbolo   | Valor | Interpretación            |
+| -------- | ---------- | ----- | -------------------------- |
+| $K_1$  | `lqr_K1` | 1.0   | Peso de posición servo    |
+| $K_2$  | `lqr_K2` | 25.0  | Peso de ángulo péndulo   |
+| $K_3$  | `lqr_K3` | 0.5   | Peso de velocidad servo    |
+| $K_4$  | `lqr_K4` | 3.0   | Peso de velocidad péndulo |
 
 > ⚠️ **Nota:** Estas ganancias son valores iniciales. La síntesis LQR formal requiere el modelo linealizado calibrado con parámetros experimentales.
 
@@ -905,6 +920,7 @@ u = k_e \cdot (E - E_r) \cdot \text{sign}(\dot{\alpha} \cdot \cos\alpha)
 $$
 
 Donde:
+
 - $k_e$ = ganancia del controlador de energía
 - $\text{sign}(\dot{\alpha} \cdot \cos\alpha)$ = dirección de bombeo
 
@@ -939,13 +955,13 @@ Donde:
 
 ### 10.5 Parámetros del Swing-Up
 
-| Parámetro | Símbolo | Valor | Unidades |
-|-----------|---------|-------|----------|
-| Masa péndulo | $m_p$ | 0.025 | kg |
-| Distancia pivot-CM | $d$ | 0.065 | m |
-| Inercia péndulo | $J_p$ | 2.0 × 10⁻⁵ | kg·m² |
-| Ganancia energía | $k_e$ | 0.5 | (ajustable) |
-| Umbral de balance | — | 20° | grados |
+| Parámetro         | Símbolo | Valor         | Unidades    |
+| ------------------ | -------- | ------------- | ----------- |
+| Masa péndulo      | $m_p$  | 0.025         | kg          |
+| Distancia pivot-CM | $d$    | 0.065         | m           |
+| Inercia péndulo   | $J_p$  | 2.0 × 10⁻⁵ | kg·m²     |
+| Ganancia energía  | $k_e$  | 0.5           | (ajustable) |
+| Umbral de balance  | —       | 20°          | grados      |
 
 ---
 
@@ -961,11 +977,11 @@ Donde:
 
 **Regla de Ziegler-Nichols ( closed-loop):**
 
-| Controlador | $K_p$ | $T_i$ | $T_d$ |
-|------------|-------|-------|-------|
-| P | $0.5 K_{p,osc}$ | — | — |
-| PI | $0.45 K_{p,osc}$ | $T_{osc}/1.2$ | — |
-| PID | $0.6 K_{p,osc}$ | $T_{osc}/2$ | $T_{osc}/8$ |
+| Controlador | $K_p$            | $T_i$         | $T_d$       |
+| ----------- | ------------------ | --------------- | ------------- |
+| P           | $0.5 K_{p,osc}$  | —              | —            |
+| PI          | $0.45 K_{p,osc}$ | $T_{osc}/1.2$ | —            |
+| PID         | $0.6 K_{p,osc}$  | $T_{osc}/2$   | $T_{osc}/8$ |
 
 #### Paso 2: Agregar Derivativo
 
@@ -975,11 +991,11 @@ Donde:
 
 **Valores iniciales recomendados para el QUBE:**
 
-| Ganancia | Rango típico | Efecto |
-|----------|-------------|--------|
-| $K_p$ | 0.3 – 1.5 | Velocidad de respuesta vs. overshoot |
-| $K_i$ | 0.0 – 0.2 | Elimina error estacionario vs. windup |
-| $K_d$ | 0.02 – 0.2 | Amortiguación vs. sensibilidad a ruido |
+| Ganancia | Rango típico | Efecto                                  |
+| -------- | ------------- | --------------------------------------- |
+| $K_p$  | 0.3 – 1.5    | Velocidad de respuesta vs. overshoot    |
+| $K_i$  | 0.0 – 0.2    | Elimina error estacionario vs. windup   |
+| $K_d$  | 0.02 – 0.2   | Amortiguación vs. sensibilidad a ruido |
 
 #### Paso 3: Agregar Integral
 
@@ -992,11 +1008,11 @@ Donde:
 
 El péndulo tiene dinámica más rápida y es inestable. Usar ganancias más agresivas:
 
-| Ganancia | Rango típico | Efecto |
-|----------|-------------|--------|
-| $K_{p,pend}$ | 5 – 30 | Rigidez del balance |
-| $K_{i,pend}$ | 0.1 – 2.0 | Elimina offset |
-| $K_{d,pend}$ | 0.5 – 5.0 | Amortiguación |
+| Ganancia       | Rango típico | Efecto              |
+| -------------- | ------------- | ------------------- |
+| $K_{p,pend}$ | 5 – 30       | Rigidez del balance |
+| $K_{i,pend}$ | 0.1 – 2.0    | Elimina offset      |
+| $K_{d,pend}$ | 0.5 – 5.0    | Amortiguación      |
 
 ### 11.3 Síntesis LQR
 
@@ -1010,38 +1026,38 @@ $$
 Q = \text{diag}(q_1, q_2, q_3, q_4), \quad R = [r]
 $$
 
-| Parámetro | Interpretación | Efecto de aumentar |
-|-----------|---------------|-------------------|
-| $q_1$ ($\theta$) | Penaliza posición servo | Brazo más rígido |
-| $q_2$ ($\alpha$) | Penaliza ángulo péndulo | Balance más preciso |
-| $q_3$ ($\dot{\theta}$) | Penaliza velocidad servo | Reduce oscilaciones |
-| $q_4$ ($\dot{\alpha}$) | Penaliza velocidad péndulo | Amortigua péndulo |
-| $r$ ($u$) | Penaliza esfuerzo de control | Reduce consumo, respuesta más lenta |
+| Parámetro                 | Interpretación              | Efecto de aumentar                   |
+| -------------------------- | ---------------------------- | ------------------------------------ |
+| $q_1$ ($\theta$)       | Penaliza posición servo     | Brazo más rígido                   |
+| $q_2$ ($\alpha$)       | Penaliza ángulo péndulo    | Balance más preciso                 |
+| $q_3$ ($\dot{\theta}$) | Penaliza velocidad servo     | Reduce oscilaciones                  |
+| $q_4$ ($\dot{\alpha}$) | Penaliza velocidad péndulo  | Amortigua péndulo                   |
+| $r$ ($u$)              | Penaliza esfuerzo de control | Reduce consumo, respuesta más lenta |
 
 4. **Resolver Riccati** con `scipy.linalg.lqr(A, B, Q, R)` o MATLAB.
 
 ### 11.4 Parámetros de Filtrado
 
-| Parámetro | Símbolo | Valor | Efecto |
-|-----------|---------|-------|--------|
-| Suavizado velocidad servo | $\alpha$ | 0.12 | Más bajo → más suave, más lag |
-| Suavizado velocidad péndulo | $\alpha_{pend}$ | 0.15 | Idem |
-| Suavizado corriente INA219 | — | 0.9 / 0.1 | Filtro EMA de corriente |
+| Parámetro                   | Símbolo          | Valor     | Efecto                            |
+| ---------------------------- | ----------------- | --------- | --------------------------------- |
+| Suavizado velocidad servo    | $\alpha$        | 0.12      | Más bajo → más suave, más lag |
+| Suavizado velocidad péndulo | $\alpha_{pend}$ | 0.15      | Idem                              |
+| Suavizado corriente INA219   | —                | 0.9 / 0.1 | Filtro EMA de corriente           |
 
 ### 11.5 Troubleshooting de Sintonización
 
-| Síntoma | Causa probable | Solución |
-|---------|---------------|---------|
-| Oscilación sostenida | $K_p$ demasiado alto | Reducir $K_p$ o aumentar $K_d$ |
-| Overshoot > 30% | $K_d$ insuficiente | Aumentar $K_d$ en 50% |
-| Error estacionario > 2° | $K_i = 0$ o muy bajo | Aumentar $K_i$ gradualmente |
-| Motor vibrando en reposo | Ruido en derivada | Aumentar $\alpha$ (más filtrado) |
-| Lazo diverge | Polaridad incorrecta | Cambiar `MOTOR_DIR` |
-| Integral crece sin control | Windup | Verificar $I_{max}$ y condiciones |
-| Péndulo no balancea | $K_2$ muy bajo | Aumentar `lqr_K2` |
-| Péndulo oscila en LQR | $K_4$ insuficiente | Aumentar `lqr_K4` |
-| Swing-up no alcanza vertical | $k_e$ muy bajo | Aumentar `ke_gain` |
-| Transición LQR falla | Threshold muy bajo | Aumentar `balance_threshold` |
+| Síntoma                     | Causa probable         | Solución                          |
+| ---------------------------- | ---------------------- | ---------------------------------- |
+| Oscilación sostenida        | $K_p$ demasiado alto | Reducir$K_p$ o aumentar $K_d$  |
+| Overshoot > 30%              | $K_d$ insuficiente   | Aumentar$K_d$ en 50%             |
+| Error estacionario > 2°     | $K_i = 0$ o muy bajo | Aumentar$K_i$ gradualmente       |
+| Motor vibrando en reposo     | Ruido en derivada      | Aumentar$\alpha$ (más filtrado) |
+| Lazo diverge                 | Polaridad incorrecta   | Cambiar `MOTOR_DIR`              |
+| Integral crece sin control   | Windup                 | Verificar$I_{max}$ y condiciones |
+| Péndulo no balancea         | $K_2$ muy bajo       | Aumentar `lqr_K2`                |
+| Péndulo oscila en LQR       | $K_4$ insuficiente   | Aumentar `lqr_K4`                |
+| Swing-up no alcanza vertical | $k_e$ muy bajo       | Aumentar `ke_gain`               |
+| Transición LQR falla        | Threshold muy bajo     | Aumentar `balance_threshold`     |
 
 ---
 
@@ -1049,56 +1065,56 @@ $$
 
 ### 12.1 PID Servo (Modo 2)
 
-| Parámetro | Variable | Valor |
-|-----------|----------|-------|
-| Ganancia proporcional | `Kp` | 3.0 |
-| Ganancia integral | `Ki` | 0.5 |
-| Ganancia derivativa | `Kd` | 0.15 |
-| Filtro EMA velocidad | `VEL_ALPHA` | 0.12 |
-| Límite anti-windup | `INTEGRAL_LIMIT` | 250.0 |
-| PWM mínimo | `PWM_MIN` | 12 |
-| PWM máximo | `PWM_MAX` | 100 |
-| Banda muerta | deadband | ±0.8° |
-| Dirección motor | `MOTOR_DIR` | -1 |
+| Parámetro            | Variable           | Valor   |
+| --------------------- | ------------------ | ------- |
+| Ganancia proporcional | `Kp`             | 3.0     |
+| Ganancia integral     | `Ki`             | 0.5     |
+| Ganancia derivativa   | `Kd`             | 0.15    |
+| Filtro EMA velocidad  | `VEL_ALPHA`      | 0.12    |
+| Límite anti-windup   | `INTEGRAL_LIMIT` | 250.0   |
+| PWM mínimo           | `PWM_MIN`        | 12      |
+| PWM máximo           | `PWM_MAX`        | 100     |
+| Banda muerta          | deadband           | ±0.8° |
+| Dirección motor      | `MOTOR_DIR`      | -1      |
 
 ### 12.2 PID Péndulo (Modo 3)
 
-| Parámetro | Variable | Valor |
-|-----------|----------|-------|
-| Ganancia proporcional | `Kp_pend` | 15.0 |
-| Ganancia integral | `Ki_pend` | 0.5 |
-| Ganancia derivativa | `Kd_pend` | 2.0 |
-| Filtro EMA velocidad | `VEL_ALPHA_PEND` | 0.15 |
+| Parámetro            | Variable           | Valor |
+| --------------------- | ------------------ | ----- |
+| Ganancia proporcional | `Kp_pend`        | 15.0  |
+| Ganancia integral     | `Ki_pend`        | 0.5   |
+| Ganancia derivativa   | `Kd_pend`        | 2.0   |
+| Filtro EMA velocidad  | `VEL_ALPHA_PEND` | 0.15  |
 
 ### 12.3 LQR (Modo 4)
 
-| Parámetro | Variable | Valor |
-|-----------|----------|-------|
-| Ganancia posición servo | `lqr_K1` | 1.0 |
-| Ganancia ángulo péndulo | `lqr_K2` | 25.0 |
-| Ganancia velocidad servo | `lqr_K3` | 0.5 |
-| Ganancia velocidad péndulo | `lqr_K4` | 3.0 |
+| Parámetro                  | Variable   | Valor |
+| --------------------------- | ---------- | ----- |
+| Ganancia posición servo    | `lqr_K1` | 1.0   |
+| Ganancia ángulo péndulo   | `lqr_K2` | 25.0  |
+| Ganancia velocidad servo    | `lqr_K3` | 0.5   |
+| Ganancia velocidad péndulo | `lqr_K4` | 3.0   |
 
 ### 12.4 Swing-Up (Modo 5)
 
-| Parámetro | Variable | Valor |
-|-----------|----------|-------|
-| Ganancia energía | `ke_gain` | 0.5 |
-| Umbral de balance | `balance_threshold` | 20° |
-| Masa péndulo | `PEND_MASS` | 0.025 kg |
-| Distancia pivot-CM | `PEND_LENGTH` | 0.065 m |
-| Inercia péndulo | `PEND_INERTIA` | 2.0 × 10⁻⁵ kg·m² |
+| Parámetro         | Variable              | Valor                 |
+| ------------------ | --------------------- | --------------------- |
+| Ganancia energía  | `ke_gain`           | 0.5                   |
+| Umbral de balance  | `balance_threshold` | 20°                  |
+| Masa péndulo      | `PEND_MASS`         | 0.025 kg              |
+| Distancia pivot-CM | `PEND_LENGTH`       | 0.065 m               |
+| Inercia péndulo   | `PEND_INERTIA`      | 2.0 × 10⁻⁵ kg·m² |
 
 ### 12.5 Modos de Operación
 
-| Modo | Código | Descripción |
-|------|--------|-------------|
-| STOP | m0 | Motor deshabilitado |
-| PWM Manual | m1 | PWM fijo (sin lazo) |
-| PID Posición Servo | m2 | Control de posición del brazo |
-| PID Péndulo | m3 | Control de posición del péndulo |
-| LQR | m4 | Control óptimo péndulo invertido |
-| Swing-Up | m5 | Bombeo de energía + transición a LQR |
+| Modo                | Código | Descripción                           |
+| ------------------- | ------- | -------------------------------------- |
+| STOP                | m0      | Motor deshabilitado                    |
+| PWM Manual          | m1      | PWM fijo (sin lazo)                    |
+| PID Posición Servo | m2      | Control de posición del brazo         |
+| PID Péndulo        | m3      | Control de posición del péndulo      |
+| LQR                 | m4      | Control óptimo péndulo invertido     |
+| Swing-Up            | m5      | Bombeo de energía + transición a LQR |
 
 ---
 
@@ -1106,36 +1122,36 @@ $$
 
 ### 13.1 Respuesta al Escalón (Servo, Modo 2)
 
-| Métrica | Objetivo | Método |
-|---------|----------|--------|
-| Tiempo de subida ($t_r$) | < 1 s | 10%–90% del setpoint |
-| Overshoot ($M_p$) | < 25% | $(y_{max} - y_{ss}) / y_{ss} \times 100$ |
-| Tiempo de establecimiento ($t_s$) | < 3 s | Dentro de ±2% del setpoint |
-| Error estacionario ($e_{ss}$) | < 2° | Valor en régimen |
-| Oscilaciones | Ninguna sostenida | Observación visual + datos |
+| Métrica                            | Objetivo          | Método                                    |
+| ----------------------------------- | ----------------- | ------------------------------------------ |
+| Tiempo de subida ($t_r$)          | < 1 s             | 10%–90% del setpoint                      |
+| Overshoot ($M_p$)                 | < 25%             | $(y_{max} - y_{ss}) / y_{ss} \times 100$ |
+| Tiempo de establecimiento ($t_s$) | < 3 s             | Dentro de ±2% del setpoint                |
+| Error estacionario ($e_{ss}$)     | < 2°             | Valor en régimen                          |
+| Oscilaciones                        | Ninguna sostenida | Observación visual + datos                |
 
 ### 13.2 Respuesta al Escalón (Péndulo, Modo 3)
 
-| Métrica | Objetivo | Método |
-|---------|----------|--------|
+| Métrica                      | Objetivo          | Método                |
+| ----------------------------- | ----------------- | ---------------------- |
 | Capacidad de mantener ángulo | ±30° sin caída | Setpoint fijo por 30 s |
-| Oscilación en régimen | < ±3° | Amplitud pico a pico |
+| Oscilación en régimen       | < ±3°           | Amplitud pico a pico   |
 
 ### 13.3 Balance LQR (Modo 4)
 
-| Métrica | Objetivo | Método |
-|---------|----------|--------|
-| Tiempo de balance | < 5 s desde excitación | Desde liberación manual |
-| Mantenimiento vertical | > 60 s sin intervención | Observación |
-| Perturbación | Recuperación de empuje manual | Prueba cualitativa |
+| Métrica               | Objetivo                       | Método                  |
+| ---------------------- | ------------------------------ | ------------------------ |
+| Tiempo de balance      | < 5 s desde excitación        | Desde liberación manual |
+| Mantenimiento vertical | > 60 s sin intervención       | Observación             |
+| Perturbación          | Recuperación de empuje manual | Prueba cualitativa       |
 
 ### 13.4 Swing-Up (Modo 5)
 
-| Métrica | Objetivo | Método |
-|---------|----------|--------|
-| Tiempo de swing-up | < 15 s | Desde colgando hasta vertical |
-| Tasa de éxito | > 80% | 10 intentos consecutivos |
-| Transición a LQR | Suave, sin colapso | Cambio automático observable |
+| Métrica           | Objetivo           | Método                       |
+| ------------------ | ------------------ | ----------------------------- |
+| Tiempo de swing-up | < 15 s             | Desde colgando hasta vertical |
+| Tasa de éxito     | > 80%              | 10 intentos consecutivos      |
+| Transición a LQR  | Suave, sin colapso | Cambio automático observable |
 
 ---
 
@@ -1144,33 +1160,25 @@ $$
 ### Papers Académicos
 
 1. Akhtaruzzaman, M., & Shafie, A. A. (2010). Modeling and control of a rotary inverted pendulum using various methods. *IEEE ICMA 2010*. DOI: 10.1109/ICMA.2010.5589450
-
 2. STMicroelectronics. (2019). *Introduction to Integrated Rotary Inverted Pendulum v2*. Educational Curriculum.
-
 3. Åström, K. J., & Furuta, K. (2000). Swinging up a pendulum by energy control. *Automatica*, 36(2), 287–295.
 
 ### Datasheets
 
 4. Espressif Systems. (2024). *ESP32-WROOM-32 Datasheet* (Rev. 3.3).
-
 5. Infineon. (2024). *BTS7960 High Current PN Half Bridge Driver* (Rev. 1.2).
-
 6. Texas Instruments. (2024). *INA219 Current/Power Monitor* (SBOS400H).
-
 7. Texas Instruments. (2024). *LM2596 Step-Down Voltage Regulator* (SNVS033C).
 
 ### Proyectos de Referencia
 
 8. ebrahimabdelghfar. (2023). *Rotary-Inverted-Pendulum*. GitHub. [Referencia académica LQR]
-
 9. Ezward. (2018–2024). *Esp32CameraRover2*. GitHub. [Framework motor control]
-
 10. wty-yy. (2025). *arduino_pid_controlled_motor*. GitHub. [PID + L298N]
 
 ### Textos de Control
 
 11. Ogata, K. (2010). *Modern Control Engineering* (5th ed.). Prentice Hall.
-
 12. Franklin, G. F., Powell, J. D., & Emami-Naeini, A. (2015). *Feedback Control of Dynamic Systems* (7th ed.). Pearson.
 
 ---

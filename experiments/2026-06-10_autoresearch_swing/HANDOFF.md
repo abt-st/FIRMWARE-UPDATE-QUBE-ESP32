@@ -86,7 +86,7 @@ CSV: `experiments/2026-06-10_autoresearch_swing/data/sweep_20260611T022855/sweep
 ## Para la próxima sesión
 
 ### Pasos de inicio
-1. Power cycle el ESP32 (desconectar/reconectar 12V)
+1. Power cycle el ESP32 (desconectar/reconectar 15V)
 2. Verificar: `curl "http://192.168.100.50/state"` → mode=0
 3. Si no responde: flash anterior via serial o revisar si el firmware nuevo tiene bug
 

@@ -60,7 +60,7 @@ button.secondary{background:#30363d;color:#c9d1d9}
   <h2>Control</h2>
   <div class="row">
     <label>Modo:</label>
-    <select id="mode"><option value="0">STOP</option><option value="1">PWM</option><option value="2" selected>PID Servo</option><option value="4">LQR</option><option value="5">Swing-up</option></select>
+    <select id="mode"><option value="0" selected>STOP</option><option value="1">PWM</option><option value="2">PID Servo</option><option value="4">LQR</option><option value="5">Swing-up</option><option value="6">Deep RL</option></select>
     <button onclick="cmd('m='+el('mode').value)">Aplicar</button>
     <button class="danger" onclick="cmd('x=1')">STOP</button>
   </div>
@@ -120,6 +120,21 @@ button.secondary{background:#30363d;color:#c9d1d9}
     <div class="gi"><label>Ke</label><input type="number" id="ke" value="0.5" step="0.1"></div>
     <div class="gi"><label>Thr</label><input type="number" id="bt" value="20" step="1"></div>
     <button class="ok-btn" onclick="cmd('ke='+el('ke').value+'&bt='+el('bt').value)">OK</button>
+  </div>
+</div>
+<div class="panel">
+  <h2>Deep RL</h2>
+  <div class="row">
+    <span style="font-size:.7rem;color:#8b949e" id="rlInfo">theta: -- | alpha: --</span>
+  </div>
+  <div class="grow">
+    <div class="gi"><label>a</label><input type="number" id="rlAct" value="0.0" step="0.1" min="-1.0" max="1.0"></div>
+    <button onclick="rlCmd('a='+el('rlAct').value)">Send</button>
+    <button onclick="rlCmd('r=1');el('rlInfo').textContent='Reset OK'" class="secondary">Reset</button>
+  </div>
+  <div class="grow">
+    <button onclick="cmd('m=6');el('mode').value='6'">Set Mode 6</button>
+    <button onclick="rlPoll()" class="secondary">Read State</button>
   </div>
 </div>
 
@@ -295,6 +310,20 @@ function cmd(qs){
   fetch('/cmd?'+qs).then(function(r){return r.json();}).then(function(d){
     if(d.mode!==undefined)el('mode').value=d.mode;
   }).catch(function(){});
+}
+
+/* ── Deep RL ───────────────────────────────────────────────── */
+function rlCmd(qs){
+  fetch('/rl_cmd?'+qs).catch(function(){});
+}
+function rlPoll(){
+  fetch('/rl_state').then(function(r){return r.json();}).then(function(d){
+    var th=(d.th*180/Math.PI).toFixed(1);
+    var al=(d.al*180/Math.PI).toFixed(1);
+    var thd=(d.thd*180/Math.PI).toFixed(1);
+    var ald=(d.ald*180/Math.PI).toFixed(1);
+    el('rlInfo').textContent='\u03b8:'+th+'\u00b0 \u03b1:'+al+'\u00b0 \u03b8\u0307:'+thd+' \u03b1\u0307:'+ald;
+  }).catch(function(){el('rlInfo').textContent='Error de conexi\u00f3n';});
 }
 </script>
 </body>

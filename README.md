@@ -1,6 +1,6 @@
 # QUBE ESP32
 
-Plataforma de control educativo de péndulo rotatorio invertido basada en **ESP32 + BTS7960 + INA219 + LM2596 + CD40106BE**, con encoders duales, telemetría de potencia en tiempo real y conectividad WiFi. Alternativa open-source al Quanser QUBE Servo por **~$70 USD** frente a los $2,500–$3,500 USD del original.
+Plataforma de control educativo de péndulo rotatorio invertido basada en **ESP32 + BTS7960 + INA219 + LM2596 + CD40106BE**, con encoders duales, telemetría de potencia en tiempo real, conectividad WiFi, filtro de Kalman (LQG), gain scheduling y control por Deep Reinforcement Learning (SAC). Alternativa open-source al Quanser QUBE Servo por **~$70 USD** frente a los $2,500–$3,500 USD del original.
 
 ---
 
@@ -17,10 +17,11 @@ Plataforma de control educativo de péndulo rotatorio invertido basada en **ESP3
 9. [Calibración](#calibración)
 10. [Resultados y Validación](#resultados-y-validación)
 11. [Problemas Conocidos y Soluciones](#problemas-conocidos-y-soluciones)
-12. [Roadmap](#roadmap)
-13. [Documentación Adicional](#documentación-adicional)
-14. [Referencias](#referencias)
-15. [Licencia](#licencia)
+12. [Deep Reinforcement Learning (DRL)](#deep-reinforcement-learning-drl)
+13. [Roadmap](#roadmap)
+14. [Documentación Adicional](#documentación-adicional)
+15. [Referencias](#referencias)
+16. [Licencia](#licencia)
 
 ---
 
@@ -108,6 +109,10 @@ Este proyecto propone una **modernización completa del sistema** usando compone
 - **Encoders duales**: uno en el eje del servo (posición del motor) y uno en el eje del péndulo (posición del brazo rotatorio)
 - Compatibilidad con Arduino IDE y librerías estándar
 - **Implementación completa de swing-up + balance** con los mismos métodos que Quanser
+- **Filtro de Kalman (LQG)** para estimación de velocidades sin ruido
+- **Gain scheduling** dual-mode para PID y LQR
+- **Control por Deep Reinforcement Learning (SAC)** — modo 6
+- **Actualización OTA** por WiFi (ArduinoOTA)
 
 **Comparación directa:**
 
@@ -117,7 +122,7 @@ Este proyecto propone una **modernización completa del sistema** usando compone
 | **Plataforma**     | DSP propietario                     | ESP32 open-source               |
 | **Software**       | MATLAB/Simulink (requiere licencia) | Python + Arduino IDE (gratuito) |
 | **Telemetría**    | Sensores integrados                 | INA219 digital (I2C)            |
-| **Control**        | PID + LQR + Swing-up                | **PID + LQR + Swing-up**  |
+| **Control**        | PID + LQR + Swing-up                | **PID + LQR + Swing-up + DRL (SAC)** |
 | **Encoders**       | 2 (servo + péndulo)                | **2 (servo + péndulo)**  |
 | **Conectividad**   | Ethernet/USB                        | **WiFi + BLE nativa**     |
 | **Documentación** | Courseware proprietario             | **Open-source completa**  |
@@ -136,7 +141,7 @@ El resultado es una plataforma funcional por **~$70 USD** (98% de reducción de 
 │                    ESP32 + BTS7960 + INA219 + LM2596 + CD40106BE         │
 └──────────────────────────────────────────────────────────────────────────┘
 
-ENTRADA: 12V (LiPo 3S o PSU de laboratorio)
+ENTRADA: 15V (LiPo 4S o PSU de laboratorio)
     │
     ├── [LM2596 Buck Converter] ──→ 5V rail para lógica
     │       │
@@ -145,12 +150,12 @@ ENTRADA: 12V (LiPo 3S o PSU de laboratorio)
     │       └── Encoder VCC (5V)
     │
     ├── [INA219] High-side current sensing
-    │       VIN+ ← 12V fuente
-    │       VIN- → BTS7960 VS (12V motor)
+    │       VIN+ ← 15V fuente
+    │       VIN- → BTS7960 VS (15V motor)
     │       I2C: SDA=GPIO21, SCL=GPIO22
     │
     ├── [ESP32-WROOM-32] Núcleo de control
-    │       ├── Core 1: Control PID @ 200 Hz
+    │       ├── Core 1: Control @ 500 Hz
     │       ├── Core 0: Telemetría + WiFi
     │       ├── GPIO26 → BTS7960 RPWM (adelante)
     │       ├── GPIO27 → BTS7960 LPWM (reversa)
@@ -163,7 +168,7 @@ ENTRADA: 12V (LiPo 3S o PSU de laboratorio)
     ├── [BTS7960 Dual Half-Bridge] Etapa de potencia
     │       ├── RPWM/LPWM: PWM directo (ENA habilitado)
     │       ├── M+/M- → Motor DC
-    │       └── VS: 12V desde INA219 VIN-
+    │       └── VS: 15V desde INA219 VIN-
     │
     └── [Motor DC + Encoder] Actuador
             ├── M+ / M- (BTS7960 M+/M-)
@@ -177,7 +182,7 @@ ENTRADA: 12V (LiPo 3S o PSU de laboratorio)
                     │          TOPOLOGÍA DE POTENCIA        │
                     └──────────────────────────────────────┘
 
-Fuente 12V (+) ──┬── VIN+ [INA219] VIN- ──── BTS7960 VS (12V motor)
+Fuente 15V (+) ──┬── VIN+ [INA219] VIN- ──── BTS7960 VS (15V motor)
                  │
                  ├── LM2596 IN+
                  │      └── LM2596 OUT+ (5V) ──── ESP32 VIN
@@ -208,7 +213,7 @@ Fuente GND  ─────┴── GND común (topología estrella)
                          ┌──────────────────┐
 Encoder Servo ─────►     │                  │
 (GPIO34/35 + Schmitt)    │  task_control    │──► BTS7960 (PWM → Motor)
-                         │  200 Hz          │
+                         │  500 Hz          │
 Encoder Péndulo ────►    │                  │
 (GPIO32/33 + Schmitt)    └────────┬─────────┘
                                   │
@@ -234,7 +239,7 @@ Encoder Péndulo ────►    │                  │
 | **INA219**              | Monitor I2C, 0–26 V, ±3.2 A                 | 1        | $2–4 USD         |
 | **LM2596**              | Buck converter ajustable, 3 A                 | 1        | $1–3 USD         |
 | **CD40106BE**           | Hex Schmitt Trigger Inverter, DIP-14          | 1        | ~$0.50 USD        |
-| **Motor DC + reductor** | 12 V, 25 W, 100–300 RPM                      | 1        | $15–30 USD       |
+| **Motor DC + reductor** | 15 V, 25 W, 100–300 RPM                      | 1        | $15–30 USD       |
 | **Encoder servo**       | Incremental, open-drain, ≥200 CPR            | 1        | Incluido en motor |
 | **Encoder péndulo**    | Incremental, open-drain, ≥200 CPR            | 1        | $5–15 USD        |
 | **Resistores 4.7 kΩ**  | Pull-up para encoders (×4)                   | 4        | < $0.10 USD       |
@@ -242,7 +247,7 @@ Encoder Péndulo ────►    │                  │
 | **Capacitores 10 nF**   | Filtro RC post-Schmitt a GND (×4)            | 4        | < $0.10 USD       |
 | **Capacitor 100 nF**    | Bypass Vcc CD40106BE                          | 1        | < $0.05 USD       |
 | **Capacitor 100 µF**   | Filtro salida LM2596                          | 1        | < $0.20 USD       |
-| **Fuente 12V**          | LiPo 3S o PSU laboratorio                     | 1        | Variable          |
+| **Fuente 15V**          | LiPo 4S o PSU laboratorio                     | 1        | Variable          |
 
 **Costo total estimado (sin fuente):** $35–70 USD
 **Comparación:** Quanser QUBE Servo = $2,500–$3,500 USD
@@ -255,7 +260,7 @@ Encoder Péndulo ────►    │                  │
 
 | Subsistema       | Origen                   | Destino                                                | Notas                                |
 | ---------------- | ------------------------ | ------------------------------------------------------ | ------------------------------------ |
-| Potencia motor   | Fuente 12 V (+)          | BTS7960 VS                                             | Alimentación del half-bridge        |
+| Potencia motor   | Fuente 15 V (+)          | BTS7960 VS                                             | Alimentación del half-bridge        |
 | Potencia motor   | GND fuente               | BTS7960 GND                                            | GND común obligatorio               |
 | Lógica BTS7960  | LM2596 5 V               | BTS7960 VCC                                            | Lógica del módulo IBT-2            |
 | Motor DC         | BTS7960 M+               | Motor terminal (+)                                     | Salida de potencia                   |
@@ -474,8 +479,9 @@ Encoder (~5V) ──► IN_A ──► │ INV_A   │
 | PWM manual             | `m1`  | PWM fijo, sin lazo                        |
 | PID posición servo    | `m2`  | Setpoint en grados, lazo cerrado servo    |
 | PID posición péndulo | `m3`  | Setpoint en grados, lazo cerrado péndulo |
-| LQR péndulo invertido | `m4`  | Control en espacio de estados             |
-| Swing-up               | `m5`  | Levantamiento del péndulo por energía   |
+| LQR péndulo invertido | `m4`  | Control en espacio de estados (gain scheduling) |
+| Swing-up               | `m5`  | Levantamiento del péndulo por energía          |
+| Deep RL                | `m6`  | Control por agente SAC externo vía HTTP         |
 
 ### Implementación PID
 
@@ -497,12 +503,45 @@ float u = Kp * err + Ki * integralTerm + Kd * filteredVel;
 | `Ki`               | 0.5        | 0.5           | —       |
 | `Kd`               | 0.15       | 2.0           | —       |
 | `VEL_ALPHA` (EMA)  | 0.12       | 0.15          | —       |
-| `K1` (θ servo)    | —         | —            | 1.0      |
-| `K2` (α péndulo) | —         | —            | 25.0     |
-| `K3` (θ')         | —         | —            | 0.5      |
-| `K4` (α')         | —         | —            | 3.0      |
+| `K1` (θ servo)    | —         | —            | 2.0      |
+| `K2` (α péndulo) | —         | —            | 22.0     |
+| `K3` (θ')         | —         | —            | 1.5      |
+| `K4` (α')         | —         | —            | 9.0      |
 
-> Los parámetros se han sintonizado experimentalmente. Ver [Calibración](#calibración).
+#### Gain scheduling LQR (modo 4)
+
+El LQR usa **gain scheduling** para ajustar las ganancias según la distancia a la vertical:
+
+| Régimen                  | Condición         | K2    | K4    |
+| ------------------------- | ----------------- | ----- | ----- |
+| Lejos del equilibrio     | \|α\| > 25°      | 22.0  | 9.0   |
+| Cerca de la vertical     | \|α\| < 25°      | 30.0  | 15.0  |
+| Muy cerca de la vertical | \|α\| < 5°       | 55.0  | 20.0  |
+
+Parámetros adicionales del LQR:
+- `LQR_DAMPING_GAIN = 0.3` — ganancia de disipación de energía dentro del lazo
+- `LQR_FALLBACK_TIME_MS = 500` — tiempo fuera de vertical antes de fallback a swing-up
+- `LQR_FALLBACK_ALPHA_DEG = 45` — \|α\| mínimo para iniciar fallback
+- `LQR_CATCH_MS = 400` — duración del catch mode (frenado inicial al entrar a LQR)
+
+#### Gain scheduling PID servo (modo 2)
+
+El PID del servo soporta un **modo dual fine/coarse** (activar con `gs=1`):
+
+| Régimen     | Condición       | Kp   | Ki   | Kd   |
+| ----------- | --------------- | ---- | ---- | ---- |
+| Fino        | \|error\| ≤ 10° | 2.0  | 0.8  | 0.2  |
+| Grueso      | \|error\| > 10° | 4.0  | 0.2  | 0.1  |
+
+Histéresis de ±2° sobre el umbral para evitar chattering entre modos.
+
+#### Filtro de Kalman (LQG)
+
+El firmware incluye un **filtro de Kalman** (toggle `kf=1`) que estima velocidades angulares sin ruido del encoder. Se usa como observador para el LQR (arquitectura LQG).
+
+Parámetros ajustables: `kf_Q_pos`, `kf_Q_vel`, `kf_R_pos`.
+
+
 
 ---
 
@@ -513,7 +552,7 @@ float u = Kp * err + Ki * integralTerm + Kd * filteredVel;
 ```
 src/firmware/
 ├── esp32_qube_l298n/
-│   ├── esp32_qube_l298n.ino   ← Firmware principal (~1350 líneas)
+│   ├── esp32_qube_l298n.ino   ← Firmware principal (~2200 líneas)
 │   └── credentials.h          ← WiFi STA (gitignored)
 └── platformio.ini             ← Configuración PlatformIO
 ```
@@ -522,46 +561,94 @@ src/firmware/
 
 | Task               | Core   | Prioridad | Período       | Función                |
 | ------------------ | ------ | --------- | -------------- | ----------------------- |
-| `task_control`   | Core 1 | 5         | 5 ms (200 Hz)  | Leer encoders, PID, PWM |
+| `task_control`   | Core 1 | 5         | 2 ms (500 Hz)  | Leer encoders, PID/LQR, PWM |
 | `task_ina219`    | Core 0 | 3         | 10 ms (100 Hz) | Leer INA219, filtrar    |
 | `task_telemetry` | Core 0 | 2         | 100 ms (10 Hz) | JSON → Serial/WiFi     |
+
+### Características avanzadas del firmware
+
+| Característica           | Descripción                                                       |
+| ------------------------- | ----------------------------------------------------------------- |
+| **PCNT hardware**       | Decodificación de encoder por hardware (X4 cuadratura), sin carga de CPU |
+| **Gain scheduling**     | PID dual-mode (fino/grueso) y LQR con 3 regímenes según \|α\|   |
+| **Filtro de Kalman**    | Observador LQG 4×2 para estimar velocidades sin ruido del encoder |
+| **Soft saturation**     | Reducción gradual de PWM cerca de límites mecánicos del servo    |
+| **Brake motor**         | Frenado activo del H-bridge (ambos HIGH) para parada rápida      |
+| **INA219 watchdog**     | Detección y auto-reconexión del sensor I2C si falla              |
+| **ArduinoOTA**          | Actualización de firmware por WiFi (sin USB)                     |
+| **WebSocket**           | Endpoint `/ws` para comunicación bidireccional en tiempo real    |
+| **SPIFFS**              | Sistema de archivos en flash del ESP32                           |
+| **Preferences (NVS)**   | Persistencia de credenciales WiFi en memoria no volátil          |
+| **Feedforward**         | PWM constante para compensar torque gravitacional (desnivel mesa)|
+| **Complementary filter**| Filtro complementario para estimación de velocidad en swing-up   |
+
 
 ### Endpoints HTTP
 
 #### GET /state
 
-Retorna JSON con el estado completo del sistema (servo + péndulo + INA219):
+Retorna JSON con el estado completo del sistema (servo + péndulo + INA219 + Kalman):
 
 ```json
 {
   "mode": 2,
-  "count": 1024, "position_deg": 15.2, "setpoint_deg": 20.0, "error_deg": 4.8,
-  "pend_count": -128, "pend_position_deg": -2.3, "pend_setpoint_deg": 0.0, "pend_error_deg": 2.3,
-  "pwm": 45,
-  "ina_ok": true, "v_bus": 11.8, "i_ma": 350.0, "p_mw": 4130.0
+  "count": 1024, "enc_a": 1, "enc_b": 0, "encoder_dir": 1, "counts_per_rev": 2048.0,
+  "raw_position_deg": 180.0, "position_deg": 15.2, "offset_deg": 164.8,
+  "setpoint_deg": 20.0, "error_deg": 4.8,
+  "pend_count": -128, "pend_raw_position_deg": 157.7, "pend_position_deg": -2.3, "pend_offset_deg": 160.0,
+  "pwm": 45, "gain_scheduling": false, "gain_mode": 0,
+  "ina_ok": true, "v_bus": 11.8, "v_shunt_mv": 12.5, "i_ma": 350.0, "p_mw": 4130.0,
+  "servo_ff_pwm": 0.0, "vel_alpha": 0.12,
+  "kf_enabled": false, "kf_theta": 15.1, "kf_alpha": -2.2, "kf_dtheta": 0.5, "kf_dalpha": -1.2
 }
+```
+
+#### GET /rl_state
+
+Estado compacto de baja latencia para el agente RL (ángulos en radianes):
+
+```json
+{"th": 0.2654, "al": 3.0912, "thd": 0.0087, "ald": -0.0214}
 ```
 
 #### GET /cmd
 
 | Parámetro                   | Tipo   | Descripción               |
 | ---------------------------- | ------ | -------------------------- |
-| `m`                        | 0–5   | Modo de operación         |
+| `m`                        | 0–6   | Modo de operación         |
 | `s`                        | float  | Setpoint servo (grados)    |
-| `sp`                       | float  | Setpoint péndulo (grados) |
+| `sp`                       | int    | PWM máx. swing-up (10–100) |
 | `p`                        | int    | PWM manual (−255 a 255)   |
 | `kp`, `ki`, `kd`       | float  | PID gains servo            |
-| `kpp`, `kip`, `kdp`    | float  | PID gains péndulo         |
+| `va`                       | float  | Alpha filtro EMA velocidad servo |
+| `ff`                       | float  | Feedforward PWM (compensación gravitacional) |
+| `gs`                       | 0/1    | Toggle gain scheduling dual-mode |
+| `kpf`, `kif`, `kdf`    | float  | PID gains modo fino (requiere `gs=1`) |
+| `kpc`, `kic`, `kdc`    | float  | PID gains modo grueso (requiere `gs=1`) |
 | `lqr1`–`lqr4`           | float  | LQR gains                  |
+| `kf`                       | 0/1    | Toggle filtro de Kalman (LQG) |
 | `ke`                       | float  | Ganancia swing-up          |
-| `bt`                       | float  | Umbral transición LQR     |
-| `cpr`                      | float  | Counts per revolution      |
-| `ed`                       | −1, 1 | Dirección encoder         |
+| `bt`                       | float  | Umbral transición LQR (grados) |
+| `cpr`                      | float  | CPR encoder servo          |
+| `cprp`                     | float  | CPR encoder péndulo        |
+| `ed`                       | −1, 1 | Dirección encoder servo    |
+| `edp`                      | −1, 1 | Dirección encoder péndulo  |
+| `o`                        | float  | Offset posición servo (grados) |
+| `op`                       | float  | Offset posición péndulo (grados) |
 | `z`                        | 1      | Zero position servo        |
 | `zp`                       | 1      | Zero position péndulo     |
+| `tp`                       | int    | Período de telemetría (ms, 50–5000) |
 | `x`                        | 1      | Paro de emergencia         |
+| `r`                        | 1      | Reset encoders + PID       |
 | `wifi_ssid`, `wifi_pass` | str    | Guardar credenciales WiFi  |
 | `wifi_reconnect`           | 1      | Reconectar WiFi            |
+
+#### GET /rl_cmd
+
+| Parámetro | Tipo  | Descripción                    |
+| --------- | ----- | ------------------------------ |
+| `a`     | float | Acción RL [−1.0, 1.0] → PWM  |
+| `r`     | 1     | Reset encoders + estado RL     |
 
 ### Comandos HTTP de uso frecuente
 
@@ -569,26 +656,33 @@ Retorna JSON con el estado completo del sistema (servo + péndulo + INA219):
 # Leer estado
 curl -s http://192.168.4.1/state
 
-# Modos: m0=stop, m1=PWM, m2=PID servo, m3=PID péndulo, m4=LQR, m5=swing-up
+# Modos: m0=stop, m1=PWM, m2=PID servo, m3=PID péndulo, m4=LQR, m5=swing-up, m6=RL
 curl "http://192.168.4.1/cmd?m=2&s=20"        # PID servo, setpoint 20°
 curl "http://192.168.4.1/cmd?m=4"              # LQR péndulo invertido
 curl "http://192.168.4.1/cmd?m=5"              # Swing-up
+curl "http://192.168.4.1/cmd?m=6"              # Deep RL (agente externo)
 
 # Ajustar PID servo
 curl "http://192.168.4.1/cmd?kp=3.0&ki=0.5&kd=0.15"
 
-# Ajustar PID péndulo
-curl "http://192.168.4.1/cmd?kpp=15.0&kip=0.5&kdp=2.0"
-
 # Ajustar LQR
-curl "http://192.168.4.1/cmd?lqr1=1&lqr2=25&lqr3=0.5&lqr4=3"
+curl "http://192.168.4.1/cmd?lqr1=2&lqr2=22&lqr3=1.5&lqr4=9"
+
+# Activar filtro de Kalman
+curl "http://192.168.4.1/cmd?kf=1"
 
 # Swing-up
-curl "http://192.168.4.1/cmd?m=5&ke=0.5&bt=20"
+curl "http://192.168.4.1/cmd?m=5&ke=0.75&bt=20"
+
+# Leer estado RL (para agente SAC)
+curl -s http://192.168.4.1/rl_state
+# Enviar acción RL
+curl "http://192.168.4.1/rl_cmd?a=0.5"
 
 # Paro de emergencia
 curl "http://192.168.4.1/cmd?x=1"
 ```
+
 
 ---
 
@@ -612,11 +706,11 @@ Guía paso a paso para poner en funcionamiento el sistema completo.
 | Componente                  | Estado mínimo                       |
 | --------------------------- | ------------------------------------ |
 | ESP32-WROOM-32              | Conectado por USB                    |
-| Fuente 12 V (LiPo 3S o PSU) | Alimentando el BTS7960               |
+| Fuente 15 V (LiPo 4S o PSU) | Alimentando el BTS7960               |
 | BTS7960 + LM2596            | Regulador ajustado a 5 V             |
 | Motor DC + encoder          | Conectado al BTS7960                 |
 | CD40106BE + componentes RC  | Acondicionamiento de señal          |
-| Encoder péndulo (opcional) | Solo para modos `m3`/`m4`/`m5` |
+| Encoder péndulo (opcional) | Solo para modos `m3`/`m4`/`m5`/`m6` |
 | INA219 (opcional)           | Solo para telemetría de potencia    |
 
 ---
@@ -635,7 +729,7 @@ make test                         # Verificar (opcional)
 ### 3. Ajustar el LM2596 (⚠️ ANTES de conectar el ESP32)
 
 1. **Desconectar** el ESP32 del circuito
-2. Conectar solo el LM2596 a la fuente de 12 V
+2. Conectar solo el LM2596 a la fuente de 15 V
 3. Medir con multímetro entre `OUT+` y `OUT−`
 4. Girar el potenciómetro hasta leer **5.00 V** exactos
 5. Recién conectar el ESP32 al pin `VIN`
@@ -661,7 +755,7 @@ pio device monitor --baud 115200  # Monitor serie
 1. Abrir `src/firmware/esp32_qube_l298n/esp32_qube_l298n.ino`
 2. **Tools → Board → ESP32 Arduino → ESP32 Dev Module**
 3. Seleccionar puerto COM
-4. Instalar librerías: `INA219_WE`, `ArduinoJson`, `AsyncTCP`, `ESPAsyncWebServer`
+4. Instalar librerías: `INA219_WE`, `ArduinoJson`, `AsyncTCP`, `ESPAsyncWebServer` (SPIFFS, Preferences y ArduinoOTA vienen con el core ESP32)
 5. Click **Upload**
 6. Abrir Monitor Serie a 115200 baud
 
@@ -708,7 +802,7 @@ Al encender, el monitor serie debe mostrar:
 | `m3` | `/cmd?m=3` | PID posición péndulo —`/cmd?sp=0`         |
 | `m4` | `/cmd?m=4` | LQR péndulo invertido                         |
 | `m5` | `/cmd?m=5` | Swing-up por energía                          |
-
+| `m6` | `/cmd?m=6` | RL — control por Deep Reinforcement Learning  |
 ---
 
 ### 7. Uso de la GUI
@@ -847,11 +941,15 @@ $$
 
 | Métrica                  | Arduino Uno + BTS7960    | ESP32 + BTS7960 (este proyecto) | Quanser QUBE |
 | ------------------------- | ------------------------ | ------------------------------- | ------------ |
-| Frecuencia de control     | ~100 Hz                  | **200 Hz**                | 1000 Hz      |
+| Frecuencia de control     | ~100 Hz                  | **500 Hz**                | 1000 Hz      |
 | Encoders simultáneos     | 1 (limitado)             | **2**                     | 2            |
 | Telemetría de potencia   | No                       | **Sí (INA219)**          | Sí          |
 | Conectividad inalámbrica | No                       | **WiFi + BLE**            | Ethernet     |
 | Swing-up automático      | No                       | **Sí (modo 5)**          | Sí          |
+| Control RL (DRL)         | No                       | **Sí (modo 6)**          | No          |
+| Filtro de Kalman (LQG)   | No                       | **Sí**                   | No          |
+| Gain scheduling          | No                       | **Sí (PID + LQR)**      | No          |
+| OTA (update WiFi)        | No                       | **Sí (ArduinoOTA)**      | No          |
 | Costo                     | ~$35 USD | **~$70 USD** | ~$3,000 USD                     |              |
 
 ### Validación del encoder (post HW-FIX)
@@ -893,6 +991,41 @@ $$
 
 ---
 
+## Deep Reinforcement Learning (DRL)
+
+El proyecto incluye un plan para implementar control del péndulo invertido mediante **aprendizaje por refuerzo profundo**, usando el algoritmo **SAC (Soft Actor-Critic)** con pipeline sim-to-real.
+
+### En qué consiste
+
+1. **Entrenar en simulación** — Un agente SAC aprende a controlar el swing-up + balance del péndulo en un entorno Gymnasium con domain randomization (parámetros físicos varían cada episodio)
+2. **Desplegar vía WiFi** — El modelo entrenado se ejecuta en una PC que se comunica con el ESP32 a 50 Hz mediante endpoints HTTP (`/rl_state`, `/rl_cmd`)
+3. **Fine-tuning en hardware real** — El agente se ajusta con datos del sistema físico real
+
+### Por qué SAC
+
+- **Off-policy**: reutiliza datos del replay buffer (eficiente en muestras)
+- **Entropía máxima**: exploración natural, crucial para transferencia sim-to-real
+- **gSDE**: ruido de exploración correlacionado con el estado, más robusto que ruido gaussiano
+- **Probado en Furuta**: el repo [Armandpl/furuta](https://github.com/Armandpl/furuta) demuestra que funciona en un péndulo rotatorio real
+
+### Arquitectura
+
+```
+PC (GPU)                                    ESP32
+┌─────────────────────────┐                ┌──────────────────┐
+│ QubeSimEnv ──► SAC      │   HTTP 50 Hz   │ Modo 6 (RL)     │
+│ (entrenamiento)         │◄──────────────►│ /rl_state        │
+│                         │                │ /rl_cmd?a=X      │
+│ QubeRealEnv ──► SAC     │                │                  │
+│ (fine-tuning)           │                │ PWM directo      │
+└─────────────────────────┘                └──────────────────┘
+```
+
+### Estado actual
+
+Plan completo documentado en [`docs/research/DRL_IMPLEMENTATION_PLAN.md`](docs/research/DRL_IMPLEMENTATION_PLAN.md). Las 7 fases están definidas, pendiente de ejecución. El DRL **complementa** el LQR existente (modo 4), no lo reemplaza.
+
+
 ## Roadmap
 
 - [X] Control PID posición servo (encoder 1)
@@ -906,34 +1039,57 @@ $$
 - [ ] Integración encoder péndulo (encoder 2) — **en progreso**
 - [ ] Control PID posición péndulo (modo m3) — validación
 - [ ] Control LQR péndulo invertido (modo m4) — validación
+- [ ] DRL (SAC) — swing-up + balance por aprendizaje por refuerzo — **plan definido**
+  - [ ] Fase 1: Entorno de simulación Gymnasium (QubeSimEnv)
+  - [ ] Fase 2: Modo RL en firmware ESP32 (endpoint `/rl_state`, `/rl_cmd`)
+  - [ ] Fase 3: Entorno real Gymnasium (QubeRealEnv vía HTTP)
+  - [ ] Fase 4: Entrenamiento SAC en simulación (~200K steps)
+  - [ ] Fase 5: Inferencia en hardware real
+  - [ ] Fase 6: Fine-tuning sim-to-real (~100K steps)
 - [ ] Dashboard web en tiempo real (WebSocket)
 - [ ] Logging en SPIFFS / tarjeta SD
 - [ ] Identificación de parámetros del motor
 - [ ] PCB Rev2.0 con acondicionamiento integrado
-
 ---
 
 ## Documentación Adicional
 
-| Documento                | Ubicación                                                                | Descripción                                          |
-| ------------------------ | ------------------------------------------------------------------------- | ----------------------------------------------------- |
-| Arquitectura del sistema | [`docs/arquitectura.md`](docs/arquitectura.md)                             | Diagramas detallados, pinout completo, FreeRTOS tasks |
+| Changelog                | [`CHANGELOG.md`](CHANGELOG.md)                                             | Historial de versiones del firmware                   |
+| Experimentos             | [`experiments/`](experiments/)                                             | Datos CSV y notas de experimentos                     |
+| Plan DRL                 | [`docs/research/DRL_IMPLEMENTATION_PLAN.md`](docs/research/DRL_IMPLEMENTATION_PLAN.md) | Pipeline SAC sim-to-real para péndulo invertido |
 | Modelo físico           | [`docs/MODELO_FISICO_SISTEMA_QUBE.md`](docs/MODELO_FISICO_SISTEMA_QUBE.md) | Ecuaciones del motor, encoder, péndulo, PID y LQR    |
 | Investigación           | [`docs/research/`](docs/research/)                                         | Papers, estado del arte, acondicionamiento de señal  |
 | Validación científica  | [`docs/validation/`](docs/validation/)                                     | Marco científico, checklist, matriz de referencias   |
-| Changelog                | [`CHANGELOG.md`](CHANGELOG.md)                                             | Historial de versiones del firmware                   |
-| Experimentos             | [`experiments/`](experiments/)                                             | Datos CSV y notas de experimentos                     |
 
 ---
 
-## Referencias
 
-### Proyectos de referencia
+### Proyectos GitHub — Péndulos y control
 
-- [Esp32CameraRover2 — Ezward](https://github.com/Ezward/Esp32CameraRover2) — Framework closed-loop ESP32
-- [Rotary-Inverted-Pendulum — ebrahimabdelghfar](https://github.com/ebrahimabdelghfar/Rotary-Inverted-Pendulum) — LQR + Arduino
-- [arduino_pid_controlled_motor — wty-yy](https://github.com/wty-yy/arduino_pid_controlled_motor) — PID + encoder documentado
-- [INA219_WE](https://github.com/wollewald/INA219_WE) — Librería INA219 (activamente mantenida)
+- [Armandpl/furuta](https://github.com/Armandpl/furuta) — SAC + gSDE para Furuta pendulum, pipeline sim-to-real completo (referencia principal para DRL)
+- [ebrahimabdelghfar/Rotary-Inverted-Pendulum](https://github.com/ebrahimabdelghfar/Rotary-Inverted-Pendulum) — LQR + Arduino para péndulo rotatorio
+- [wjkaiser/Edukit_Rotary_Inverted_Pendulum_Project](https://github.com/wjkaiser/Edukit_Rotary_Inverted_Pendulum_Project) — STM32 + MATLAB/Simulink, LQR/PID
+- [ferrolho/rotary-inverted-pendulum](https://github.com/ferrolho/rotary-inverted-pendulum) — Implementación Arduino + LQR
+- [akshaykhadse/sliding-mode-inverted-pendulum](https://github.com/akshaykhadse/sliding-mode-inverted-pendulum) — SMC + LQR en Simulink
+- [Shankari02/Rotary_Inverted_Pendulum_using_LQR](https://github.com/Shankari02/Rotary_Inverted_Pendulum_using_LQR) — LQR en MATLAB
+- [kaidegit/RotaryInvertedPendulum](https://github.com/kaidegit/RotaryInvertedPendulum) — Hardware + control custom
+
+### Proyectos GitHub — RL y embebidos
+
+- [ShawnHymel/pendulum-rl](https://github.com/ShawnHymel/pendulum-rl) — TinyRL: entrenamiento RL en hardware ESP32 real
+- [mathworks/Reinforcement-Learning-Inverted-Pendulum-with-QUBE-Servo2](https://github.com/mathworks/Reinforcement-Learning-Inverted-Pendulum-with-QUBE-Servo2) — SAC + PPO para QUBE-Servo 2
+- [rl-tools/rl-tools](https://github.com/rl-tools/rl-tools) — Librería C++ para RL en microcontroladores
+- [Ezward/Esp32CameraRover2](https://github.com/Ezward/Esp32CameraRover2) — Framework closed-loop ESP32
+
+### Proyectos GitHub — Componentes
+
+- [wty-yy/arduino_pid_controlled_motor](https://github.com/wty-yy/arduino_pid_controlled_motor) — PID + encoder documentado
+- [wollewald/INA219_WE](https://github.com/wollewald/INA219_WE) — Librería INA219 (activamente mantenida)
+
+### Librerías de RL
+
+- [Stable-Baselines3](https://github.com/DLR-RM/stable-baselines3) — Implementaciones de RL (SAC, PPO, TD3, etc.) en PyTorch (13.4K★)
+- [Gymnasium](https://github.com/Farama-Foundation/Gymnasium) — API de entornos para RL (sucesor de OpenAI Gym)
 
 ### Datasheets
 
@@ -942,16 +1098,59 @@ $$
 - [INA219 — Texas Instruments](https://www.ti.com/product/INA219)
 - [CD40106B — Texas Instruments](https://www.ti.com/lit/ds/symlink/cd40106b.pdf)
 
-### Papers académicos
+### Papers académicos — Péndulo rotatorio
 
-- Akhtaruzzaman, M., & Shafie, A. A. (2010). Modeling and control of a rotary inverted pendulum using various methods. *IEEE ICMA 2010*. https://doi.org/10.1109/ICMA.2010.5589450
+- Hazem, Z.B. & Bingül, Z. (2023). "Comprehensive review of different pendulum structures in engineering applications." *IEEE Access*. — Survey completo de estructuras de péndulos y métodos de control.
+- Akhtaruzzaman, M. & Shafie, A.A. (2010). "Modeling and control of a rotary inverted pendulum using various methods." *IEEE ICMA 2010*. https://doi.org/10.1109/ICMA.2010.5589450
 - STMicroelectronics. (2019). *Introduction to Integrated Rotary Inverted Pendulum* (v2).
+- Vo, M.T. et al. (2024). "Comparative study of swing-up controllers: passivity-based swing-up control and sliding mode technique combined energy-based method." *IEEE*.
+- Kim, K.S. & Park, P.G. (2025). "Energy-based Fuzzy Swing Up and Relaxed Balancing Control for a Rotary Inverted Pendulum." *IEEE*.
+- Nguyen, T.V.A. et al. (2025). "Integrating disturbance handling into control strategies for swing-up and stabilization of rotary inverted pendulum." *J. of Automation, Mobile Robotics & Intelligent Systems*.
+
+### Papers académicos — Control avanzado
+
+- Gupta, N. & Dewan, L. (2025). "Adaptive neural network-based sliding mode control of rotary inverted pendulum system." *J. of Control and Decision*. — NN-SMC adaptativo.
+- Ouahab, B. et al. (2025). "Prescribed performance-based hierarchical fast terminal sliding mode control for a rotary inverted pendulum." *J. of Vibration and Control*. — SMC de terminal rápido.
+- Kim, D.B. et al. (2023). "Neural-network based swing-up and stabilization control of rotary inverted pendulum systems." *IFAC-PapersOnLine*. — NN para swing-up.
+- Detailleur, A. et al. (2024). "Synthesis and SOS-based Stability Verification of a Neural-Network-Based Controller for a Two-wheeled Inverted Pendulum." *arXiv*. — Verificación de estabilidad NN.
+- Zabihifar, S.H. et al. (2020). "Robust control based on adaptive neural network for Rotary inverted pendulum with oscillation compensation." *Neural Computing and Applications*. — NN adaptativo.
+
+### Papers académicos — Implementación embebida
+
+- Plata, M.A.S. et al. (2025). "Comparative Evaluation of Low-Cost Microcontrollers for Real-Time Control on an Inverted Pendulum." *IEEE 7th Conf.* — Comparativo de microcontroladores.
+- Farkhooi, S. (2025). "Embedded Model Predictive Control of the Furuta Pendulum." *KTH*. — MPC embebido.
+- Mahamud, S. (2024). "Embedded control of a rotary inverted pendulum." *Aalto University*. — MPC embebido para RIP.
+- Waszak, M. & Langowski, R. (2020). "An automatic self-tuning control system design for an inverted pendulum." *IEEE Access*. — Auto-sintonización en STM32.
+- Rios-Norena, L.A. et al. (2022). "Real-time optimal embedded control of a double inverted pendulum." *IAENG*. — MPC óptimo en Arduino.
+- Da Silva, R.M. et al. (2026). "Classical and Sliding Mode Controllers Applied to the Reaction Wheel Inverted Pendulum." *IEEE*. — SMC embebido.
+
+### Papers académicos — Reinforcement Learning
+
+- Haarnoja, T. et al. (2018). "Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor." *ICML*. https://arxiv.org/abs/1801.01290
+- Raffin, A. et al. (2021). "Stable Baselines 3: Reliable Reinforcement Learning Implementations." *JMLR*. https://jmlr.org/papers/v22/20-1364.html
+- Raffin, A. et al. (2020). "State-Dependent Exploration for Policy Gradient Methods." https://arxiv.org/abs/2005.05719
+- Schulman, J. et al. (2017). "Proximal Policy Optimization Algorithms." *arXiv:1707.06347*.
+- Fujimoto, S. et al. (2018). "Addressing Function Approximation Error in Actor-Critic Methods." *ICML 2018* (TD3).
+- Eschmann, J., Albani, D. & Loianno, G. (2024). "RLtools: A Fast, Portable Deep Reinforcement Learning Library for Continuous Control." *JMLR*, 25.
+- Andert, J. et al. (2023). "LExCI: A Framework for Reinforcement Learning with Embedded Systems." *arXiv:2312.02739*.
+- Hernandez, R. et al. (2024). "Modeling, simulation, and control of a rotary inverted pendulum: A reinforcement learning-based control approach." *Modelling*.
+- Quanser. (2026). "Using the Reinforcement Learning Toolbox to Balance the Qube-Servo 3 Inverted Pendulum." *Quanser Blog*.
 
 ### Documentación interna
 
+- [Investigación: Modernización QUBE Servo](docs/research/Investigación%20Modernización%20del%20QUBE%20Servo.md) — Documento consolidado de investigación (papers, repos, arquitectura)
+- [Plan DRL](docs/research/DRL_IMPLEMENTATION_PLAN.md) — Pipeline SAC sim-to-real para péndulo invertido
+- [Métodos de estabilización](docs/research/METODOS_ESTABILIZACION_PENDULOS_INVERTIDOS.md) — Catálogo de métodos de control para péndulos rotatorios
+- [Modelo físico del sistema](docs/MODELO_FISICO_SISTEMA_QUBE.md) — Ecuaciones de Lagrange, espacio de estados, motor, encoder
+- [Viabilidad de aprendizaje por refuerzo](docs/research/ai_research/viabilidad_aprendizaje_refuerzo.md) — Evaluación de viabilidad RL para QUBE (veredicto: ✅ viable)
+- [Informe de modelado LQR](docs/research/ai_research/informe_modelado_lqr.md) — Diseño y sintonización del controlador LQR
 - [Investigación CD40106BE](docs/research/ai_research/investigacion_cd40106be.md) — Schmitt trigger para acondicionamiento de señal
-- [Estabilización de señales](docs/research/estabilizacion_senales.md) — Filtros y mitigación de ruido
+- [Estabilización de señales](docs/research/estabilizacion_senales.md) — Filtros y mitigación de ruido de encoder
+- [Integración encoder péndulo](docs/research/integracion_encoder_pendulo.md) — Agregar segundo canal de encoder cuadratura
+- [Frecuencias de control — Quanser](docs/research/frecuencias_control_pendulos_quanser.md) — Frecuencias de control documentadas por Quanser
+- [Validación científica](docs/validation/) — Marco científico, checklist, matriz de referencias
 - [CHANGELOG](CHANGELOG.md) — Historial de versiones del firmware
+
 
 ---
 
@@ -961,4 +1160,4 @@ CCBY4.0 License — ver [LICENSE](LICENSE) para detalles.
 
 ---
 
-*Última actualización: 8 de junio, 2026*
+*Última actualización: 16 de junio, 2026*

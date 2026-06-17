@@ -8,6 +8,7 @@ Este repositorio cuenta con un ecosistema de **agentes, skills, instrucciones y 
 
 - [Agentes Disponibles](#agentes-disponibles)
 - [Skills Disponibles](#skills-disponibles)
+- [Paquete Deep RL](#paquete-deep-rl-srcqube_rl)
 - [Instrucciones](#instrucciones)
 - [Prompts](#prompts)
 - [Estructura del Repositorio para Agentes](#estructura-del-repositorio-para-agentes)
@@ -178,6 +179,68 @@ Procedimiento completo para investigar componentes o arquitecturas de hardware a
 - [ ] Propuesta de integración con texto concreto
 
 ---
+## 🧠 Paquete Deep RL (`src/qube_rl/`)
+
+Paquete Python para entrenamiento e inferencia de políticas Deep Reinforcement Learning en el QUBE Servo.
+
+### Estructura del paquete
+
+```
+src/qube_rl/
+├── __init__.py
+├── train.py             # Entrenamiento con Stable-Baselines3
+├── utils.py             # Utilidades compartidas
+├── rewards.py           # Funciones de recompensa configurables
+├── envs/
+│   ├── __init__.py
+│   ├── qube_real.py     # Entorno Gymnasium para hardware real (ESP32)
+│   ├── qube_sim.py      # Entorno simulado para pre-entrenamiento
+│   └── qube_dynamics.py # Modelo dinámico del péndulo
+└── wrappers/
+    ├── __init__.py
+    ├── history_wrapper.py      # Ventana de observaciones pasadas
+    ├── control_frequency.py    # Control de frecuencia de muestreo
+    ├── gently_terminating.py   # Terminación suave del episodio
+    └── deadzone.py             # Zona muerta del actuador
+```
+
+### Comandos principales
+
+| Comando | Descripción |
+|---------|-------------|
+| `uv run python -m qube_rl.train` | Entrenar política RL (PPO/SAC) |
+| `uv run python -m qube_rl.inference` | Ejecutar política entrenada en hardware |
+| `uv run python -m qube_rl.finetune` | Fine-tuning de política pre-entrenada |
+| `uv run python -m qube_rl.test` | Evaluar política sin actuación en motor |
+
+### Endpoints firmware — Modo 6 (RL)
+
+El firmware expone endpoints HTTP dedicados para el control por RL:
+
+| Endpoint | Método | Descripción |
+|----------|--------|-------------|
+| `/cmd?m=6` | GET | Activar modo RL en el firmware |
+| `/rl_state` | GET | Leer estado completo (ángulo, velocidad, corriente) sin interferir |
+| `/rl_cmd?a=X` | GET | Enviar acción discreta/continua al motor (valor `X`) |
+| `/rl_cmd?r=1` | GET | Resetear encoders e iniciar nuevo episodio |
+
+### Herramientas MCP para RL
+
+| Herramienta MCP | Descripción |
+|-----------------|-------------|
+| `qube_rl_get_state()` | Lee el estado del péndulo sin interferir con la política RL activa |
+| `qube_rl_send_action(a)` | Envía acción al motor (solo para debug, no durante entrenamiento) |
+| `qube_rl_reset()` | Resetea encoders para iniciar nuevo episodio |
+| `qube_set_mode(6)` | Activa modo RL en el firmware (ahora acepta modo 6) |
+
+### Concurrencia MCP + RL
+
+| Operación | Seguridad | Notas |
+|-----------|-----------|-------|
+| **Lectura simultánea** (MCP + RL) | ✅ Segura | Ambos leen `/state` y `/rl_state` sin conflicto |
+| **Escritura simultánea** (MCP + RL) | ⚠️ No segura | Comportamiento last-write-wins; puede corromper la acción del agente |
+
+> **Regla:** Cuando el modo RL está activo (modo 6), las herramientas MCP **solo deben LEER**. No enviar comandos `/cmd` o `/rl_cmd` desde MCP mientras una política RL está en ejecución.
 
 ## 📝 Instrucciones
 
@@ -263,6 +326,8 @@ Procedimiento completo para investigar componentes o arquitecturas de hardware a
 | `INVESTIGACION_ARQUITECTURA_MODERNIZACION_QUBE.md` | Documento principal de investigación (PARTE 1–9) |
 | `RESUMEN_HALLAZGOS.md` | Resumen ejecutivo de hallazgos de investigación |
 | `SIGNAL_STABILIZATION_INVESTIGATION.md` | Análisis de ruido y filtrado de señal |
+| `src/qube_rl/` | Paquete Deep RL — entrenamiento, inferencia y fine-tuning de políticas |
+| `docs/research/DRL_IMPLEMENTATION_PLAN.md` | Plan de implementación de Deep Reinforcement Learning |
 
 ---
 

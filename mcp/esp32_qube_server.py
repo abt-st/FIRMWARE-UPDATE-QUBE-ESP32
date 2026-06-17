@@ -110,6 +110,7 @@ def pio_clean(environment: str = "esp32dev") -> str:
     """
     return _run_pio(["run", "-e", environment, "--target", "clean"])
 
+
 @mcp.tool()
 def pio_ota_flash(
     ip: str = "192.168.100.50",
@@ -126,9 +127,14 @@ def pio_ota_flash(
         Salida de la compilación y upload OTA con estado de éxito/error.
     """
     cmd = [
-        "pio", "run", "-e", "esp32dev_ota",
-        "--target", "upload",
-        "--upload-port", ip,
+        "pio",
+        "run",
+        "-e",
+        "esp32dev_ota",
+        "--target",
+        "upload",
+        "--upload-port",
+        ip,
     ]
     try:
         result = subprocess.run(
@@ -146,7 +152,6 @@ def pio_ota_flash(
         return "Error: 'pio' (PlatformIO) no encontrado en PATH."
     except subprocess.TimeoutExpired:
         return "Error: Upload OTA excedió 3 minutos de timeout."
-
 
 
 @mcp.tool()
@@ -418,18 +423,106 @@ def qube_set_mode(mode: int) -> str:
     """Cambia el modo de operación del QUBE.
 
     Args:
-        mode: 0=STOP, 1=PWM Manual, 2=PID Servo, 4=LQR Invertido, 5=Swing-up.
+        mode: 0=STOP, 1=PWM Manual, 2=PID Servo, 4=LQR Invertido,
+              5=Swing-up, 6=Deep RL (control por agente Python).
 
     Returns:
         Confirmación del cambio de modo.
+
+    Warning:
+        Si un agente RL está activo en modo 6, cambiar a otro modo
+        interrumpirá el entrenamiento/inferencia en curso.
     """
-    mode_names = {0: "STOP", 1: "PWM Manual", 2: "PID Servo", 4: "LQR Invertido", 5: "Swing-up"}
+    mode_names = {
+        0: "STOP",
+        1: "PWM Manual",
+        2: "PID Servo",
+        4: "LQR Invertido",
+        5: "Swing-up",
+        6: "Deep RL",
+    }
     try:
         _http_get("cmd", params={"m": mode})
         return f"✅ Modo cambiado a: {mode_names.get(mode, f'Modo {mode}')}"
     except Exception as e:
         return f"❌ Error cambiando modo: {e}"
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  HERRAMIENTAS — Deep RL (modo 6)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+#  CONCURRENCIA: Estas herramientas y el agente RL (QubeRealEnv) hablan al
+#  mismo ESP32 por HTTP.  La lectura (/rl_state) es segura simultáneamente.
+#  La escritura (/rl_cmd) NO lo es — el agente RL debe ser el único escritor
+#  cuando está activo.  Usa estas herramientas para inspeccionar o depurar,
+#  no para enviar acciones mientras el agente entrena.
+
+
+@mcp.tool()
+def qube_rl_get_state() -> str:
+    """Lee el estado compacto del agente RL (modo 6).
+
+    Retorna theta, alpha (rad) y velocidades angulares (rad/s) desde
+    el endpoint /rl_state del ESP32.  Útil para monitorear el agente RL
+    sin interferir con su control.
+
+    Returns:
+        Estado del sistema en formato legible.
+    """
+    try:
+        data = _http_get("rl_state")
+        th_deg = data.get("th", 0) * 57.2958
+        al_deg = data.get("al", 0) * 57.2958
+        return (
+            f"RL State (modo 6):\n"
+            f"  theta (servo):    {th_deg:+.1f} deg ({data.get('th', 0):.4f} rad)\n"
+            f"  alpha (pendulum): {al_deg:+.1f} deg ({data.get('al', 0):.4f} rad)\n"
+            f"  theta_dot: {data.get('thd', 0):.4f} rad/s\n"
+            f"  alpha_dot: {data.get('ald', 0):.4f} rad/s"
+        )
+    except Exception as e:
+        return f"❌ Error leyendo estado RL: {e}"
+
+
+@mcp.tool()
+def qube_rl_send_action(action: float) -> str:
+    """Envía una acción al agente RL (modo 6).
+
+    ⚠️  USAR SOLO PARA DEPURACIÓN.  No enviar acciones mientras el agente
+    RL está entrenando — causa conflicto de escritura (last-write-wins).
+
+    Args:
+        action: Valor en [-1.0, 1.0].  0 = sin movimiento.
+
+    Returns:
+        Confirmación de la acción enviada.
+    """
+    action = max(-1.0, min(1.0, action))
+    try:
+        _http_get("rl_cmd", params={"a": f"{action:.4f}"})
+        pwm_pct = abs(action) * 100
+        direction = "CW" if action >= 0 else "CCW"
+        return f"✅ Acción RL: {action:.4f} ({pwm_pct:.0f}% {direction})"
+    except Exception as e:
+        return f"❌ Error enviando acción RL: {e}"
+
+
+@mcp.tool()
+def qube_rl_reset() -> str:
+    """Resetea encoders y estado del agente RL (modo 6).
+
+    Equivale a /rl_cmd?r=1.  Detiene el motor, resetea encoders a cero
+    y limpia los filtros de velocidad.
+
+    Returns:
+        Confirmación del reset.
+    """
+    try:
+        _http_get("rl_cmd", params={"r": "1"})
+        return "✅ RL reset completo: encoders en 0, motor detenido."
+    except Exception as e:
+        return f"❌ Error en reset RL: {e}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

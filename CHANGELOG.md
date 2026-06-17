@@ -1,3 +1,113 @@
+## [1.39.0] — 2026-06-16
+### Entrenamiento RLtools-compatible: reward swingup_balance, red [64,64], exportación C++
+
+#### Problema identificado
+- Red [128,128] en `fast_train.py` era demasiado grande para inferencia ESP32 (~51 KB flash vs 17 KB con RLtools).
+- No existía reward que adaptara penalidades entre fases de swing-up y balance.
+- Sin forma de exportar pesos SB3 al formato C++ de RLtools (`persist_code`).
+
+#### Cambios aplicados
+
+**1. Nueva reward `swingup_balance` (`src/qube_rl/rewards.py`)**
+- Penalidades leves durante swing-up (brazo libre), pesadas durante balance (brazo centrado).
+- `balance_weight`: 0.1 (down) → 0.5 (inverted). `vel_weight`: 0.0005 → 0.0025.
+- Verificado: DOWN=0.0, 45°=0.15, 135°=0.85, UP=1.0.
+
+**2. Red [64,64] por defecto en `train.py`**
+- Nuevo flag `--net-arch` (default 64). Guarda como `qube_sac_{net}x2.zip`.
+- ~17 KB flash, ~1-2 KB RAM en ESP32 — compatible RLtools.
+
+**3. Refactor de `fast_train.py`**
+- Usa `swingup_balance` y [64,64] por defecto. Nuevos flags: `--reward`, `--net-arch`, `--exp-name`.
+
+**4. Nuevo módulo `export_rltools.py`**
+- Extrae pesos actor SB3 → genera header C++ `constexpr float[]` (RLtools `persist_code`).
+- Uso: `uv run python -m qube_rl.export_rltools --model models/qube_sac_64x2.zip`
+
+#### Notas
+- Flujo completo: `train.py` → `export_rltools.py` → firmware ESP32 con RLtools.
+- Compatible con modelos existentes: `--net-arch 256` reproduce config anterior.
+- Sin cambios al firmware ni interfaz HTTP — solo pipeline de entrenamiento.
+
+## [1.38.0] — 2026-06-16
+### Filtro de Kalman (LQG) para estimación de estados del LQR
+
+#### Problema identificado
+El LQR (modo 4) estimaba velocidades angulares mediante diferencias finitas + filtro EMA,
+que es ruidoso y introduce fase. El docs del proyecto priorizaba LQG (LQR + Kalman) como
+mejora #1 por su factibilidad en ESP32 y alto impacto en desempeño.
+
+#### Cambios aplicados
+
+**1. Implementación del Filtro de Kalman discreto (4 estados)**
+- Estado: `x = [theta, alpha, dtheta, dalpha]` (posiciones y velocidades)
+- Mediciones: `z = [theta, alpha]` (solo posiciones de encoder)
+- Modelo: péndulo rotatorio invertido linearizado, discretizado con Euler a 500 Hz
+- Predict: propagación con modelo físico (motor + péndulo)
+- Update: corrección con mediciones de encoder (posiciones)
+- Matrices Q, R, P ajustables en runtime
+
+**2. Integración con LQR (modo 4)**
+- Cuando `kf_enabled=true`: LQR usa velocidades estimadas por el KF
+- Cuando `kf_enabled=false`: LQR usa EMA (comportamiento original, sin cambios)
+- EMA siempre se calcula como fallback (no se pierde información)
+
+**3. HTTP command `kf<0|1>`**
+- `GET /cmd?kf=1` activa el filtro de Kalman (resetea estado)
+- `GET /cmd?kf=0` vuelve al filtro EMA
+- Toggle en tiempo real para comparar desempeño
+
+**4. Telemetría expandida en `/state`**
+- `kf_enabled`: estado del filtro
+- `kf_theta`, `kf_alpha`: posiciones estimadas por KF
+- `kf_dtheta`, `kf_dalpha`: velocidades estimadas por KF (la mejora principal)
+
+#### Arquitectura del KF
+```
+Modelo discreto (Euler, Ts=2ms):
+  Ad = [1  0  Ts   0    ]    Bd = [0, 0, Km*Ts, 0]^T
+       [0  1   0  Ts   ]
+       [0  0 1-b1*Ts  0     ]
+       [0  w2*Ts  0  1-b2*Ts]
+
+H = [1 0 0 0]  (mide posiciones)
+    [0 1 0 0]
+
+Predict: x = Ad*x + Bd*u,  P = Ad*P*Ad^T + Q
+Update:  K = P*H^T*(H*P*H^T + R)^-1,  x = x + K*(z - H*x)
+```
+
+#### Parámetros del modelo
+| Parámetro | Valor | Descripción |
+|-----------|-------|-------------|
+| `KF_MOTOR_GAIN` | 50.0 | PWM -> deg/s^2 |
+| `KF_SERVO_FRIC` | 2.0 | Amortiguamiento servo (1/s) |
+| `KF_PEND_FREQ` | 12.3 | sqrt(g/l) pendulo [rad/s] |
+| `KF_PEND_FRIC` | 0.5 | Amortiguamiento pendulo (1/s) |
+| `kf_Q_pos` | 0.1 | Ruido proceso: posicion (deg^2) |
+| `kf_Q_vel` | 10.0 | Ruido proceso: velocidad (deg/s^2) |
+| `kf_R_pos` | 0.5 | Ruido medicion: encoder (deg^2) |
+
+#### Cambios de firmware
+```cpp
+// Filtro de Kalman: predict + update en cada ciclo LQR
+if (kf_enabled) {
+  kalmanPredict((float)lastPwmCmd / (float)PWM_MAX);
+  kalmanUpdate(theta, alpha_raw);
+}
+// LQR usa KF cuando habilitado
+float velTheta_ctrl = kf_enabled ? kf_x[2] : lqr_filteredVelTheta;
+float velAlpha_ctrl = kf_enabled ? kf_x[3] : lqr_filteredVelAlpha;
+```
+
+#### Notas
+- RAM: ~200 bytes adicionales (P 4x4 + K 4x2 + x 4)
+- CPU: <50 us por ciclo (predict + update) — insignificante a 500 Hz
+- No afecta otros modos (PID, swing-up) — solo LQR (modo 4)
+- Parámetros del modelo (`KF_MOTOR_GAIN`, etc.) requieren calibración experimental
+- Toggle: `curl "http://192.168.4.1/cmd?kf=1"`
+
+
 ## [1.37.0] — 2026-06-11
 ### Swing-up: PWM acotado + param HTTP ajustable en vivo
 
@@ -1752,7 +1862,7 @@ Con `Kd=0.45` a 200 Hz, el ruido de ±1-2 counts del encoder cuadratura generaba
 - **Control PID: derivada sobre la medición** (`-d(pos)/dt`) en lugar de sobre el error (`d(error)/dt`).
   - Elimina el pico de control (*derivative kick*) al cambiar el setpoint bruscamente.
   - Previene arranque a PWM máximo al activar modo PID con posición alejada del setpoint.
-- **Ganancias PID ajustadas** para motor Premotec 990412016913 (18 V nominal, operado a 12 V):
+- **Ganancias PID ajustadas** para motor Premotec 990412016913 (18 V nominal, operado a 15 V):
   - `Kp`: 2.0 → **0.8**
   - `Ki`: 0.04 → **0.01**
   - `Kd`: 0.03 → **0.05**
@@ -1814,6 +1924,6 @@ Con `Kd=0.45` a 200 Hz, el ruido de ±1-2 counts del encoder cuadratura generaba
 
 ## Motor de referencia
 
-**Premotec 990412016913** — Motor DC con encoder, 18 V nominal, operado a 12 V con L298N.  
+**Premotec 990412016913** — Motor DC con encoder, 18 V nominal, operado a 15 V con L298N.
 Dos conectores de 5 pines (encoder motor + encoder péndulo): VCC, A, GND, B, Index.  
 Cable trenzado de 2 pines: M+ / M− (terminales del motor, conectados a OUT1/OUT2 del L298N).

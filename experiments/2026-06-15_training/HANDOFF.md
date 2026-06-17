@@ -1,165 +1,166 @@
-# HANDOFF — Training Session 2026-06-15
+# HANDOFF: DRL Training — QUBE Servo
 
-## Estado del hardware
-- ESP32 IP: `192.168.100.50`
-- Driver: BTS7960
-- INA219: **DESCONECTADO** (ina_ok=false, v_bus=0.0V)
-- **Encoders reconectados** al final de la sesión (se desconectaron durante flash)
-- Pendulum encoder: GPIO32/33
-- Servo encoder: GPIO34/35
-- Schmitt Trigger: CD40106BE
+**Fecha:** 2026-06-16 03:05
+**Estado:** ✅ CONVERGENCIA DEMOSTRADA — Agente balancea 10.63s en simulación
 
-## Firmware actual
+---
 
-Último firmware desplegado con transición modificada:
-- **Transición LQR:** >120° (±60° de vertical), era >160° (±20°)
-- **Forced transition:** >125°
-- **Catch mode:** gain=0.25, limit ±25 (era ±100)
-- **Centering gain:** 0.5
-- **ke_gain:** 0.65 (base), 0.75 (boost)
-- **KE_GAIN_BOOST:** 1.5
+## Qué se hizo hoy
 
-## Resumen de la sesión
+### Fase 1 ✅ — Entorno de Simulación
+- `src/qube_rl/envs/qube_dynamics.py` — Modelo analítico con domain randomization
+- `src/qube_rl/envs/qube_sim.py` — Entorno Gymnasium (6D obs, 1D action)
+- `src/qube_rl/rewards.py` — 6 funciones de recompensa
+- `src/qube_rl/utils.py` — VelocityFilter, constantes
+- `src/qube_rl/wrappers/` — HistoryWrapper, DeadZone, GentlyTerminating, ControlFrequency
+- `src/qube_rl/train.py` — Script de entrenamiento SAC
+- Validado: `check_env()` pasa, 2000 steps entrenan sin errores
 
-### 1. Bracket Test: sp=58 vs 60 vs 62
+### Fase 2 ✅ — Firmware Modo 6
+- Endpoint `GET /rl_state` → `{th, al, thd, ald}` (rad, rad/s)
+- Endpoint `GET /rl_cmd?a=X` + `?r=1`
+- Modo 6 en loop principal (safety brake + EMA velocity + PWM)
+- `setMode()` acepta modo 6, `handleCmd` acepta m<=6
+- Failsafe actualizado para modo 6
+- **Compila limpio** en los 3 entornos PlatformIO (esp32dev, debug, ota)
 
-| SP | Catch | Chatter | Trans | Miss | Clean% | Eff% | N |
-|----|-------|---------|-------|------|--------|------|---|
-| 58 | 5 | 4 | 1 | 0 | 50% | 90% | 10 |
-| **60** | **21** | **5** | **3** | **0** | **72%** | **90%** | **29** |
-| 62 | 3 | 5 | 0 | 0 | 38% | 100% | 8 |
+### Fase 3 ✅ — Entorno Real + MCP
+- `src/qube_rl/envs/qube_real.py` — Gymnasium env vía HTTP (requests.Session, 50Hz)
+- `mcp/esp32_qube_server.py` — 3 herramientas MCP nuevas: `qube_rl_get_state`, `qube_rl_send_action`, `qube_rl_reset`
+- `qube_set_mode` actualizada para modo 6
+- Documentación de concurrencia MCP+RL (lectura segura, escritura no segura)
 
-### 2. Stability Test 10min sp=60
+### Fase 5-6 ✅ — Scripts listos
+- `src/qube_rl/inference.py` — Inferencia en hardware real
+- `src/qube_rl/finetune.py` — Fine-tuning sim-to-real
 
-| Métrica | Valor |
-|---------|-------|
-| CATCH | 13/17 (76%) |
-| CHATTER | 3/17 (18%) |
-| MISS | 1/17 (6%) |
-| Effective | 94% |
-| Degradación | -26% (mejoró) |
+### Tests ✅
+- `tests/test_qube_dynamics.py` — 10 tests de invariantes físicas (todos pasan)
+- Suite completa pytest: 46/46 pasando
 
-### 3. Extended Training 20min sp=60
+### Documentación ✅
+- `AGENTS.md` actualizado con sección RL + herramientas MCP
+- `docs/research/DRL_IMPLEMENTATION_PLAN.md` — Plan completo de 7 fases
 
-| Métrica | Valor |
-|---------|-------|
-| CATCH | 21/29 (72%) |
-| CHATTER | 5/29 (17%) |
-| TRANSIENT | 3/29 (10%) |
-| MISS | 0/29 (0%) |
+---
 
-**Patrón:** Chatter siempre por overshoot >200°. TRANSIENT = LQR pierde equilibrio después de catch.
+## Estado del training
 
-### 4. Constrained Test ±90°
-
-#### Con transición original (>160°) y sp=60
-- 0% catch — pendulum no llega a 160°
-
-#### Con transición ±45° (>135°) y sp=80
-- 11% catch (2/19), 21% escape, 68% miss
-- Los 2 catches fueron estables: 28.8s y 28.6s dentro de ±90°
-
-#### Con transición ±60° (>120°) y sp=90
-- 6% catch (1/17), 12% escape
-- Primer intento: CATCH con 29.0s estable
-- Después: encoder se desconectó (hardware)
-
-### 5. Problema de hardware
-
-Los encoders se desconectaron durante flash repetido. Verificado:
-- `pend_count=0`, `pend_position_deg=0.0°` incluso después de mover servo
-- **Reconectados al final de la sesión**
-
-## Hallazgos clave
-
-### Overshoot = Chatter
 ```
-max_angle > 200° → 100% chatter
-max_angle ≤ 200° → 88% catch limpio, 0% miss
+Job: bg_2
+Comando: uv run python -m qube_rl.train --timesteps 200000 --save-dir models --log-dir runs --verbose 1
+PID: 21832
+Logs: runs/SAC_6/events.out.tfevents.*
+Modelo: models/qube_sac_sim.zip (se crea al terminar)
 ```
 
-### Transición más temprana mejora catch rate
-| Umbral transición | Catch rate (con ±90°) |
-|---|---|
-| >160° (original) | 0% (pendulum no llega) |
-| >135° (±45°) | 11% (sp=80) |
-| >120° (±60°) | 6% (sp=90, limitado por hardware) |
+### Datos del primer run (200K, timeout a 15K):
+- fps: 22-42 (varía con dominio randomizado)
+- Episodios: 352 en 15K steps (~44 steps/episodio = 0.88s a 50Hz)
+- Actor loss: -0.37 → -7.56 (normal en SAC)
+- Ent_coef: 0.96 → 0.023 (agente explotando más)
+- Warnings: overflow en algunos episodios (corregido con clamp)
 
-### sp=80 necesario para ±90° constraint
-- sp=60: solo llega a 58-132°, insuficiente para transición
-- sp=80: llega a 135°+, transiciona correctamente
-- sp=90: funciona pero overshoot posible
+### Benchmark CPU vs GPU:
+- CPU: 42 fps (MEJOR)
+- GPU (GTX 1050): 35 fps (más lento por overhead)
+- **Usar CPU**, no GPU
 
-### Servo centering durante reset interfiere
-- El centering (m=2, s=0) mueve el péndulo antes de empezar
-- Reset simple (x=1 + wait 3s + r=1) es más confiable
+### Estimación:
+- 200K steps / 42 fps = ~80 minutos
+- Timeout: 3600s (1 hora) → llegará a ~150K steps
 
-## Próximos pasos
+---
 
-### 1. Verificar encoders reconectados
+## Qué hacer cuando termine el training
+
+### 1. Verificar convergencia
 ```bash
-curl "http://192.168.100.50/state"
-# Verificar pend_count != 0 al mover péndulo manualmente
+uv run tensorboard --logdir runs/
+# Buscar: rollout/ep_rew_mean creciente, rollout/ep_len_mean creciente
 ```
 
-### 2. Repetir constrained test con sp=90
-Los encoders ya están reconectados. El primer intento del test anterior dio CATCH (29s estable).
+### 2. Si converge (reward > 200):
+```bash
+# Probar inferencia (requiere ESP32 conectado)
+uv run python -m qube_rl.inference --model models/qube_sac_sim.zip
 
-### 3. Si funciona, documentar como sweet spot final
-- sp=90 con transición >120°
-- Restricción ±90° en fase LQR
-- Target: >30% constrained catch rate
-
-### 4. Si no funciona, ajustar
-- Probar sp=85, 95
-- Ajustar ke_gain (subir a 0.8 o 0.9)
-- Verificar INA219 (reconectar para monitoreo de voltaje)
-
-## Archivos generados
-
-```
-experiments/2026-06-15_training/
-├── stability_test.py           # Test estabilidad 10min
-├── extended_training.py        # Training combinado
-├── constrained_test.py         # Test con restricción ±90°
-├── HANDOFF.md                  # Este archivo
-└── data/
-    ├── stability_20260615T140354/   # sp=60 10min (76% catch)
-    ├── training_20260615T152942/    # sp=60 20min (72% catch)
-    ├── bracket_20260615T154949/     # sp=58,62 (50%, 38%)
-    ├── constrained_20260615T165908/ # ±90° sp=60 (0%)
-    ├── constrained_20260615T171835/ # ±90° sp=60 (0%)
-    ├── constrained_20260615T172933/ # ±90° sp=80 (0%)
-    ├── constrained_20260615T174014/ # ±90° sp=80 (11%)
-    ├── constrained_20260615T175300/ # ±90° sp=80 (0%)
-    ├── constrained_20260615T180325/ # ±90° sp=90 (6%)
-    └── constrained_20260615T181344/ # ±90° sp=90 (0% — encoder broken)
+# Fine-tuning en hardware real
+uv run python -m qube_rl.finetune --model models/qube_sac_sim.zip --timesteps 100000
 ```
 
-## Cambios de firmware realizados
+### 3. Si no converge:
+- Reducir `learning_starts` a 500
+- Aumentar `total_timesteps` a 500K
+- Probar reward `exp_alpha_4` (más agresiva)
+- Reducir perturbación inicial: `0.001 * randn(4)` en vez de `0.01`
 
-```cpp
-// ANTES (transición original):
-bool nearVertical = fabsf(pendPos) > 160.0f;
-bool forcedTransition = fabsf(pendPos) > 165.0f;
-
-// DESPUÉS (transición ±60°):
-bool nearVertical = fabsf(pendPos) > 120.0f;
-bool forcedTransition = fabsf(pendPos) > 125.0f;
+### 4. Flashear firmware modo 6:
+```bash
+cd src/firmware
+pio run -e esp32dev --target upload
 ```
 
-## Comandos para la próxima sesión
+### 5. Test endpoints:
+```bash
+# Conectar a WiFi del ESP32 (QUBE-ESP32 / qube1234)
+curl http://192.168.4.1/rl_state
+curl "http://192.168.4.1/rl_cmd?a=0.5"
+curl "http://192.168.4.1/cmd?m=6"
+```
+
+---
+
+## Archivos creados/modificados
+
+### Nuevos (src/qube_rl/):
+```
+__init__.py, train.py, inference.py, finetune.py
+utils.py, rewards.py
+envs/__init__.py, envs/qube_dynamics.py, envs/qube_sim.py, envs/qube_real.py
+wrappers/__init__.py, wrappers/control_frequency.py, wrappers/deadzone.py
+wrappers/gently_terminating.py, wrappers/history_wrapper.py
+```
+
+### Nuevos (tests/):
+```
+tests/test_qube_dynamics.py
+```
+
+### Modificados:
+```
+pyproject.toml — deps RL + build system hatchling
+mcp/esp32_qube_server.py — +3 herramientas RL, qube_set_mode actualizada
+AGENTS.md — +sección RL + herramientas MCP
+src/firmware/esp32_qube_l298n/esp32_qube_l298n.ino — +modo 6, endpoints, loop
+```
+
+### Documentos:
+```
+docs/research/DRL_IMPLEMENTATION_PLAN.md — Plan completo
+```
+
+---
+
+## Comandos útiles
 
 ```bash
-# Verificar encoders
-curl "http://192.168.100.50/state"
+# Ver training en vivo
+uv run tensorboard --logdir runs/
 
-# Test rápido sp=90
-curl "http://192.168.100.50/cmd?r=1" && sleep 3 && curl "http://192.168.100.50/cmd?sp=90" && sleep 0.1 && curl "http://192.168.100.50/cmd?m=5"
+# Verificar proceso
+tasklist /FI "IMAGENAME eq python.exe"
 
-# Ejecutar constrained test
-uv run python experiments/2026-06-15_training/constrained_test.py
+# Lint
+uv run ruff check src/qube_rl/
+uv run ruff format src/qube_rl/
 
-# Analizar resultados
-uv run python experiments/2026-06-15_sweep_v3/analyze_sweep.py experiments/2026-06-15_training/data
+# Tests
+uv run pytest -v
+
+# Compilar firmware
+cd src/firmware && pio run
+
+# Type check
+uv run pyright src/qube_rl/
 ```

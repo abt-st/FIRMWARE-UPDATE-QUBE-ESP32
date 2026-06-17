@@ -30,23 +30,26 @@
 // CD40106BE Vcc -> 3.3V (pin 14), GND (pin 7), bypass 100nF
 //
 // Comandos Serial:
-// m0, m1, m2           -> modo 0: stop, 1: PWM manual, 2: PID posicion
+// m0, m1, m2, m6      -> modo 0: stop, 1: PWM manual, 2: PID posicion, 6: Deep RL
 // p-255..255           -> PWM manual (solo en m1)
 // s<grados>            -> setpoint de posicion (m2)
 // kp<val>, ki<val>, kd<val>
 // r                    -> reset encoder y PID
-// x                    -> paro inmediato
+// kf<0|1>             -> activar/desactivar filtro de Kalman (LQG)
 // ?                    -> imprime estado
 // wifi_ssid<TuRed>     -> configurar SSID WiFi (guarda en NVS/Preferences)
 // wifi_pass<TuClave>   -> configurar password WiFi (guarda en NVS/Preferences)
 // wifi_info            -> mostrar configuracion WiFi actual
 //
 // Endpoints HTTP:
-// GET /state
-// GET /cmd?m=2
-// GET /cmd?s=45
-// GET /cmd?p=100
-// GET /cmd?x=1
+// GET /state               — estado completo (JSON)
+// GET /cmd?m=2             — cambiar modo
+// GET /cmd?s=45            — setpoint posición
+// GET /cmd?p=100           — PWM manual (modo 1)
+// GET /cmd?x=1             — parada segura
+// GET /rl_state            — estado compacto para RL {th,al,thd,ald} (rad, rad/s)
+// GET /rl_cmd?a=0.5        — acción RL [-1.0, 1.0]
+// GET /rl_cmd?r=1          — reset encoders + estado RL
 // ============================================================
 
 #include <Arduino.h>
@@ -60,6 +63,74 @@
 #include <Update.h>
 #include <Preferences.h>
 #include "driver/pcnt.h"
+#include "policy_weights.h"
+
+// ══════════════════════════════════════════════════════════════════════════
+// MODO 7: On-device RL inference (forward pass en ESP32)
+// Red: [36 → 64 → 64 → 1], ReLU, Hardtanh(-2, 2)
+// Observación: 4 pasos × [θ, α, cosθ, sinθ, cosα, sinα, θ̇, α̇, action]
+// ══════════════════════════════════════════════════════════════════════════
+constexpr int RL_HISTORY_STEPS = 4;
+constexpr int RL_OBS_PER_STEP = 9;   // [θ, α, cosθ, sinθ, cosα, sinα, θ̇, α̇, action]
+constexpr int RL_INPUT_DIM = RL_HISTORY_STEPS * RL_OBS_PER_STEP;  // 36
+constexpr int RL_HIDDEN = 64;
+
+float rl_obs_buf[RL_HISTORY_STEPS][RL_OBS_PER_STEP];
+int rl_obs_idx = 0;
+float rl_last_action = 0.0f;
+
+// Forward pass: input[36] → output (action in [-2, 2] via Hardtanh)
+float rl_forward(const float* input) {
+    float h1[RL_HIDDEN];
+    for (int j = 0; j < RL_HIDDEN; j++) {
+        float sum = policy_weights::LAYER_0_BIAS[j];
+        for (int k = 0; k < RL_INPUT_DIM; k++) {
+            sum += policy_weights::LAYER_0_WEIGHT[j * RL_INPUT_DIM + k] * input[k];
+        }
+        h1[j] = sum > 0.0f ? sum : 0.0f;  // ReLU
+    }
+    float h2[RL_HIDDEN];
+    for (int j = 0; j < RL_HIDDEN; j++) {
+        float sum = policy_weights::LAYER_1_BIAS[j];
+        for (int k = 0; k < RL_HIDDEN; k++) {
+            sum += policy_weights::LAYER_1_WEIGHT[j * RL_HIDDEN + k] * h1[k];
+        }
+        h2[j] = sum > 0.0f ? sum : 0.0f;  // ReLU
+    }
+    float raw_out = policy_weights::LAYER_2_BIAS[0];
+    for (int k = 0; k < RL_HIDDEN; k++) {
+        raw_out += policy_weights::LAYER_2_WEIGHT[k] * h2[k];
+    }
+    // Hardtanh(-2, 2)
+    return raw_out < -2.0f ? -2.0f : (raw_out > 2.0f ? 2.0f : raw_out);
+}
+
+// Build observation from current state and append to history
+float rl_infer_step(float theta_rad, float alpha_rad, float theta_dot, float alpha_dot) {
+    rl_obs_idx = (rl_obs_idx + 1) % RL_HISTORY_STEPS;
+    rl_obs_buf[rl_obs_idx][0] = theta_rad;
+    rl_obs_buf[rl_obs_idx][1] = alpha_rad;
+    rl_obs_buf[rl_obs_idx][2] = cosf(theta_rad);
+    rl_obs_buf[rl_obs_idx][3] = sinf(theta_rad);
+    rl_obs_buf[rl_obs_idx][4] = cosf(alpha_rad);
+    rl_obs_buf[rl_obs_idx][5] = sinf(alpha_rad);
+    rl_obs_buf[rl_obs_idx][6] = theta_dot;
+    rl_obs_buf[rl_obs_idx][7] = alpha_dot;
+    rl_obs_buf[rl_obs_idx][8] = rl_last_action;
+
+    // Flatten oldest-first into input[36]
+    float input[RL_INPUT_DIM];
+    for (int s = 0; s < RL_HISTORY_STEPS; s++) {
+        int si = (rl_obs_idx - RL_HISTORY_STEPS + 1 + s + RL_HISTORY_STEPS) % RL_HISTORY_STEPS;
+        for (int f = 0; f < RL_OBS_PER_STEP; f++) {
+            input[s * RL_OBS_PER_STEP + f] = rl_obs_buf[si][f];
+        }
+    }
+
+    float action = rl_forward(input);
+    rl_last_action = action;
+    return action;
+}
 
 #if defined(__has_include)
 #if __has_include(<INA219_WE.h>)
@@ -150,6 +221,7 @@ int mode = 0;
 int lastPwmCmd = 0;
 float lastServoPos = 0.0f;  // Posición del servo para soft saturation en setMotor
 float setpoint_deg = 0.0f;
+volatile float rlAction = 0.0f;  // Acción RL [-1.0, 1.0] — modo 6
 
 // PID Servo (modo 2)
 float Kp = 3.0f;
@@ -206,6 +278,171 @@ const unsigned long LQR_CATCH_MS = 400;  // Duración del catch mode en ms (era 
 float pendPosRawPrev = 0.0f;  // Para detectar spinning
 unsigned long spinCooldownMs = 0;  // Timestamp para cooldown post-spin
 const unsigned long SPIN_COOLDOWN_MS = 1000;  // Duración del cooldown post-spin (ms)
+// ── Filtro de Kalman (LQG) para LQR ─────────────────────────────────────────
+// Estado: x = [theta, alpha, dtheta, dalpha] (4 estados)
+// Medicion: z = [theta, alpha] (2 salidas — solo posiciones de encoder)
+// Modelo linealizado del pendulo rotatorio invertido cerca del equilibrio vertical
+bool kf_enabled = false;  // Toggle via HTTP: kf=1 / kf=0
+// Matrices del modelo (discretizado con Euler, Ts = CONTROL_PERIOD_US)
+// Ad = I + A*Ts (modelo discreto)
+const float KF_TS = 0.002f;  // 500 Hz (2 ms)
+// Parametros del modelo fisico para el KF
+const float KF_MOTOR_GAIN = 50.0f;   // Ganancia motor: PWM -> deg/s^2 (ajustar experimentalmente)
+const float KF_SERVO_FRIC = 2.0f;    // Friccion viscosa servo (1/s) — amortiguamiento
+const float KF_PEND_FREQ = 12.3f;    // sqrt(g/l) del pendulo [rad/s] ≈ sqrt(9.81/0.065)
+const float KF_PEND_FRIC = 0.5f;     // Friccion pendulo (1/s)
+// Covarianzas (ajustables)
+float kf_Q_pos = 0.1f;      // Ruido proceso: posicion (deg^2)
+float kf_Q_vel = 10.0f;     // Ruido proceso: velocidad (deg/s^2) — mayor = confia mas en mediciones
+float kf_R_pos = 0.5f;      // Ruido medicion: encoder (deg^2) — resolucion ~0.044°
+// Estado estimado del KF
+float kf_x[4] = {0.0f, 0.0f, 0.0f, 0.0f};  // [theta, alpha, dtheta, dalpha]
+// Covarianza del error P (4x4, almacenada como array plano)
+float kf_P[16] = {
+  100.0f, 0.0f, 0.0f, 0.0f,
+  0.0f, 100.0f, 0.0f, 0.0f,
+  0.0f, 0.0f, 1000.0f, 0.0f,
+  0.0f, 0.0f, 0.0f, 1000.0f
+};
+// Ganancia Kalman K (4x2)
+float kf_K[8] = {0};
+
+void kalmanReset() {
+  kf_x[0] = 0.0f; kf_x[1] = 0.0f; kf_x[2] = 0.0f; kf_x[3] = 0.0f;
+  // Reiniciar P a valores altos (incertidumbre inicial)
+  for (int i = 0; i < 16; i++) kf_P[i] = 0.0f;
+  kf_P[0] = 100.0f;   // theta
+  kf_P[5] = 100.0f;   // alpha
+  kf_P[10] = 1000.0f; // dtheta
+  kf_P[15] = 1000.0f; // dalpha
+}
+
+// Predict: x_pred = Ad * x + Bd * u
+//          P_pred = Ad * P * Ad^T + Q
+// Ad es I + A*Ts (Euler discreto):
+//   [1  0  Ts   0 ]
+//   [0  1   0  Ts ]
+//   [0  0 1-b1*Ts  0     ]   Bd = [0, 0, K_m*Ts, 0]^T
+//   [0  w2*Ts  0  1-b2*Ts]
+// donde w2 = (g/l)^2 (frecuencia natural al cuadrado, linearized)
+void kalmanPredict(float pwmCmd) {
+  const float Ts = KF_TS;
+  const float b1s = KF_SERVO_FRIC * Ts;
+  const float b2s = KF_PEND_FRIC * Ts;
+  const float w2Ts = KF_PEND_FREQ * KF_PEND_FREQ * Ts;
+  const float kmTs = KF_MOTOR_GAIN * Ts;
+  // x_pred = Ad * x + Bd * u
+  float x0 = kf_x[0] + Ts * kf_x[2];
+  float x1 = kf_x[1] + Ts * kf_x[3];
+  float x2 = (1.0f - b1s) * kf_x[2] + kmTs * pwmCmd;
+  float x3 = w2Ts * kf_x[1] + (1.0f - b2s) * kf_x[3];
+  kf_x[0] = x0; kf_x[1] = x1; kf_x[2] = x2; kf_x[3] = x3;
+  // P_pred = Ad * P * Ad^T + Q (expanding since Ad is sparse)
+  // Ad tiene forma: [I_2  Ts*I_2; Ad21  Ad22]
+  // P es simetrica 4x4: indices [0..3][0..3] = P[i*4+j]
+  float p00 = kf_P[0], p01 = kf_P[1], p02 = kf_P[2], p03 = kf_P[3];
+  float p11 = kf_P[5], p12 = kf_P[6], p13 = kf_P[7];
+  float p22 = kf_P[10], p23 = kf_P[11];
+  float p33 = kf_P[15];
+  // Ad*P (sparse multiplication)
+  // Row 0: [p00+Ts*p02, p01+Ts*p03, p02+Ts*p22, p03+Ts*p23]
+  float ap00 = p00 + Ts * p02;
+  float ap01 = p01 + Ts * p03;
+  float ap02 = p02 + Ts * p22;
+  float ap03 = p03 + Ts * p23;
+  // Row 1: [p01+Ts*p12, p11+Ts*p13, p12+Ts*p23, p13+Ts*p33]
+  float ap10 = p01 + Ts * p12;
+  float ap11 = p11 + Ts * p13;
+  float ap12 = p12 + Ts * p23;
+  float ap13 = p13 + Ts * p33;
+  // Row 2: [(1-b1s)*p02, (1-b1s)*p12, (1-b1s)*p22, (1-b1s)*p23]
+  float c2 = 1.0f - b1s;
+  float ap20 = c2 * p02;
+  float ap21 = c2 * p12;
+  float ap22 = c2 * p22;
+  float ap23 = c2 * p23;
+  // Row 3: [w2Ts*p01+(1-b2s)*p03, w2Ts*p11+(1-b2s)*p13, w2Ts*p12+(1-b2s)*p23, w2Ts*p13+(1-b2s)*p33]
+  float c3 = 1.0f - b2s;
+  float ap30 = w2Ts * p01 + c3 * p03;
+  float ap31 = w2Ts * p11 + c3 * p13;
+  float ap32 = w2Ts * p12 + c3 * p23;
+  float ap33 = w2Ts * p13 + c3 * p33;
+  // P_new = Ad*P*Ad^T + Q, but Ad^T has structure:
+  // [I_2      Ad21^T]
+  // [Ts*I_2  Ad22^T]
+  // where Ad21 = [0 w2Ts; 0 0], Ad22 = diag(1-b1s, 1-b2s)
+  // Resultado (aprovechando simetria):
+  kf_P[0]  = ap00 + Ts * ap02 + kf_Q_pos;                        // P[0][0]
+  kf_P[1]  = ap01 + Ts * ap03;                                     // P[0][1]
+  kf_P[2]  = ap02 + Ts * ap22;                                     // P[0][2]
+  kf_P[3]  = ap03 + Ts * ap23;                                     // P[0][3]
+  kf_P[5]  = ap11 + Ts * ap13 + kf_Q_pos;                        // P[1][1]
+  kf_P[6]  = ap12 + Ts * ap23;                                     // P[1][2]
+  kf_P[7]  = ap13 + Ts * ap33;                                     // P[1][3]
+  kf_P[10] = c2 * ap22 + kf_Q_vel;                                // P[2][2]
+  kf_P[11] = c2 * ap23;                                            // P[2][3]
+  kf_P[15] = w2Ts * ap13 + c3 * ap33 + kf_Q_vel;                 // P[3][3]
+  // Simetria
+  kf_P[4]  = kf_P[1];
+  kf_P[8]  = kf_P[2];  kf_P[9]  = kf_P[6];
+  kf_P[12] = kf_P[3];  kf_P[13] = kf_P[7];  kf_P[14] = kf_P[11];
+}
+
+// Update: z = [theta_meas, alpha_meas]
+// H = [1 0 0 0; 0 1 0 0] (mide solo posiciones)
+// S = H*P*H^T + R = P[0:2,0:2] + R  (2x2)
+// K = P*H^T * S^-1  (4x2)
+// x = x + K*(z - H*x)
+// P = (I - K*H)*P
+void kalmanUpdate(float theta_meas, float alpha_meas) {
+  // Innovation: y = z - H*x
+  float y0 = theta_meas - kf_x[0];
+  float y1 = alpha_meas - kf_x[1];
+  // S = H*P*H^T + R (2x2 symmetric)
+  float s00 = kf_P[0] + kf_R_pos;
+  float s01 = kf_P[1];
+  float s11 = kf_P[5] + kf_R_pos;
+  // S^-1 (2x2 analytic inverse)
+  float det = s00 * s11 - s01 * s01;
+  if (det < 1e-10f) det = 1e-10f;  // Evitar singularidad
+  float inv_det = 1.0f / det;
+  float si00 = s11 * inv_det;
+  float si01 = -s01 * inv_det;
+  float si11 = s00 * inv_det;
+  // K = P * H^T * S^-1
+  // P*H^T = columnas 0 y 1 de P (4x2)
+  // K[i][j] = sum_k P[i][k] * (H^T)[k][j] * S^-1...
+  // K = [P[0], P[1]] * S^-1  (donde P[k] = columna k de P)
+  float pcol0[4] = {kf_P[0], kf_P[4], kf_P[8], kf_P[12]};
+  float pcol1[4] = {kf_P[1], kf_P[5], kf_P[9], kf_P[13]};
+  for (int i = 0; i < 4; i++) {
+    kf_K[i * 2]     = pcol0[i] * si00 + pcol1[i] * si01;
+    kf_K[i * 2 + 1] = pcol0[i] * si01 + pcol1[i] * si11;
+  }
+  // x = x + K * y
+  for (int i = 0; i < 4; i++) {
+    kf_x[i] += kf_K[i * 2] * y0 + kf_K[i * 2 + 1] * y1;
+  }
+  // P = (I - K*H) * P
+  // K*H es 4x2 * 2x4 = 4x4, pero H es [I 0], entonces K*H solo llena cols 0-1
+  // P_new[i][j] = P[i][j] - K[i][0]*P[0][j] - K[i][1]*P[1][j]
+  float P_new[16];
+  for (int i = 0; i < 4; i++) {
+    for (int j = 0; j < 4; j++) {
+      P_new[i * 4 + j] = kf_P[i * 4 + j]
+                        - kf_K[i * 2] * kf_P[j]
+                        - kf_K[i * 2 + 1] * kf_P[4 + j];
+    }
+  }
+  // Copiar resultado y forzar simetria
+  for (int i = 0; i < 4; i++) {
+    for (int j = i; j < 4; j++) {
+      float val = 0.5f * (P_new[i * 4 + j] + P_new[j * 4 + i]);
+      kf_P[i * 4 + j] = val;
+      kf_P[j * 4 + i] = val;
+    }
+  }
+}
 
 // Si el motor gira en direccion opuesta al encoder (feedback positivo),
 // cambiar MOTOR_DIR a -1 para invertir la salida del PID.
@@ -425,6 +662,7 @@ void resetLqr() {
   lqr_prevAlpha = getPendulumPositionDeg();
   lqr_filteredVelTheta = 0.0f;
   lqr_filteredVelAlpha = 0.0f;
+  kalmanReset();
 }
 // Normaliza ángulo a [-180, 180]
 float normalizeAngle(float deg) {
@@ -541,7 +779,7 @@ void brakeMotor() {
 void setMode(int newMode) {
   // Punto único de cambio de modo. Usado por HTTP y Serial para garantizar
   // que las mismas rutinas de reset y flags se ejecuten siempre.
-  if (newMode < 0 || newMode > 5) return;
+  if (newMode < 0 || newMode > 7) return;
   mode = newMode;
   swing_recovering = false;  // Reset recovery state al cambiar de modo
   resetPid();
@@ -563,6 +801,23 @@ void setMode(int newMode) {
     swing_lastImprovementMs = millis();
     // Solo reset ke_gain si no fue configurado por HTTP
     // (ke_gain fue seteado por cmd?ke= antes de cmd?m=5)
+  }
+  if (mode == 6) {
+    rlAction = 0.0f;
+    lqr_prevTheta = getPositionDeg();
+    lqr_prevAlpha = getPendulumPositionDeg();
+    lqr_filteredVelTheta = 0.0f;
+    lqr_filteredVelAlpha = 0.0f;
+  }
+  if (mode == 7) {
+    // Reset RL inference buffer
+    rl_obs_idx = 0;
+    rl_last_action = 0.0f;
+    memset(rl_obs_buf, 0, sizeof(rl_obs_buf));
+    lqr_prevTheta = getPositionDeg();
+    lqr_prevAlpha = getPendulumPositionDeg();
+    lqr_filteredVelTheta = 0.0f;
+    lqr_filteredVelAlpha = 0.0f;
   }
 }
 
@@ -643,7 +898,12 @@ String getStateJson() {
   json += "\"i_ma\":" + String(currentmA, 3) + ",";
   json += "\"p_mw\":" + String(powermW, 3) + ",";
   json += "\"servo_ff_pwm\":" + String(servo_ff_pwm, 1) + ",";
-  json += "\"vel_alpha\":" + String(velAlpha, 3);
+  json += "\"vel_alpha\":" + String(velAlpha, 3) + ",";
+  json += "\"kf_enabled\":" + String(kf_enabled ? "true" : "false") + ",";
+  json += "\"kf_theta\":" + String(kf_x[0], 3) + ",";
+  json += "\"kf_alpha\":" + String(kf_x[1], 3) + ",";
+  json += "\"kf_dtheta\":" + String(kf_x[2], 2) + ",";
+  json += "\"kf_dalpha\":" + String(kf_x[3], 2);
   json += "}";
   return json;
 }
@@ -674,10 +934,47 @@ void handleState(AsyncWebServerRequest *request) {
   request->send(200, "application/json", getStateJson());
 }
 
+// ── RL Endpoints (modo 6) ─────────────────────────────────────────────────
+void handleRlState(AsyncWebServerRequest *request) {
+  // JSON compacto de baja latencia para el agente RL
+  const float theta_rad = getPositionDeg() * DEG_TO_RAD;
+  const float alpha_rad = getPendulumPositionDeg() * DEG_TO_RAD;
+  const float theta_dot = lqr_filteredVelTheta * DEG_TO_RAD;  // deg/s -> rad/s
+  const float alpha_dot = lqr_filteredVelAlpha * DEG_TO_RAD;  // deg/s -> rad/s
+  String json = "{";
+  json += "\"th\":" + String(theta_rad, 4) + ",";
+  json += "\"al\":" + String(alpha_rad, 4) + ",";
+  json += "\"thd\":" + String(theta_dot, 4) + ",";
+  json += "\"ald\":" + String(alpha_dot, 4);
+  json += "}";
+  request->send(200, "application/json", json);
+}
+
+void handleRlCmd(AsyncWebServerRequest *request) {
+  if (request->hasParam("a")) {
+    rlAction = constrain(request->getParam("a")->value().toFloat(), -1.0f, 1.0f);
+    lastCommandMs = millis();
+  }
+  if (request->hasParam("r")) {
+    resetPcnt(pcnt_servo_unit);
+    resetPcnt(pcnt_pendulum_unit);
+    positionOffsetDeg = 0.0f;
+    pendulumOffsetDeg = 0.0f;
+    lqr_filteredVelTheta = 0.0f;
+    lqr_filteredVelAlpha = 0.0f;
+    lqr_prevTheta = getPositionDeg();
+    lqr_prevAlpha = getPendulumPositionDeg();
+    rlAction = 0.0f;
+    setMotor(0);
+    lastCommandMs = millis();
+  }
+  request->send(200, "application/json", "{\"ok\":true}");
+}
+
 void handleCmd(AsyncWebServerRequest *request) {
   if (request->hasParam("m")) {
     const int m = request->getParam("m")->value().toInt();
-    if (m >= 0 && m <= 5) {
+    if (m >= 0 && m <= 6) {
       setMode(m);
       lastCommandMs = millis();
     }
@@ -821,6 +1118,10 @@ void handleCmd(AsyncWebServerRequest *request) {
     resetLqr();
   }
 
+  if (request->hasParam("kf")) {
+    kf_enabled = (request->getParam("kf")->value().toInt() != 0);
+    if (kf_enabled) kalmanReset();
+  }
   if (request->hasParam("ke")) {
     ke_gain = request->getParam("ke")->value().toFloat();
   }
@@ -1279,6 +1580,10 @@ void setup() {
   server.on("/cmd", HTTP_GET, handleCmd);
   server.on("/state", HTTP_OPTIONS, handleOptions);
   server.on("/cmd", HTTP_OPTIONS, handleOptions);
+  server.on("/rl_state", HTTP_GET, handleRlState);
+  server.on("/rl_cmd", HTTP_GET, handleRlCmd);
+  server.on("/rl_state", HTTP_OPTIONS, handleOptions);
+  server.on("/rl_cmd", HTTP_OPTIONS, handleOptions);
   server.on("/update", HTTP_POST, handleUpdate,
     [](AsyncWebServerRequest *request, const String& filename, size_t index,
        uint8_t *data, size_t len, bool final) {
@@ -1528,8 +1833,12 @@ void loop() {
       if (alpha < -180.0f) alpha += 360.0f;
       else if (alpha > 180.0f) alpha -= 360.0f;
       alpha = -alpha;  // Invertir: negativo=debajo, positivo=arriba
-
-      // Velocidades con filtro EMA (usar ángulo crudo para evitar errores en wrap-around)
+      // ── Filtro de Kalman: Predict + Update ─────────────────────────
+      if (kf_enabled) {
+        kalmanPredict((float)lastPwmCmd / (float)PWM_MAX);
+        kalmanUpdate(theta, alpha_raw);
+      }
+      // Velocidades con filtro EMA (siempre se calculan como fallback)
       const float rawVelTheta = -(theta - lqr_prevTheta) / dt;
       const float rawVelAlpha = -(alpha_raw - lqr_prevAlpha) / dt;
       lqr_filteredVelTheta = velAlpha * rawVelTheta + (1.0f - velAlpha) * lqr_filteredVelTheta;
@@ -1547,24 +1856,26 @@ void loop() {
         k2_eff = LQR_K2_NEAR;
         k4_eff = LQR_K4_NEAR;
       }
+      // Usar velocidades: KF si habilitado, EMA como fallback
+      float velTheta_ctrl = kf_enabled ? kf_x[2] : lqr_filteredVelTheta;
+      float velAlpha_ctrl = kf_enabled ? kf_x[3] : lqr_filteredVelAlpha;
       // Velocity-dependent gain scaling: boost damping for high-velocity entries
-      // Failures had 2x higher velocity (356°/s) than catches (174°/s)
-      float vel_alpha_dps = fabsf(lqr_filteredVelAlpha) * RAD_TO_DEG;
+      float vel_alpha_dps = fabsf(velAlpha_ctrl) * RAD_TO_DEG;
       if (vel_alpha_dps > 200.0f) {
-        float vel_scale = 1.0f + (vel_alpha_dps - 200.0f) / 300.0f;  // 1.0 at 200°/s, 2.0 at 500°/s
+        float vel_scale = 1.0f + (vel_alpha_dps - 200.0f) / 300.0f;
         vel_scale = constrain(vel_scale, 1.0f, 2.0f);
-        k4_eff *= vel_scale;  // Boost velocity gain for high-speed entries
+        k4_eff *= vel_scale;
       }
 
       // LQR: u = -(K1*theta + K2*alpha + K3*theta_dot + K4*alpha_dot)
       // alpha=0 es la posición vertical (invertido)
-      float u = -(lqr_K1 * theta + k2_eff * alpha + lqr_K3 * lqr_filteredVelTheta + k4_eff * lqr_filteredVelAlpha);
+      float u = -(lqr_K1 * theta + k2_eff * alpha + lqr_K3 * velTheta_ctrl + k4_eff * velAlpha_ctrl);
 
       // Energy dissipation dentro de LQR: agregar término de amortiguamiento
       // proporcional a la velocidad angular del péndulo. Esto reduce el ciclo
       // límite alrededor de ±180° sin afectar la estabilidad del LQR.
       if (abs(alpha) < LQR_NEAR_DEG) {
-        u -= LQR_DAMPING_GAIN * lqr_filteredVelAlpha;
+        u -= LQR_DAMPING_GAIN * velAlpha_ctrl;
       }
 
       pwm = constrain((int)(MOTOR_DIR * u), -70, 70);
@@ -1867,12 +2178,73 @@ void loop() {
 
       pwm = constrain(pwm, -PWM_MAX, PWM_MAX);
       setMotor(pwm);
+    } else if (mode == 6) {
+    // ══════════════════════════════════════════════════════════════════════════
+    // MODO 6: Deep RL — recibe acción por HTTP, aplica PWM directo
+    // Endpoints: GET /rl_state (obs), GET /rl_cmd?a=X (action)
+    // ══════════════════════════════════════════════════════════════════════════
+      // Safety: brake if servo out of range
+      if (fabsf(pos) > 90.0f) {
+        float brake_dir = (pos > 0) ? -1.0f : 1.0f;
+        setMotor((int)(brake_dir * 70.0f));
+        return;
+      }
+
+      // Compute velocities (same EMA filter as LQR — degrees internally)
+      const float theta_rl = pos;
+      const float alpha_rl_raw = pendPosRaw;
+      const float rawVelTheta_rl = -(theta_rl - lqr_prevTheta) / dt;
+      const float rawVelAlpha_rl = -(alpha_rl_raw - lqr_prevAlpha) / dt;
+      lqr_filteredVelTheta = velAlpha * rawVelTheta_rl + (1.0f - velAlpha) * lqr_filteredVelTheta;
+      lqr_filteredVelAlpha = VEL_ALPHA_PEND * rawVelAlpha_rl + (1.0f - VEL_ALPHA_PEND) * lqr_filteredVelAlpha;
+      lqr_prevTheta = theta_rl;
+      lqr_prevAlpha = alpha_rl_raw;
+
+      // Apply RL action as PWM
+      int rl_pwm = (int)(rlAction * PWM_MAX);
+      rl_pwm = constrain(rl_pwm, -PWM_MAX, PWM_MAX);
+      setMotor(rl_pwm);
+    } else if (mode == 7) {
+    // ══════════════════════════════════════════════════════════════════════════
+    // MODO 7: On-device RL inference — forward pass en ESP32
+    // Red entrenada: [36→64→64→1] ReLU, Hardtanh(-2,2)
+    // Observación: 4 pasos × [θ, α, cosθ, sinθ, cosα, sinα, θ̇, α̇, action]
+    // ══════════════════════════════════════════════════════════════════════════
+      // Safety: brake if servo out of range
+      if (fabsf(pos) > 90.0f) {
+        float brake_dir = (pos > 0) ? -1.0f : 1.0f;
+        setMotor((int)(brake_dir * 70.0f));
+        return;
+      }
+
+      // Compute velocities (EMA filter — same as mode 6)
+      const float rawVelTheta7 = -(pos - lqr_prevTheta) / dt;
+      const float rawVelAlpha7 = -(pendPosRaw - lqr_prevAlpha) / dt;
+      lqr_filteredVelTheta = velAlpha * rawVelTheta7 + (1.0f - velAlpha) * lqr_filteredVelTheta;
+      lqr_filteredVelAlpha = VEL_ALPHA_PEND * rawVelAlpha7 + (1.0f - VEL_ALPHA_PEND) * lqr_filteredVelAlpha;
+      lqr_prevTheta = pos;
+      lqr_prevAlpha = pendPosRaw;
+
+      // Convert to radians for network input
+      const float theta_rad = pos * DEG_TO_RAD;
+      const float alpha_rad = pendPosRaw * DEG_TO_RAD;
+      const float theta_dot_rad = lqr_filteredVelTheta * DEG_TO_RAD;
+      const float alpha_dot_rad = lqr_filteredVelAlpha * DEG_TO_RAD;
+
+      // Run on-device inference
+      float action = rl_infer_step(theta_rad, alpha_rad, theta_dot_rad, alpha_dot_rad);
+
+      // Normalize from [-2, 2] to [-1, 1] for PWM (network output range)
+      float action_norm = action * 0.5f;
+      action_norm = constrain(action_norm, -1.0f, 1.0f);
+      int rl_pwm = (int)(action_norm * PWM_MAX);
+      rl_pwm = constrain(rl_pwm, -PWM_MAX, PWM_MAX);
+      setMotor(rl_pwm);
     }
   }
   const unsigned long nowMs = millis();
-
   // Failsafe: si no hay comandos recientes en modos activos, detener.
-  if (ENABLE_COMMAND_TIMEOUT && mode >= 1 && mode <= 5 && (nowMs - lastCommandMs > COMMAND_TIMEOUT_MS)) {
+  if (ENABLE_COMMAND_TIMEOUT && mode >= 1 && mode <= 7 && (nowMs - lastCommandMs > COMMAND_TIMEOUT_MS)) {
     safeStop();
   }
 

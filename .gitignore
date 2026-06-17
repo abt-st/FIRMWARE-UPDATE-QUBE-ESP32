@@ -68,3 +68,5 @@ docs/mine/
 # ── Backup L298N (documentación antigua antes de migrar a BTS7960) ──────────
 backup_l298n/
 tesis_usach/
+# ── Estudios de literatura (generados por AI) ──────────────────────────────
+docs/literature_studies/

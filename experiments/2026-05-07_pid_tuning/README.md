@@ -12,7 +12,7 @@ Capturar datos de respuesta del sistema de control PID en lazo cerrado para eval
 | Driver de motor | L298N (H-bridge) |
 | Sensor de corriente | INA219 (I2C) |
 | Motor | DC con encoder incremental (Premotec 990412016913) |
-| Alimentación | 12V LiPo 3S |
+| Alimentación | 15V LiPo 4S |
 
 ## Parámetros PID Utilizados
 

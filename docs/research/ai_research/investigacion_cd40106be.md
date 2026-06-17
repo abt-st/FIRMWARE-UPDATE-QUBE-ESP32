@@ -79,9 +79,9 @@ Esta histéresis elimina el **rebote eléctrico** en señales ruidosas o de tran
 | Parámetro | Valor | Implicancia |
 |-----------|-------|-------------|
 | Tensión mínima de operación | 3 V | Puede operar con lógica 3.3 V del ESP32 |
-| Tensión máxima | 18 V | Compatible con bus de 12 V del sistema |
+| Tensión máxima | 18 V | Compatible con bus de 15 V del sistema |
 | Histéresis típica a 5 V | 0.8 V | Rechaza ruido de hasta ±400 mV en la entrada |
-| Histéresis típica a 12 V | 2.0 V | Robusto para señales de encoder en bus de potencia |
+| Histéresis típica a 15 V | 2.0 V | Robusto para señales de encoder en bus de potencia |
 | Fanout TTL a 5 V | ~2 cargas LS | Suficiente para excitar 1–2 GPIO de ESP32 |
 | Inmunidad a ruido | Muy alta (CMOS con histéresis) | Ideal para ambiente de motor DC con conmutación BTS7960 |
 
@@ -89,7 +89,7 @@ Esta histéresis elimina el **rebote eléctrico** en señales ruidosas o de tran
 
 | Solución | Ventajas | Desventajas |
 |----------|----------|-------------|
-| **CD40106BE** | Histéresis ajustable por Vcc, 6 canales, bajo costo (~$0.50 USD), ampliamente disponible, tolerante a 5–12 V | Mayor espacio físico (DIP-14), consumo ligeramente mayor que soluciones SMD |
+| **CD40106BE** | Histéresis ajustable por Vcc, 6 canales, bajo costo (~$0.50 USD), ampliamente disponible, tolerante a 5–15 V | Mayor espacio físico (DIP-14), consumo ligeramente mayor que soluciones SMD |
 | Divisor resistivo puro | Simple, sin componente activo | Sin histéresis, sin limpieza de ruido, nivel lógico marginal |
 | Level shifter dedicado (TXS0102) | Bidireccional, SMD pequeño | Sin histéresis, sensible a velocidad de transición, más caro |
 | Optoacoplador | Aislamiento galvánico | Más caro, mayor consumo, más partes externas |
@@ -289,12 +289,12 @@ Encoder 5V ──┬── R_series (2.2kΩ) ──┬── INx (CD40106BE @ Vc
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                      BUS 12V DC                                 │
+│                      BUS 15V DC                                 │
 └──────┬───────────────────────┬──────────────────────────┬───────┘
        │                       │                          │
        ▼                       ▼                          ▼
    LM2596                   BTS7960                    Encoder servo
-   (12V→5V)           (Dual Half-Bridge)              (5V push-pull)
+   (15V→5V)           (Dual Half-Bridge)              (5V push-pull)
        │                       │                          │
        ▼                       │                     ┌────┴────┐
    Reg 3.3V                   │                     │CD40106BE│
