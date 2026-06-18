@@ -159,6 +159,20 @@ def make_metrics_callback(enabled: bool, log_freq: int = 1000) -> Any:
                     # MLflow metric names allow alphanumerics, _ - . / and space.
                     _mlflow.log_metric(key, float(value), step=self.num_timesteps)
 
+            # Episode performance metrics (ep_rew_mean / ep_len_mean) are flushed
+            # and cleared from the logger between dumps, so reading name_to_value
+            # misses them. Recompute them directly from SB3's episode buffer.
+            ep_buffer = getattr(self.model, "ep_info_buffer", None)
+            if ep_buffer:
+                from stable_baselines3.common.utils import safe_mean
+
+                _mlflow.log_metric(
+                    "rollout/ep_rew_mean", safe_mean([ep["r"] for ep in ep_buffer]), step=self.num_timesteps
+                )
+                _mlflow.log_metric(
+                    "rollout/ep_len_mean", safe_mean([ep["l"] for ep in ep_buffer]), step=self.num_timesteps
+                )
+
         def _on_step(self) -> bool:
             if self.n_calls % self.freq == 0:
                 self._log_current()
