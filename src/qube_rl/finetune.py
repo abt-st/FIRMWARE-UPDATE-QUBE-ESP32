@@ -44,7 +44,6 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--lr", type=float, default=1e-4, help="New learning rate")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Random seed (omit for non-deterministic)")
     parser.add_argument("--save-dir", default="models", help="Directory to save the fine-tuned model")
-    parser.add_argument("--log-dir", default="runs", help="TensorBoard log directory")
     parser.add_argument(
         "--freq",
         type=int,
@@ -54,7 +53,7 @@ def main(argv: list[str] | None = None) -> None:
         "changes the policy's temporal context (e.g. 80 ms at 50 Hz vs 400 ms at 10 Hz).",
     )
     parser.add_argument("--timeout", type=float, default=1.0, help="HTTP timeout (seconds)")
-    parser.add_argument("--mlflow", action="store_true", help="Log this run to MLflow (in addition to TensorBoard)")
+    parser.add_argument("--mlflow", action="store_true", help="Track this run with MLflow (params, metrics, artifact)")
     parser.add_argument(
         "--mlflow-uri", default=None, help="MLflow tracking URI (default: sqlite:///mlflow.db or env var)"
     )
@@ -104,7 +103,6 @@ def main(argv: list[str] | None = None) -> None:
             model.learn(
                 total_timesteps=args.timesteps,
                 reset_num_timesteps=False,
-                tb_log_name="finetune",
                 progress_bar=True,
                 callback=make_metrics_callback(enabled=args.mlflow),
             )

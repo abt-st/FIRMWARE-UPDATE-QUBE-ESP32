@@ -398,8 +398,8 @@ y deliberada para facilitar el sim-to-real.
 
 ## 10. Métricas y diagnóstico de entrenamiento
 
-Cuando entrenas, mirar las curvas correctas te dice si va bien. Las que reporta SB3/este repo
-(`auto_train.py`, TensorBoard, opcionalmente MLflow):
+Cuando entrenas, mirar las curvas correctas te dice si va bien. El tracking es con **MLflow**
+(`--mlflow`, UI en `mlflow ui --backend-store-uri sqlite:///mlflow.db`). Métricas clave:
 
 | Métrica | Qué es | Qué buscar |
 |---|---|---|

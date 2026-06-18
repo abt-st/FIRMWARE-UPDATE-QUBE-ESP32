@@ -1,3 +1,17 @@
+## [1.42.1] — 2026-06-18
+### MLflow como tracker único: se elimina TensorBoard; métricas de episodio
+
+- **TensorBoard eliminado** (MLflow lo reemplaza): quitada la dependencia
+  `tensorboard` (deps core y extra `rl`), `tensorboard_log`/`--log-dir`/`tb_log_name`
+  de train/fast_train/finetune/auto_train, y el lector `EventAccumulator` de
+  `auto_train` (ahora las métricas de episodio salen de `model.ep_info_buffer`).
+  `runs/` queda ignorado (logs antiguos).
+- **Fix del callback MLflow**: ahora registra también `rollout/ep_rew_mean` y
+  `ep_len_mean` (recomputadas desde `ep_info_buffer`), no solo las `train/*` losses
+  — antes se perdían por el timing de volcado del logger de SB3.
+- Verificado: entrenamiento de 30k pasos logueado a MLflow (UI en puerto 5000,
+  `sqlite:///mlflow.db`); 96 tests en verde en Python 3.13.
+
 ## [1.42.0] — 2026-06-17
 ### Auditoría estructural: correctitud, reproducibilidad e higiene del pipeline RL
 

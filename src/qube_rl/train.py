@@ -7,7 +7,7 @@ Usage::
     uv run python -m qube_rl.train --net-arch 64 --reward swingup_balance
 
 The trained model is saved to ``models/qube_sac_sim.zip``.
-TensorBoard logs are written to ``runs/``.
+Pass ``--mlflow`` to track metrics, losses and the model artifact with MLflow.
 
 Default network size is [64, 64] — compatible with RLtools C++ inference
 on ESP32 (~17 KB flash, ~1-2 KB RAM).  Use ``--net-arch`` to change.
@@ -73,14 +73,13 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Random seed (omit for non-deterministic)")
     parser.add_argument("--save-dir", default="models", help="Directory to save the model")
-    parser.add_argument("--log-dir", default="runs", help="TensorBoard log directory")
     parser.add_argument("--verbose", type=int, default=1, help="SB3 verbosity (0/1/2)")
-    parser.add_argument("--mlflow", action="store_true", help="Log this run to MLflow (in addition to TensorBoard)")
+    parser.add_argument("--mlflow", action="store_true", help="Track this run with MLflow (params, metrics, artifact)")
     parser.add_argument(
         "--mlflow-uri", default=None, help="MLflow tracking URI (default: sqlite:///mlflow.db or env var)"
     )
     parser.add_argument("--mlflow-experiment", default="qube_sac", help="MLflow experiment name")
-    parser.add_argument("--run-name", default=None, help="MLflow/TensorBoard run name")
+    parser.add_argument("--run-name", default=None, help="MLflow run name")
     args = parser.parse_args(argv)
 
     set_global_seeds(args.seed)
@@ -116,7 +115,6 @@ def main(argv: list[str] | None = None) -> None:
         gradient_steps=sac_cfg.gradient_steps,
         learning_starts=sac_cfg.learning_starts,
         seed=args.seed,
-        tensorboard_log=args.log_dir,
         verbose=args.verbose,
         policy_kwargs=dict(
             net_arch=dict(pi=[args.net_arch, args.net_arch], qf=[args.net_arch, args.net_arch]),

@@ -62,9 +62,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--buffer-size", type=int, default=sac_cfg.buffer_size, help="Replay buffer size")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Random seed (omit for non-deterministic)")
     parser.add_argument("--save-dir", default="models", help="Directory to save models")
-    parser.add_argument("--log-dir", default="runs", help="TensorBoard log directory")
-    parser.add_argument("--exp-name", default="fast", help="Experiment name for TensorBoard")
-    parser.add_argument("--mlflow", action="store_true", help="Log this run to MLflow (in addition to TensorBoard)")
+    parser.add_argument("--exp-name", default="fast", help="Experiment/run name")
+    parser.add_argument("--mlflow", action="store_true", help="Track this run with MLflow (params, metrics, artifact)")
     parser.add_argument(
         "--mlflow-uri", default=None, help="MLflow tracking URI (default: sqlite:///mlflow.db or env var)"
     )
@@ -90,7 +89,6 @@ def main(argv: list[str] | None = None) -> None:
         gradient_steps=sac_cfg.gradient_steps,
         learning_starts=sac_cfg.learning_starts,
         seed=args.seed,
-        tensorboard_log=args.log_dir,
         verbose=1,
         policy_kwargs=dict(net_arch=dict(pi=[args.net_arch, args.net_arch], qf=[args.net_arch, args.net_arch])),
     )
@@ -122,7 +120,6 @@ def main(argv: list[str] | None = None) -> None:
             model.learn(
                 total_timesteps=args.chunk,
                 reset_num_timesteps=False,
-                tb_log_name=f"{args.exp_name}_c{chunk}",
                 progress_bar=False,
                 callback=callback,
             )

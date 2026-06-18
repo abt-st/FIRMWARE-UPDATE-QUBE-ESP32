@@ -1,9 +1,8 @@
 """Optional MLflow experiment tracking for QUBE RL training.
 
-Complements (does not replace) the TensorBoard logging already produced by
-Stable-Baselines3.  Integration is non-invasive: an SB3 callback forwards the
-metrics SB3 already records to MLflow, so the existing TensorBoard behaviour is
-untouched.
+MLflow is the project's experiment tracker.  Integration is non-invasive: an
+SB3 callback forwards the metrics/losses SB3 records (plus episode reward/length
+from the rollout buffer) to MLflow, alongside run params and the model artifact.
 
 Everything degrades gracefully: if ``mlflow`` is not installed or tracking is
 disabled, the helpers become no-ops and training proceeds normally.

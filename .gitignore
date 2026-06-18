@@ -61,7 +61,7 @@ logs/
 # Checkpoints SAC: no versionar binarios. El header exportado SÍ se mantiene.
 models/*.zip
 !models/policy_weights.h
-# Logs de TensorBoard
+# Logs antiguos de TensorBoard (removido; ya no se generan)
 runs/
 # MLflow (tracking local)
 mlflow.db

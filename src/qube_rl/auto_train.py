@@ -64,13 +64,12 @@ def train_and_evaluate(
         gradient_steps=1,
         learning_starts=1000,
         seed=seed,
-        tensorboard_log="runs",
         verbose=0,
         policy_kwargs=dict(net_arch=dict(pi=[net_size, net_size], qf=[net_size, net_size])),
     )
 
     t0 = time.time()
-    model.learn(total_timesteps=timesteps, progress_bar=False, tb_log_name=run_name)
+    model.learn(total_timesteps=timesteps, progress_bar=False)
     elapsed = time.time() - t0
 
     # Save model
@@ -79,37 +78,10 @@ def train_and_evaluate(
     model_path = save_dir / f"qube_sac_{run_name}.zip"
     model.save(str(model_path))
 
-    # Read TensorBoard metrics
-    from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
-
-    run_dirs = sorted(Path("runs").glob(f"{run_name}_*"), key=lambda p: p.stat().st_mtime)
-    if run_dirs:
-        ea = EventAccumulator(str(run_dirs[-1]))
-        ea.Reload()
-        tags = ea.Tags().get("scalars", [])
-
-        metrics = {}
-        for tag in tags:
-            events = ea.Scalars(tag)
-            if events:
-                metrics[tag] = {"last_step": events[-1].step, "last_value": events[-1].value, "count": len(events)}
-
-        # Read episode data from monitor.csv
-        monitor_files = list(run_dirs[-1].glob("*.monitor.csv"))
-        ep_lengths = []
-        ep_rewards = []
-        if monitor_files:
-            import csv
-
-            with open(monitor_files[0]) as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    ep_lengths.append(float(row["l"]))
-                    ep_rewards.append(float(row["r"]))
-    else:
-        metrics = {}
-        ep_lengths = []
-        ep_rewards = []
+    # Episode metrics from SB3's rolling buffer (recent ~100 episodes).
+    ep_infos = list(model.ep_info_buffer or [])
+    ep_lengths = [ep["l"] for ep in ep_infos]
+    ep_rewards = [ep["r"] for ep in ep_infos]
 
     return {
         "run_name": run_name,
@@ -117,7 +89,6 @@ def train_and_evaluate(
         "elapsed_s": elapsed,
         "fps": timesteps / elapsed if elapsed > 0 else 0,
         "model_path": str(model_path),
-        "metrics": metrics,
         "episodes": len(ep_lengths),
         "ep_len_mean": float(np.mean(ep_lengths)) if ep_lengths else 0,
         "ep_len_max": float(np.max(ep_lengths)) if ep_lengths else 0,
