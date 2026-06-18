@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QUBE ESP32 Control</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<link rel="icon" href="data:,">
+<script src="chart.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,sans-serif;background:#0d1117;color:#c9d1d9;padding:12px;overflow-x:hidden}
@@ -31,6 +32,10 @@ button:hover{background:#2ea043}
 button.danger{background:#da3633}
 button.danger:hover{background:#f85149}
 button.secondary{background:#30363d;color:#c9d1d9}
+button:disabled{opacity:.4;cursor:default}
+.ota-bar{width:100%;height:14px;background:#0d1117;border:1px solid #30363d;border-radius:4px;overflow:hidden;margin:4px 0}
+.ota-fill{height:100%;width:0%;background:#58a6ff;transition:width .2s;border-radius:3px}
+.ota-status{font-size:.7rem;color:#8b949e;margin-top:2px}
 .grow{display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px}
 .gi{display:flex;align-items:center;gap:3px;font-size:.75rem}
 .gi label{min-width:22px;text-align:right}
@@ -44,7 +49,6 @@ button.secondary{background:#30363d;color:#c9d1d9}
 <div class="topbar">
   <h1>QUBE ESP32</h1>
   <span class="status err" id="status">Desconectado</span>
-  <button class="secondary" id="btnCSV">Exportar CSV</button>
 </div>
 
 <div class="main">
@@ -60,13 +64,13 @@ button.secondary{background:#30363d;color:#c9d1d9}
   <h2>Control</h2>
   <div class="row">
     <label>Modo:</label>
-    <select id="mode"><option value="0" selected>STOP</option><option value="1">PWM</option><option value="2">PID Servo</option><option value="4">LQR</option><option value="5">Swing-up</option><option value="6">Deep RL</option></select>
+    <select id="mode"><option value="0" selected>STOP</option><option value="1">PWM</option><option value="2">PID Servo</option><option value="4">LQR</option><option value="5">Swing-up</option><option value="6">Deep RL (HTTP)</option><option value="7">Deep RL (chip)</option></select>
     <button onclick="cmd('m='+el('mode').value)">Aplicar</button>
     <button class="danger" onclick="cmd('x=1')">STOP</button>
   </div>
   <div class="row">
     <label>SP S:</label><input type="number" id="sp" value="0" step="1">
-    <button onclick="cmd('s='+el('sp').value)">Set</button>
+    <button onclick="cmd('m=2&s='+el('sp').value);el('mode').value='2'">Set Servo</button>
   </div>
   <div class="row">
     <label>PWM:</label><input type="number" id="pwm" value="0" step="10" min="-255" max="255">
@@ -159,6 +163,16 @@ button.secondary{background:#30363d;color:#c9d1d9}
     <div class="gi"><label>Kd</label><input type="number" id="kdc" value="0.1" step="0.05"></div>
     <button class="ok-btn" onclick="cmd('kpc='+el('kpc').value+'&kic='+el('kic').value+'&kdc='+el('kdc').value)">OK</button>
   </div>
+</div>
+
+<div class="panel">
+  <h2>Firmware OTA</h2>
+  <div class="row">
+    <input type="file" id="otaFile" accept=".bin" style="font-size:.7rem;color:#c9d1d9;max-width:180px">
+    <button onclick="doOTA()">Flashear</button>
+  </div>
+  <div class="ota-bar"><div class="ota-fill" id="otaFill"></div></div>
+  <div class="ota-status" id="otaSt">Seleccion&aacute; un .bin</div>
 </div>
 
 </div>
@@ -287,16 +301,18 @@ function connect(){
     try{
       var d=JSON.parse(e.data);
       var t=((Date.now()-t0)/1000).toFixed(1);
+      var inaOk=d.ina_ok!==false;
       pushChart(cS,d.position_deg||0,t);
       pushChart(cP,d.pend_position_deg||0,t);
       pushChart(cW,d.pwm||0,t);
-      pushChart(cPw,d.p_mw||0,t);
+      pushChart(cPw,inaOk?(d.p_mw||0):null,t);   /* gap si el INA219 no responde */
       flushDirty=true;
       if(recording){
-        rows.push({time_s:t,mode:d.mode,position_deg:d.position_deg,setpoint_deg:d.setpoint_deg,pend_position_deg:d.pend_position_deg,pwm:d.pwm,voltage_v:d.voltage_v,current_mA:d.i_ma,power_mW:d.p_mw,_ms:Date.now()});
+        rows.push({time_s:t,mode:d.mode,position_deg:d.position_deg,setpoint_deg:d.setpoint_deg,pend_position_deg:d.pend_position_deg,pwm:d.pwm,voltage_v:inaOk?d.v_bus:'',current_mA:inaOk?d.i_ma:'',power_mW:inaOk?d.p_mw:'',_ms:Date.now()});
       }
       if(d.gain_scheduling!==undefined)el('gs').value=d.gain_scheduling?'1':'0';
       if(d.mode!==undefined&&!modeUserOverride)el('mode').value=d.mode;
+      if(d.position_deg!==undefined)el('rlInfo').textContent='θ:'+(+d.position_deg).toFixed(1)+'° α:'+(+d.pend_position_deg).toFixed(1)+'°';
     }catch(ex){}
   };
 }
@@ -324,6 +340,25 @@ function rlPoll(){
     var ald=(d.ald*180/Math.PI).toFixed(1);
     el('rlInfo').textContent='\u03b8:'+th+'\u00b0 \u03b1:'+al+'\u00b0 \u03b8\u0307:'+thd+' \u03b1\u0307:'+ald;
   }).catch(function(){el('rlInfo').textContent='Error de conexi\u00f3n';});
+}
+
+/* \u2500\u2500 OTA \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+function doOTA(){
+  var f=el('otaFile').files[0];
+  if(!f){el('otaSt').textContent='Eleg\u00ed un archivo .bin';return;}
+  if(!f.name.endsWith('.bin')){el('otaSt').textContent='Solo archivos .bin';return;}
+  var bar=el('otaFill'),s=el('otaSt');
+  bar.style.width='0%';s.textContent='Subiendo...';
+  var fd=new FormData();fd.append('firmware',f,f.name);
+  var xhr=new XMLHttpRequest();
+  xhr.open('POST','/update',true);
+  xhr.upload.onprogress=function(e){if(e.lengthComputable){bar.style.width=Math.round(e.loaded/e.total*100)+'%';}};
+  xhr.onload=function(){
+    if(xhr.status===200){bar.style.width='100%';s.textContent='\u00a1OK! Reiniciando ESP32...';}
+    else{s.textContent='Error: '+xhr.status+' '+xhr.responseText;}
+  };
+  xhr.onerror=function(){s.textContent='Error de conexi\u00f3n';};
+  xhr.send(fd);
 }
 </script>
 </body>

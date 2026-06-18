@@ -84,7 +84,7 @@ Fuentes de contenido del proyecto:
 - `docs/validation/` — validación científica
 - `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` — código firmware
 - `experiments/` — datos experimentales CSV
-- `gui/app.py` — interfaz gráfica
+- `src/firmware/data/index.html` — GUI web embebida
 
 ### 4. Validación de Formato
 - Verificar márgenes: top=4cm, left=4cm, right=2.5cm, bottom=2.5cm
@@ -253,7 +253,7 @@ No considera rediseño mecánico completo ni reemplazo de actuadores principales
 | `docs/validation/lista_verificacion.md` | 160 items verificados | Validación |
 | `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` | Código fuente firmware | Cap 3 |
 | `experiments/` | Datos CSV experimentales | Cap 4 |
-| `gui/app.py` | Interfaz gráfica Python | Cap 3 |
+| `src/firmware/data/index.html` | GUI web embebida | Cap 3 |
 | `CHANGELOG.md` | Historial de versiones | Cap 3 |
 
 ---

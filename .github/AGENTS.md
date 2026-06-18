@@ -11,19 +11,21 @@ Instrucciones base para agentes AI que trabajen en este repositorio.
 
 - `firmware/esp32_qube_l298n/esp32_qube_l298n.ino`: firmware principal del sistema de control.
 - `firmware/CHANGELOG.md`: historial de versiones del firmware.
-- `gui/app.py`: interfaz Tkinter para monitoreo y control.
-- `gui/esp32_client.py`: cliente HTTP (`/state`, `/cmd`) para ESP32.
+- `src/firmware/data/index.html`: GUI web embebida (SPIFFS) para monitoreo y control.
 - `Data/`: capturas CSV de sesiones experimentales.
 - `INVESTIGACION_ARQUITECTURA_MODERNIZACION_QUBE.md`: documento principal de investigacion.
 - `Referencias/build_pdf.ps1`: script para compilar investigacion a PDF.
 
 ## Comandos de trabajo frecuentes
 
-### GUI (Python)
+### GUI web (embebida en el ESP32)
+
+La GUI se sirve desde SPIFFS; subirla con PlatformIO y abrirla en el navegador:
 
 ```powershell
-python -m pip install -r gui/requirements.txt
-python gui/app.py
+cd src/firmware
+pio run --target uploadfs        # sube data/ (index.html + chart.min.js) a SPIFFS
+# luego abrir http://192.168.4.1/ conectado al AP QUBE-ESP32
 ```
 
 ### Compilar PDF de investigacion
@@ -44,7 +46,7 @@ Nota: si el PDF destino esta abierto, el script genera un nombre alternativo con
 
 ## Pitfalls conocidos
 
-- `gui/esp32_client.py` usa por defecto la IP `192.168.4.1` (AP del ESP32).
+- La GUI web usa `location.hostname`; en modo AP el ESP32 responde en `192.168.4.1`.
 - En `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` existen credenciales STA configurables (`STA_SSID`, `STA_PASS`); tratarlas con cuidado y no exponerlas fuera del repo.
 - En compilacion PDF, un archivo abierto puede bloquear sobrescritura.
 

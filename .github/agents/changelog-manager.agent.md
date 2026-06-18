@@ -44,7 +44,7 @@ git diff --name-only HEAD
 Archivos clave que requieren registro en CHANGELOG:
 - `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` → **siempre**
 - `firmware/platformio.ini` → si cambian dependencias, flags o plataforma
-- `gui/app.py`, `gui/esp32_client.py` → si cambia la interfaz
+- `src/firmware/data/index.html` → si cambia la GUI web embebida
 - `pyproject.toml` → si cambian dependencias Python
 - `README.md` → solo si hay cambios significativos de arquitectura
 - `mcp/esp32_qube_server.py` → si cambian herramientas MCP

@@ -186,8 +186,13 @@ src/firmware/
 ├── esp32_qube_l298n/
 │   ├── esp32_qube_l298n.ino   ← Firmware principal (~2290 líneas)
 │   └── credentials.h          ← WiFi STA (gitignored)
+├── data/                      ← GUI web embebida (SPIFFS) — ver data/README.md
+│   └── index.html
 └── platformio.ini             ← Configuración PlatformIO
 ```
+
+> La **GUI web** servida por el ESP32 (`http://192.168.4.1/`) se documenta en
+> [`src/firmware/data/README.md`](src/firmware/data/README.md).
 
 ### Tasks FreeRTOS
 
@@ -303,9 +308,8 @@ uv run python -m qube_rl.export_rltools --model models/qube_sac_64x2.zip
 
 ```
 src/
-├── firmware/                  ← Firmware ESP32 (PlatformIO)
+├── firmware/                  ← Firmware ESP32 (PlatformIO) + GUI web (data/)
 ├── qube_rl/                   ← Deep RL (entrenamiento, inferencia, export)
-├── qube_ui/                   ← GUI Tkinter (app.py, client.py, buffer.py)
 └── qube_analysis/             ← Análisis de datos (plotter.py, metrics.py)
 ```
 
@@ -333,20 +337,21 @@ uv run mcp dev mcp/esp32_qube_server.py  # Desarrollo
 
 ## GUI
 
-```bash
-make run                           # Opción 1
-uv run python gui/app.py           # Opción 2
-```
+La interfaz es una **GUI web embebida** servida por el propio ESP32 desde SPIFFS
+(no requiere instalar nada en el PC).
 
-1. Encender ESP32 con firmware flasheado
-2. Conectar PC a la red WiFi del ESP32 (`QUBE-ESP32` / `qube1234`)
-3. Abrir la GUI — ingresa IP y haz clic en "Conectar"
+1. Flashear firmware + filesystem (`pio run -t upload` y `pio run -t uploadfs`)
+2. Conectar el PC a la red WiFi del ESP32 (`QUBE-ESP32` / `qube1234`)
+3. Abrir `http://192.168.4.1/` en el navegador
 
-**Panel de gráficas (4 subplots):**
-1. **Servo** — posición angular y setpoint
-2. **Péndulo** — posición angular y setpoint
-3. **PWM** — señal de control (−255 a +255)
-4. **Potencia** — corriente (mA) y voltaje bus (V) del INA219
+**Panel de gráficas (4):** Servo (°), Péndulo (°), PWM (−255..255), Potencia (mW).
+Incluye control de modos, recolección/exportación CSV, tuning PID/LQR/swing-up,
+gain scheduling, Deep RL y flasheo OTA por web.
+
+> Documentación completa: [`src/firmware/data/README.md`](src/firmware/data/README.md)
+>
+> _Nota: la antigua GUI de escritorio Tkinter (`gui/app.py`, `src/qube_ui/`) fue
+> eliminada; la GUI web la reemplaza por completo._
 
 ---
 
@@ -358,7 +363,6 @@ make lint        # uv run ruff check .
 make format      # uv run ruff format .
 make check       # lint + format (CI)
 make typecheck   # uv run pyright .
-make run         # uv run python gui/app.py
 make test        # uv run pytest -v
 make clean       # Limpiar __pycache__, .pyc, etc.
 make help        # Mostrar todos los goals

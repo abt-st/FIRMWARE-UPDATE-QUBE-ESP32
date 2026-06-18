@@ -231,7 +231,7 @@ tesis_usach/
 | `docs/validation/resumen_ejecutivo.md` | Validación científica |
 | `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` | Código firmware |
 | `experiments/` | Datos CSV experimentales |
-| `gui/app.py` | Interfaz gráfica |
+| `src/firmware/data/index.html` | GUI web embebida |
 | `CHANGELOG.md` | Historial de versiones |
 
 ## Datos Oficiales del Temario (referencia rápida)

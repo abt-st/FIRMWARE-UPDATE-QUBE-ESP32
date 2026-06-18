@@ -1,3 +1,31 @@
+## [1.43.0] — 2026-06-18
+### Cleanup GUI Tkinter + auditoría y mejoras de la GUI web embebida
+
+#### GUI Tkinter eliminada
+- Removidos `gui/app.py` y el paquete `src/qube_ui/` completo (`app.py`,
+  `client.py`, `buffer.py`, `__main__.py`, `__init__.py`) — servía sobre todo
+  para pruebas por serial y ya no aporta al proyecto. La **GUI web embebida**
+  (servida por el ESP32 desde SPIFFS) la reemplaza por completo.
+- Eliminados los tests asociados: `tests/test_buffer.py`, `tests/test_client.py`,
+  `tests/test_integration.py`.
+- Referencias actualizadas: `pyproject.toml` (quitado `src/qube_ui` de los
+  paquetes hatch), `Makefile` (goal `run` eliminado), `README.md`, `AGENTS.md`
+  y `experiments/README.md` (ejemplo de export CSV ahora apunta a la GUI web).
+
+#### GUI web embebida — auditoría y mejoras (`src/firmware/data/index.html`)
+- **Chart.js local**: se sirve `data/chart.min.js` (v4.5.1) en vez del CDN; antes
+  las gráficas no cargaban en modo AP (sin internet). Se consolidó el `index.html`
+  divergente de `esp32_qube_l298n/data/` y se eliminó esa carpeta legacy.
+- **Fixes**: ID duplicado `btnCSV` (botón muerto en la topbar) removido; export
+  CSV de tensión corregido (`v_bus` en vez de `voltage_v`); guarda de
+  `ina_ok=false` (hueco en la gráfica de potencia y celdas CSV vacías en vez de 0).
+- **Funcionalidad**: panel OTA reintegrado (`POST /update` con barra de progreso);
+  modo `m7` (Deep RL on-device) añadido al selector; "Set Servo" ahora fuerza
+  `m=2`; estado Deep RL (θ/α) refrescado en vivo desde el WebSocket; favicon vacío.
+- Nuevo `src/firmware/data/README.md` documentando la GUI web, endpoints,
+  telemetría e historial de auditoría. Pendientes (diferidos): de-inlinar handlers
+  para CSP estricta; `m3` (PID péndulo) no se expone porque será removido.
+
 ## [1.42.1] — 2026-06-18
 ### MLflow como tracker único: se elimina TensorBoard; métricas de episodio
 

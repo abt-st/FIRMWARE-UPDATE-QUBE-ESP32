@@ -3,7 +3,7 @@
 #  Usa `uv` para gestionar el entorno Python y ejecutar herramientas.
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: install run lint format check typecheck clean test help flash flash-build flash-upload export-policy
+.PHONY: install lint format check typecheck clean test help flash flash-build flash-upload export-policy
 
 # ── Configuración ──────────────────────────────────────────────────────────
 PYTHON     := uv run python
@@ -15,9 +15,6 @@ UV         := uv
 
 install:           ## Instalar todas las dependencias (uv sync)
 	$(UV) sync
-
-run:               ## Ejecutar la GUI del QUBE Signal Identifier
-	$(PYTHON) gui/app.py
 
 lint:              ## Ejecutar ruff check (linteo estático)
 	$(RUFF) check .

@@ -32,11 +32,11 @@ experiments/
 
 ## Generación automática de datos
 
-Los datos CSV se generan desde la GUI con el botón "Exportar CSV" o usando:
+Los datos CSV se generan desde la **GUI web** (`http://192.168.4.1/`) con el
+botón **"Exportar CSV"** del panel _Recolección de datos_: graba mientras el
+WebSocket transmite telemetría y descarga un `.csv` con columnas `time_s`,
+`mode`, `position_deg`, `setpoint_deg`, `pend_position_deg`, `pwm`, `voltage_v`,
+`current_mA`, `power_mW`.
 
-```python
-from qube_ui.buffer import SignalBuffer
-
-buffer = SignalBuffer()
-buffer.export_csv("experiments/2026-05-07_pid_tuning/data/session_001.csv")
-```
+Guardá el archivo descargado en la carpeta del experimento, p. ej.
+`experiments/2026-05-07_pid_tuning/data/session_001.csv`.

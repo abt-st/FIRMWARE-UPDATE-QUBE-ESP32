@@ -92,7 +92,7 @@ Este repositorio cuenta con un ecosistema de **agentes, skills, instrucciones y 
 **Archivos monitoreados:**
 - `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` — siempre
 - `firmware/platformio.ini` — dependencias, flags, plataforma
-- `gui/app.py`, `gui/esp32_client.py` — interfaz
+- `src/firmware/data/index.html` — GUI web embebida (SPIFFS)
 - `pyproject.toml` — dependencias Python
 - `mcp/esp32_qube_server.py` — herramientas MCP
 
@@ -320,8 +320,7 @@ El firmware expone endpoints HTTP dedicados para el control por RL:
 |---------|-----------|
 | `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` | Firmware principal del sistema de control |
 | `firmware/CHANGELOG.md` | Historial de versiones del firmware |
-| `gui/app.py` | Interfaz Tkinter para monitoreo y control |
-| `gui/esp32_client.py` | Cliente HTTP (`/state`, `/cmd`) para ESP32 |
+| `src/firmware/data/index.html` | GUI web embebida (SPIFFS) para monitoreo y control |
 | `experiments/` | Datos CSV organizados por experimento |
 | `INVESTIGACION_ARQUITECTURA_MODERNIZACION_QUBE.md` | Documento principal de investigación (PARTE 1–9) |
 | `RESUMEN_HALLAZGOS.md` | Resumen ejecutivo de hallazgos de investigación |
@@ -376,7 +375,7 @@ El firmware expone endpoints HTTP dedicados para el control por RL:
 - **Instalar todo** → `uv sync`
 - **Agregar una dependencia** → `uv add <package>` (actualiza `pyproject.toml` + `uv.lock`)
 - **Agregar dependencia dev** → `uv add --dev <package>`
-- **Ejecutar un script** → `uv run python gui/app.py`
+- **Ejecutar un script** → `uv run python src/firmware/flash.py`
 - **Ejecutar una herramienta** → `uv run ruff check .`
 - **Actualizar lockfile** → `uv lock`
 
@@ -384,7 +383,7 @@ El firmware expone endpoints HTTP dedicados para el control por RL:
 
 ### Pitfalls conocidos
 
-- `gui/esp32_client.py` usa por defecto la IP `192.168.4.1` (modo AP del ESP32)
+- La GUI web usa `location.hostname`; en modo AP el ESP32 responde en `192.168.4.1`
 - En el firmware existen credenciales STA configurables (`STA_SSID`, `STA_PASS`); tratarlas con cuidado y no exponerlas fuera del repositorio
 - Al compilar PDF, si el archivo destino está abierto en el lector, el script falla por permisos (el script genera un nombre alternativo con timestamp)
 
@@ -403,10 +402,9 @@ El firmware expone endpoints HTTP dedicados para el control por RL:
 
 ## 🚀 Comandos de Trabajo Frecuentes
 
-### GUI (Python) — usando uv
+### Python — usando uv
 ```bash
 uv sync                          # Instalar dependencias
-uv run python gui/app.py         # Ejecutar GUI
 uv run ruff check .              # Linter
 uv run ruff format .             # Formatear código
 uv run pyright .                 # Verificación de tipos
@@ -425,7 +423,6 @@ make lint        # uv run ruff check .
 make format      # uv run ruff format .
 make check       # lint + format check (CI)
 make typecheck   # uv run pyright .
-make run         # uv run python gui/app.py
 make test        # uv run pytest -v
 make clean       # Limpiar __pycache__, .pyc, etc.
 make help        # Mostrar todos los goals
