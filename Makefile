@@ -3,7 +3,7 @@
 #  Usa `uv` para gestionar el entorno Python y ejecutar herramientas.
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: install run lint format check typecheck clean test help flash flash-build flash-upload
+.PHONY: install run lint format check typecheck clean test help flash flash-build flash-upload export-policy
 
 # ── Configuración ──────────────────────────────────────────────────────────
 PYTHON     := uv run python
@@ -43,6 +43,10 @@ clean:             ## Limpiar archivos temporales de Python
 	rm -rf .pytest_cache
 	rm -rf .ruff_cache
 	rm -rf *.egg-info
+
+export-policy:     ## Export SAC model weights INTO the firmware header (MODEL=path)
+	$(PYTHON) -m qube_rl.export_rltools --model $(MODEL) \
+		--output src/firmware/esp32_qube_l298n/policy_weights.h
 
 flash:             ## Build + upload firmware via HTTP (OneDrive-safe)
 	$(PYTHON) src/firmware/flash.py

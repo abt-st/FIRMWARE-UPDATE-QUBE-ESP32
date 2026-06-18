@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Sweep ke_gain via HTTP — no recompile needed."""
+
 import time
 import json
 import urllib.request
@@ -13,6 +14,7 @@ PAUSE = 3
 KE_VALUES = [0.20, 0.30, 0.40, 0.50, 0.60, 0.70]
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
+
 def cmd(params: str) -> dict:
     url = f"http://{IP}/cmd?{params}"
     try:
@@ -21,12 +23,14 @@ def cmd(params: str) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+
 def state() -> dict:
     try:
         resp = urllib.request.urlopen(f"http://{IP}/state", timeout=2)
         return json.loads(resp.read())
     except Exception:
         return {}
+
 
 def run_attempts(ke: float, num: int) -> list[dict]:
     results = []
@@ -59,24 +63,30 @@ def run_attempts(ke: float, num: int) -> list[dict]:
                 # stopped unexpectedly — brownout?
                 break
             prev_mode = m
-            samples.append({
-                "t": round(t, 3), "pend": round(s.get("pend_position_deg", 0), 2),
-                "servo": round(s.get("position_deg", 0), 2),
-                "mode": m, "pwm": pwm,
-                "v": round(s.get("v_bus", 0), 2)
-            })
+            samples.append(
+                {
+                    "t": round(t, 3),
+                    "pend": round(s.get("pend_position_deg", 0), 2),
+                    "servo": round(s.get("position_deg", 0), 2),
+                    "mode": m,
+                    "pwm": pwm,
+                    "v": round(s.get("v_bus", 0), 2),
+                }
+            )
             time.sleep(0.05)
         cmd("x=1")
         time.sleep(0.3)
         final = state()
         r = {
-            "attempt": i, "ke": ke, "max_angle": round(max_ang, 1),
+            "attempt": i,
+            "ke": ke,
+            "max_angle": round(max_ang, 1),
             "peak_at": round(max_ang_t, 1),
             "lqr_transitions": lqr_transitions,
             "final_pend": round(final.get("pend_position_deg", 0), 1),
             "final_servo": round(final.get("position_deg", 0), 1),
             "samples": len(samples),
-            "servo_range": round(abs(final.get("position_deg", 0) - servo_start), 1)
+            "servo_range": round(abs(final.get("position_deg", 0) - servo_start), 1),
         }
         print(f"  #{i}: max={max_ang:5.1f}° @{max_ang_t:4.1f}s LQR={lqr_transitions} servo_final={r['final_servo']}")
         results.append(r)
@@ -90,6 +100,7 @@ def run_attempts(ke: float, num: int) -> list[dict]:
         if i < num:
             time.sleep(PAUSE)
     return results
+
 
 print(f"QUBE ke Sweep — {len(KE_VALUES)} values × {ATTEMPTS} attempts")
 print(f"  IP: {IP}, Duration: {DURATION}s, Pause: {PAUSE}s")
@@ -119,4 +130,4 @@ for ke in KE_VALUES:
     if ke_results:
         maxes = [r["max_angle"] for r in ke_results]
         catches = sum(1 for r in ke_results if r["lqr_transitions"] > 0)
-        print(f"{ke:6.2f} {sum(maxes)/len(maxes):8.1f} {max(maxes):8.1f} {catches:>4}/{ATTEMPTS}")
+        print(f"{ke:6.2f} {sum(maxes) / len(maxes):8.1f} {max(maxes):8.1f} {catches:>4}/{ATTEMPTS}")

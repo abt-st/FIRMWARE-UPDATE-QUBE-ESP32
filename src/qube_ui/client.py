@@ -225,7 +225,6 @@ class ESP32Client:
         """Emergency stop."""
         return self.send_cmd(x=1)
 
-
     def zero_pendulum(self) -> bool:
         """Zero the pendulum position."""
         return self.send_cmd(zp=1)

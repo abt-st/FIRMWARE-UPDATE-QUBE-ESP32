@@ -24,8 +24,9 @@ import numpy as np
 import requests
 from gymnasium.spaces import Box
 
+from qube_rl.config import MAX_VELOCITY
 from qube_rl.rewards import REWARDS
-from qube_rl.utils import ALPHA, ALPHA_DOT, THETA, THETA_DOT, Timing
+from qube_rl.utils import ALPHA, ALPHA_DOT, THETA, THETA_DOT, Timing, observation_from_state
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +34,9 @@ logger = logging.getLogger(__name__)
 class QubeRealEnv(gym.Env):
     """Gymnasium environment for the real QUBE Servo (ESP32 over WiFi).
 
-    Observation space (6-D)::
+    Observation space (8-D, see :func:`qube_rl.utils.observation_from_state`)::
 
-        [cos(theta), sin(theta), cos(alpha), sin(alpha), theta_dot, alpha_dot]
+        [theta, alpha, cos(theta), sin(theta), cos(alpha), sin(alpha), theta_dot, alpha_dot]
 
     Action space (1-D)::
 
@@ -71,10 +72,14 @@ class QubeRealEnv(gym.Env):
             raise ValueError(f"Unknown reward '{reward}'. Choose from {list(REWARDS)}")
         self._reward_func = REWARDS[reward]
 
-        # Spaces
+        # Spaces — bounds mirror the 8-D observation layout; velocity bound
+        # shares MAX_VELOCITY with the simulator so sim/real spaces agree.
+        half_pi = np.float32(np.pi / 2)
+        pi = np.float32(np.pi)
+        v = np.float32(MAX_VELOCITY)
         self.observation_space = Box(
-            low=np.array([-1.5707964, -3.1415927, -1, -1, -1, -1, -30, -30], dtype=np.float32),
-            high=np.array([1.5707964, 3.1415927, 1, 1, 1, 1, 30, 30], dtype=np.float32),
+            low=np.array([-half_pi, -pi, -1, -1, -1, -1, -v, -v], dtype=np.float32),
+            high=np.array([half_pi, pi, 1, 1, 1, 1, v, v], dtype=np.float32),
             dtype=np.float32,
         )
         self.action_space = Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
@@ -166,7 +171,11 @@ class QubeRealEnv(gym.Env):
         if not terminated:
             terminated = bool(abs(self._state[THETA]) > np.pi / 2 * 0.95)  # servo ±85°
         if terminated:
-            logger.info("Episode terminated: alpha=%.1f theta=%.1f", np.degrees(self._state[ALPHA]), np.degrees(self._state[THETA]))
+            logger.info(
+                "Episode terminated: alpha=%.1f theta=%.1f",
+                np.degrees(self._state[ALPHA]),
+                np.degrees(self._state[THETA]),
+            )
 
         return obs, rwd, terminated, False, {}
 
@@ -203,16 +212,4 @@ class QubeRealEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def _get_obs(self) -> np.ndarray:
-        return np.array(
-            [
-                self._state[THETA],
-                self._state[ALPHA],
-                np.cos(self._state[THETA]),
-                np.sin(self._state[THETA]),
-                np.cos(self._state[ALPHA]),
-                np.sin(self._state[ALPHA]),
-                self._state[THETA_DOT],
-                self._state[ALPHA_DOT],
-            ],
-            dtype=np.float32,
-        )
+        return observation_from_state(self._state, include_raw_theta=True, include_raw_alpha=True)

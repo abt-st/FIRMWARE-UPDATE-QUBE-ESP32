@@ -18,11 +18,11 @@ import requests
 
 
 IP = "192.168.100.50"
-DURATION = 30        # seconds per attempt
-POLL_HZ = 20        # HTTP poll rate
-ATTEMPTS_PER_SP = 5 # attempts per sp value
+DURATION = 30  # seconds per attempt
+POLL_HZ = 20  # HTTP poll rate
+ATTEMPTS_PER_SP = 5  # attempts per sp value
 SP_VALUES = [45, 50, 55, 60, 65]
-PAUSE_BETWEEN = 3   # seconds between attempts
+PAUSE_BETWEEN = 3  # seconds between attempts
 PAUSE_BETWEEN_SP = 5  # seconds between sp values
 
 OUT_DIR = Path(__file__).parent / "data" / f"sweep_{datetime.now().strftime('%Y%m%dT%H%M%S')}"
@@ -94,8 +94,7 @@ def run_attempt(sp: int, attempt: int, csvfile) -> dict:
         prev_pend = pend
 
         # Log sample
-        csvfile.writerow([sp, attempt, f"{t:.3f}", f"{servo:.2f}", f"{pend:.2f}",
-                          mode, pwm, f"{v_bus:.3f}"])
+        csvfile.writerow([sp, attempt, f"{t:.3f}", f"{servo:.2f}", f"{pend:.2f}", mode, pwm, f"{v_bus:.3f}"])
 
         time.sleep(1.0 / POLL_HZ)
 
@@ -172,9 +171,11 @@ def main() -> None:
         transients = sum(1 for r in sp_results if r["lqr_catch_time"] is not None and not r["stayed_in_lqr"])
         misses = ATTEMPTS_PER_SP - catches - transients
         avg_max = sum(r["max_angle"] for r in sp_results) / len(sp_results)
-        avg_catch = (sum(r["lqr_catch_time"] for r in sp_results if r["lqr_catch_time"]) / max(1, catches + transients))
+        avg_catch = sum(r["lqr_catch_time"] for r in sp_results if r["lqr_catch_time"]) / max(1, catches + transients)
 
-        print(f"  Summary: {catches} catch, {transients} transient, {misses} miss | avg_max={avg_max:.0f}° avg_catch={avg_catch:.1f}s")
+        print(
+            f"  Summary: {catches} catch, {transients} transient, {misses} miss | avg_max={avg_max:.0f}° avg_catch={avg_catch:.1f}s"
+        )
 
         time.sleep(PAUSE_BETWEEN_SP)
 
@@ -186,7 +187,9 @@ def main() -> None:
         f.write(f"Date: {datetime.now().isoformat()}\n")
         f.write(f"Duration: {DURATION}s per attempt, {ATTEMPTS_PER_SP} attempts per SP\n\n")
 
-        f.write(f"{'SP':>4} | {'Catch':>5} | {'Trans':>5} | {'Miss':>4} | {'Rate':>5} | {'AvgMax':>7} | {'AvgCatch':>8} | {'AvgSpins':>8}\n")
+        f.write(
+            f"{'SP':>4} | {'Catch':>5} | {'Trans':>5} | {'Miss':>4} | {'Rate':>5} | {'AvgMax':>7} | {'AvgCatch':>8} | {'AvgSpins':>8}\n"
+        )
         f.write("-" * 70 + "\n")
 
         best_sp = None
@@ -203,7 +206,9 @@ def main() -> None:
             avg_catch = sum(catch_times) / max(1, len(catch_times))
             avg_spins = sum(r["spin_events"] for r in sp_results) / len(sp_results)
 
-            f.write(f"{sp:>4} | {catches:>5} | {transients:>5} | {misses:>4} | {rate:>4.0f}% | {avg_max:>6.0f}° | {avg_catch:>7.1f}s | {avg_spins:>7.1f}\n")
+            f.write(
+                f"{sp:>4} | {catches:>5} | {transients:>5} | {misses:>4} | {rate:>4.0f}% | {avg_max:>6.0f}° | {avg_catch:>7.1f}s | {avg_spins:>7.1f}\n"
+            )
 
             if rate > best_rate or (rate == best_rate and avg_catch < 10):
                 best_rate = rate
@@ -211,7 +216,7 @@ def main() -> None:
 
         f.write(f"\nSweet spot: sp={best_sp} ({best_rate:.0f}% catch rate)\n")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Results saved to: {OUT_DIR}")
     with open(summary_path) as f:
         print(f.read())

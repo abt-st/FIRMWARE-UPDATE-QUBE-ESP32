@@ -7,12 +7,14 @@ Models what WOULD have happened if the transition conditions were:
 - peak detection dist < 40° (was 25°)
 - forced transition at 150°+ (was 165°+)
 """
+
 import os
 import csv
 import glob
 import math
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+
 
 def simulate_csv(path, vel_threshold=120.0, peak_dist=40.0, forced_angle=150.0):
     """Simulate transition with new parameters."""
@@ -22,25 +24,29 @@ def simulate_csv(path, vel_threshold=120.0, peak_dist=40.0, forced_angle=150.0):
         headers = reader.fieldnames or []
         for row in reader:
             if "servo_deg" in headers:
-                rows.append({
-                    "t": float(row["t"]),
-                    "servo_deg": float(row["servo_deg"]),
-                    "pend_deg": float(row["pend_deg"]),
-                    "pend_raw_deg": float(row["pend_raw_deg"]),
-                    "pwm": int(row["pwm"]),
-                    "mode": int(row["mode"]),
-                    "v_bus": float(row["v_bus"]),
-                })
+                rows.append(
+                    {
+                        "t": float(row["t"]),
+                        "servo_deg": float(row["servo_deg"]),
+                        "pend_deg": float(row["pend_deg"]),
+                        "pend_raw_deg": float(row["pend_raw_deg"]),
+                        "pwm": int(row["pwm"]),
+                        "mode": int(row["mode"]),
+                        "v_bus": float(row["v_bus"]),
+                    }
+                )
             elif "servo" in headers:
-                rows.append({
-                    "t": float(row["t"]),
-                    "servo_deg": float(row["servo"]),
-                    "pend_deg": float(row["pend"]),
-                    "pend_raw_deg": float(row["pend"]),
-                    "pwm": int(row["pwm"]),
-                    "mode": int(row["mode"]),
-                    "v_bus": float(row["v"]),
-                })
+                rows.append(
+                    {
+                        "t": float(row["t"]),
+                        "servo_deg": float(row["servo"]),
+                        "pend_deg": float(row["pend"]),
+                        "pend_raw_deg": float(row["pend"]),
+                        "pwm": int(row["pwm"]),
+                        "mode": int(row["mode"]),
+                        "v_bus": float(row["v"]),
+                    }
+                )
     if len(rows) < 3:
         return None
 
@@ -48,19 +54,16 @@ def simulate_csv(path, vel_threshold=120.0, peak_dist=40.0, forced_angle=150.0):
     max_pend = max(abs(r["pend_deg"]) for r in rows)
 
     # Check if original had a transition
-    had_transition = any(
-        rows[i-1]["mode"] == 5 and rows[i]["mode"] == 4
-        for i in range(1, len(rows))
-    )
+    had_transition = any(rows[i - 1]["mode"] == 5 and rows[i]["mode"] == 4 for i in range(1, len(rows)))
 
     # Simulate new transition conditions
     prev_alpha_dot = 0.0
     simulated_transition = False
     for i in range(1, len(rows)):
-        dt = rows[i]["t"] - rows[i-1]["t"]
+        dt = rows[i]["t"] - rows[i - 1]["t"]
         if dt <= 0:
             dt = 0.001
-        alpha_dot = (rows[i]["pend_deg"] - rows[i-1]["pend_deg"]) / dt
+        alpha_dot = (rows[i]["pend_deg"] - rows[i - 1]["pend_deg"]) / dt
         vel_dps = abs(alpha_dot)
         pend = abs(rows[i]["pend_deg"])
 
@@ -69,8 +72,7 @@ def simulate_csv(path, vel_threshold=120.0, peak_dist=40.0, forced_angle=150.0):
         can_transition = in_upper and nearly_stopped
 
         # Peak detection
-        at_peak = (prev_alpha_dot > 0 and alpha_dot <= 0) or \
-                  (prev_alpha_dot < 0 and alpha_dot >= 0)
+        at_peak = (prev_alpha_dot > 0 and alpha_dot <= 0) or (prev_alpha_dot < 0 and alpha_dot >= 0)
         at_peak_transition = at_peak and in_upper and (180.0 - pend < peak_dist)
 
         forced = pend > forced_angle
@@ -89,6 +91,7 @@ def simulate_csv(path, vel_threshold=120.0, peak_dist=40.0, forced_angle=150.0):
         "simulated_transition": simulated_transition,
         "would_improve": simulated_transition and not had_transition,
     }
+
 
 # Run simulation
 all_files = sorted(glob.glob(os.path.join(DATA_DIR, "*.csv")))
@@ -129,21 +132,23 @@ for lo, hi in [(0, 50), (50, 100), (100, 150), (150, 200), (200, 9999)]:
     old_t = sum(1 for r in subset if r["had_transition"])
     new_t = sum(1 for r in subset if r["simulated_transition"])
     gain = new_t - old_t
-    print(f"  {lo:>3}-{hi:<3}°: {len(subset):3d} trials, "
-          f"old_trans={old_t:2d}, new_trans={new_t:2d}, +{gain}")
+    print(f"  {lo:>3}-{hi:<3}°: {len(subset):3d} trials, old_trans={old_t:2d}, new_trans={new_t:2d}, +{gain}")
 
 # Estimate catch rate improvement
 # From data: 150-200° with transitions has 28% catch rate (6/21)
 # New transitions in 150-200° would get same catch rate
-new_150_200 = sum(1 for r in results
-                   if 150 <= r["max_pend"] < 200 and r["simulated_transition"] and not r["had_transition"])
+new_150_200 = sum(
+    1 for r in results if 150 <= r["max_pend"] < 200 and r["simulated_transition"] and not r["had_transition"]
+)
 estimated_new_catches = int(new_150_200 * 0.28)  # 28% catch rate
 total_trials = len(results)
 current_catches = 12  # from baseline
 estimated_new_catch_rate = (current_catches + estimated_new_catches) / total_trials * 100
 
 print(f"\n--- Estimated catch rate improvement ---")
-print(f"Current catches: {current_catches}/{total_trials} = {current_catches/total_trials*100:.1f}%")
+print(f"Current catches: {current_catches}/{total_trials} = {current_catches / total_trials * 100:.1f}%")
 print(f"New transitions in 150-200°: {new_150_200}")
 print(f"Estimated new catches: +{estimated_new_catches}")
-print(f"Estimated new catch rate: {current_catches + estimated_new_catches}/{total_trials} = {estimated_new_catch_rate:.1f}%")
+print(
+    f"Estimated new catch rate: {current_catches + estimated_new_catches}/{total_trials} = {estimated_new_catch_rate:.1f}%"
+)

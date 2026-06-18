@@ -3,6 +3,7 @@
 Usage:
     python experiments/2026-06-03_swing/test_swing.py [--duration 30] [--ip 192.168.100.50]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,10 +47,18 @@ def main() -> None:
     csv_path = data_dir / f"swing_{ts}.csv"
 
     header = [
-        "t_ms", "mode", "pwm",
-        "servo_count", "servo_deg",
-        "pend_count", "pend_raw_deg", "pend_deg",
-        "ina_ok", "v_bus", "i_ma", "p_mw",
+        "t_ms",
+        "mode",
+        "pwm",
+        "servo_count",
+        "servo_deg",
+        "pend_count",
+        "pend_raw_deg",
+        "pend_deg",
+        "ina_ok",
+        "v_bus",
+        "i_ma",
+        "p_mw",
     ]
 
     # Start mode
@@ -66,11 +75,18 @@ def main() -> None:
         t_ms = int((time.monotonic() - t_start) * 1000)
         if d:
             row = [
-                t_ms, d.get("mode", 0), d.get("pwm", 0),
-                d.get("count", 0), d.get("position_deg", 0),
-                d.get("pend_count", 0), d.get("pend_raw_position_deg", 0),
+                t_ms,
+                d.get("mode", 0),
+                d.get("pwm", 0),
+                d.get("count", 0),
+                d.get("position_deg", 0),
+                d.get("pend_count", 0),
+                d.get("pend_raw_position_deg", 0),
                 d.get("pend_position_deg", 0),
-                d.get("ina_ok", False), d.get("v_bus", 0), d.get("i_ma", 0), d.get("p_mw", 0),
+                d.get("ina_ok", False),
+                d.get("v_bus", 0),
+                d.get("i_ma", 0),
+                d.get("p_mw", 0),
             ]
             rows.append(row)
             # Print summary

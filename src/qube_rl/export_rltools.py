@@ -147,6 +147,28 @@ def generate_cpp_header(
     return "\n".join(lines)
 
 
+def export_model_to_header(
+    model_path: str,
+    output_path: str,
+    namespace: str = "policy_weights",
+) -> Path:
+    """Export an SB3 SAC model to a C++ weight header in one call.
+
+    Convenience wrapper around :func:`extract_actor_weights` and
+    :func:`generate_cpp_header` so callers (e.g. ``distill.py``) do not have to
+    re-implement the extraction/generation pipeline.
+
+    Returns the path the header was written to.
+    """
+    weights, biases, dims = extract_actor_weights(model_path)
+    header = generate_cpp_header(weights, biases, dims, namespace=namespace)
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(header, encoding="utf-8")
+    logger.info("Header written to %s (%d bytes)", out, len(header))
+    return out
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Export SB3 SAC policy weights to RLtools C++ format")
     parser.add_argument("--model", required=True, help="Path to trained SB3 SAC model (.zip)")

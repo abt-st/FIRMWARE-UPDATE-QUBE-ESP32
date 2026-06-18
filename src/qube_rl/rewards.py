@@ -54,6 +54,44 @@ def cos_alpha_centered(state: np.ndarray) -> float:
     return float(al_rew + th_penalty)
 
 
+def linear_alpha(state: np.ndarray) -> float:
+    """Dense pendulum reward with strong gradient at every angle.
+
+    Unlike ``(1 - cos(alpha)) / 2`` which has near-zero gradient when hanging,
+    this uses ``|alpha| / pi`` for a **linear** gradient everywhere.
+    Gives the agent clear signal even at small angles, enabling faster
+    energy-building discovery during swing-up.
+
+    - Pendulum: ``|alpha| / pi`` -> 0 at down, 1 at inverted.
+    - Arm: additive quadratic penalty (light, -0.2 at ±90°).
+    """
+    al = np.mod((state[ALPHA] + np.pi), 2 * np.pi) - np.pi
+    al_rew = np.abs(al) / np.pi  # linear: 6x stronger gradient near 0 than cos_alpha
+    th_penalty = -0.2 * (state[THETA] / (np.pi / 2)) ** 2
+    return float(al_rew + th_penalty)
+
+
+def linear_alpha_dense(state: np.ndarray) -> float:
+    """Dense reward: linear_alpha + velocity shaping for energy awareness.
+
+    Adds velocity term that rewards upward angular velocity when pendulum
+    is in the lower half, and penalises it when in the upper half.
+    Helps the agent discover pumping strategy faster.
+    """
+    al = np.mod((state[ALPHA] + np.pi), 2 * np.pi) - np.pi
+    al_abs = np.abs(al)
+    al_rew = al_abs / np.pi
+
+    # Velocity shaping: reward al_dot when pendulum is below horizontal
+    # (pumping energy in), penalise when above (wasted energy)
+    below = al_abs < np.pi / 2  # True when pendulum is in lower half
+    al_dot = state[ALPHA_DOT]
+    vel_shaping = 0.01 * al_dot if below else -0.005 * al_dot * al_dot
+
+    th_penalty = -0.2 * (state[THETA] / (np.pi / 2)) ** 2
+    return float(np.clip(al_rew + vel_shaping + th_penalty, -2.0, 1.0))
+
+
 def swingup_balance(state: np.ndarray) -> float:
     """Phase-adaptive reward: swing-up progress + balance reward with cost.
 
@@ -92,4 +130,6 @@ REWARDS: dict[str, Callable[[np.ndarray], float]] = {
     "exp_alpha_6": lambda s: exp_alpha_reward(s, exp=6),
     "cos_alpha_centered": cos_alpha_centered,
     "swingup_balance": swingup_balance,
+    "linear_alpha": linear_alpha,
+    "linear_alpha_dense": linear_alpha_dense,
 }

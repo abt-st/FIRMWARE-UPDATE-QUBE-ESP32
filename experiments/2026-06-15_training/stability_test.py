@@ -35,7 +35,7 @@ def _http_get(url: str) -> dict:
             r = requests.get(url, timeout=HTTP_TIMEOUT)
             r.raise_for_status()
             return r.json()
-        except (requests.RequestException, ValueError):
+        except requests.RequestException, ValueError:
             if attempt < MAX_RETRIES - 1:
                 time.sleep(0.05)
             else:
@@ -188,7 +188,9 @@ def main() -> None:
             recent = results[-5:]
             catches = sum(1 for r in recent if r["classification"] == "CATCH")
             chatters = sum(1 for r in recent if r["classification"] == "CHATTER")
-            print(f"  Running (last {len(recent)}): {catches}C + {chatters}CH = {(catches + chatters) / len(recent) * 100:.0f}% catch")
+            print(
+                f"  Running (last {len(recent)}): {catches}C + {chatters}CH = {(catches + chatters) / len(recent) * 100:.0f}% catch"
+            )
 
         time.sleep(PAUSE_BETWEEN)
 

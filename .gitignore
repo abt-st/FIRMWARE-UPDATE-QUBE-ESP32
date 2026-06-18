@@ -57,6 +57,17 @@ data/*.dat
 *.log
 logs/
 
+# ── Artefactos de entrenamiento RL (pesados, regenerables) ───────────────────
+# Checkpoints SAC: no versionar binarios. El header exportado SÍ se mantiene.
+models/*.zip
+!models/policy_weights.h
+# Logs de TensorBoard
+runs/
+# MLflow (tracking local)
+mlflow.db
+mlruns/
+mlartifacts/
+
 # ── Archivos temporales ─────────────────────────────────────────────────────
 *.tmp
 *.bak

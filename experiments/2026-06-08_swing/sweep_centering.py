@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Test different ke/centering combos. 5 attempts x 60s each."""
+
 import time, json, urllib.request
 
 IP = "192.168.100.50"
@@ -13,49 +14,77 @@ KES = [0.60, 0.65, 0.70]
 
 
 def cmd(p):
-    try: urllib.request.urlopen(f"http://{IP}/cmd?{p}", timeout=5)
-    except: pass
+    try:
+        urllib.request.urlopen(f"http://{IP}/cmd?{p}", timeout=5)
+    except:
+        pass
 
 
 def st():
-    try: return json.loads(urllib.request.urlopen(f"http://{IP}/state", timeout=5).read())
-    except: return {}
+    try:
+        return json.loads(urllib.request.urlopen(f"http://{IP}/state", timeout=5).read())
+    except:
+        return {}
 
 
 s = st()
 if not s or "mode" not in s:
-    print("ERROR: No ESP32"); exit(1)
+    print("ERROR: No ESP32")
+    exit(1)
 print(f"Connected. ke Sweep: {KES} x {N} x {DUR}s")
 print("=" * 60)
 
 results = {}
 for ke in KES:
     print(f"\n--- ke={ke} ---")
-    cmd("x=1"); time.sleep(1)
-    cmd(f"ke={ke}"); time.sleep(0.3)
-    heights = []; catches = 0; crashes = 0
+    cmd("x=1")
+    time.sleep(1)
+    cmd(f"ke={ke}")
+    time.sleep(0.3)
+    heights = []
+    catches = 0
+    crashes = 0
     for i in range(1, N + 1):
-        cmd("r=1"); time.sleep(1)
-        cmd("m=5"); time.sleep(0.5)
+        cmd("r=1")
+        time.sleep(1)
+        cmd("m=5")
+        time.sleep(0.5)
         s0 = st()
         if s0.get("mode") != 5:
-            print(f"  #{i}: FAILED"); time.sleep(2); continue
-        t0 = time.monotonic(); mx = 0.0; lqr = 0; prev_m = 5; crash = False
+            print(f"  #{i}: FAILED")
+            time.sleep(2)
+            continue
+        t0 = time.monotonic()
+        mx = 0.0
+        lqr = 0
+        prev_m = 5
+        crash = False
         while time.monotonic() - t0 < DUR:
-            s = st(); t = time.monotonic() - t0
-            p = abs(s.get("pend_position_deg", 0)); m = s.get("mode", 0)
-            if p > mx: mx = p
-            if prev_m == 5 and m == 4: lqr += 1
-            if m == 0 and t > 5: crash = True; break
-            prev_m = m; time.sleep(0.05)
-        cmd("x=1"); time.sleep(0.5)
+            s = st()
+            t = time.monotonic() - t0
+            p = abs(s.get("pend_position_deg", 0))
+            m = s.get("mode", 0)
+            if p > mx:
+                mx = p
+            if prev_m == 5 and m == 4:
+                lqr += 1
+            if m == 0 and t > 5:
+                crash = True
+                break
+            prev_m = m
+            time.sleep(0.05)
+        cmd("x=1")
+        time.sleep(0.5)
         heights.append(mx)
-        if lqr > 0: catches += 1
-        if crash: crashes += 1
+        if lqr > 0:
+            catches += 1
+        if crash:
+            crashes += 1
         marker = "*" if mx >= 150 else " "
         crash_s = " CRASH" if crash else ""
         print(f"  #{i}{marker}: max={mx:5.1f} LQR={lqr}{crash_s}")
-        if i < N: time.sleep(PAUSE)
+        if i < N:
+            time.sleep(PAUSE)
     above = sum(1 for h in heights if h >= 150)
     avg = sum(heights) / len(heights) if heights else 0
     results[ke] = {"avg": avg, "above150": above, "catches": catches, "crashes": crashes}

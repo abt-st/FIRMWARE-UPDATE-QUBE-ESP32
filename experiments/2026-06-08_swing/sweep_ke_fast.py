@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fast ke sweep via HTTP — 3 attempts x 30s per ke."""
+
 import time
 import json
 import urllib.request
@@ -67,9 +68,14 @@ for ke in KE_VALUES:
         cmd("x=1")
         time.sleep(0.3)
         fin = state()
-        r = {"ke": ke, "i": i, "max": round(max_ang, 1), "lqr": lqr,
-             "servo": round(fin.get("position_deg", 0), 1),
-             "pend": round(fin.get("pend_position_deg", 0), 1)}
+        r = {
+            "ke": ke,
+            "i": i,
+            "max": round(max_ang, 1),
+            "lqr": lqr,
+            "servo": round(fin.get("position_deg", 0), 1),
+            "pend": round(fin.get("pend_position_deg", 0), 1),
+        }
         results.append(r)
         print(f"  #{i}: max={max_ang:5.1f} LQR={lqr} servo={r['servo']}")
         if i < ATTEMPTS:
@@ -84,4 +90,4 @@ for ke in KE_VALUES:
     if kr:
         mx = [r["max"] for r in kr]
         c = sum(1 for r in kr if r["lqr"] > 0)
-        print(f"{ke:6.2f} {sum(mx)/len(mx):7.1f} {max(mx):7.1f} {c:>3}/{ATTEMPTS}")
+        print(f"{ke:6.2f} {sum(mx) / len(mx):7.1f} {max(mx):7.1f} {c:>3}/{ATTEMPTS}")

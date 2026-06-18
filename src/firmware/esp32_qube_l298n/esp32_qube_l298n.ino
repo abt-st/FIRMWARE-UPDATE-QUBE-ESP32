@@ -974,7 +974,7 @@ void handleRlCmd(AsyncWebServerRequest *request) {
 void handleCmd(AsyncWebServerRequest *request) {
   if (request->hasParam("m")) {
     const int m = request->getParam("m")->value().toInt();
-    if (m >= 0 && m <= 6) {
+    if (m >= 0 && m <= 7) {
       setMode(m);
       lastCommandMs = millis();
     }

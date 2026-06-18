@@ -1,3 +1,160 @@
+## [1.42.0] — 2026-06-17
+### Auditoría estructural: correctitud, reproducibilidad e higiene del pipeline RL
+
+Refactor estructural tras una auditoría del repo. **Los modelos entrenados antes
+de esta versión quedan invalidados** por los fixes de correctitud (timing de
+reward y drift de domain randomization) — re-entrenar antes de comparar resultados.
+
+#### Bugs de correctitud corregidos
+- **Off-by-one en `QubeSimEnv.step()`**: calculaba reward y observación sobre el
+  estado *previo* a aplicar la acción, luego integraba. Ahora integra primero y
+  reporta reward/obs del estado posterior (semántica MDP correcta).
+- **Drift de domain randomization** (`QubeDynamics.randomize`): muestreaba
+  alrededor del valor *ya randomizado* en vez del nominal, acumulando deriva en
+  cada episodio (y rompiendo la reproducibilidad). Ahora snapshotea los nominales
+  en construcción y muestrea siempre desde ellos; además clampa a valores físicos
+  positivos (varias `*_std` ≥ media podían dar masa/fricción negativa).
+- **Import roto en `distill.py`**: llamaba a `export_header` (inexistente). Ahora
+  usa `export_rltools.export_model_to_header`, que además escribe el header
+  directo al firmware (los pesos flasheados siempre coinciden con el modelo).
+- **Singularidad de M(q)**: piso defensivo en la dinámica y error explícito en LQR.
+
+#### Reproducibilidad
+- `--seed` en `train`, `fast_train`, `finetune`, `auto_train`; propagado a
+  numpy/torch/`SAC`/`env.reset`. El env usa su `np_random` (no el RNG global).
+- `auto_train` deja de hardcodear `2026-06-15_training`; usa la fecha actual / `--out-dir`.
+
+#### Coherencia sim ↔ real ↔ firmware
+- Layout de observación unificado en una sola fuente (`utils.observation_from_state`),
+  usada por `QubeSimEnv` y `QubeRealEnv` (8-D: `[θ, α, cos θ, sin θ, cos α, sin α, θ̇, α̇]`).
+  Test fija el contrato y el input del firmware (9 features × 4 = 36).
+- `MAX_VELOCITY` (config) compartido por el clamp de integración y el bound de
+  observación (antes obs declaraba ±30 con dinámica a ±50); velocidad filtrada clampada.
+- `finetune` por defecto iguala la frecuencia de entrenamiento (50 Hz) y advierte
+  si difiere (el `HistoryWrapper` cambia el contexto temporal: 80 ms vs 400 ms).
+
+#### Estructura y calidad
+- Nuevo `qube_rl/config.py` (dataclasses) centraliza hiperparámetros SAC, límites,
+  deadzone y arquitectura; elimina inconsistencias (buffer 1M vs 50k, batch 256 vs 128).
+- `QubeSimEnv._update_state` descompuesto en `_integrate_euler` / `_quantize_angles` /
+  `_estimate_velocities`. Constantes de reward documentadas; logging unificado.
+- Lint del repo limpiado (ruff: 33 → 0 errores en `src`/`tests`); formato normalizado.
+- Suite de tests RL nueva (qube_sim, rewards, wrappers, contrato de observación):
+  46 → 85 tests. Workflow de CI (`.github/workflows/ci.yml`: ruff + format + pytest).
+- Higiene: `.gitignore` excluye `models/*.zip` y `runs/`; HANDOFF movidos a `docs/handoffs/`.
+  Target `make export-policy` para sincronizar el header del firmware.
+
+#### Tracking de experimentos con MLflow (opcional)
+- Nuevo `qube_rl/mlflow_tracking.py`: complementa TensorBoard (no lo reemplaza) vía
+  un callback de SB3 que reenvía las métricas ya registradas, sin tocar el flujo.
+- Cableado en `train`, `fast_train`, `finetune` y `auto_train` con `--mlflow`
+  (+ `--mlflow-uri`, `--mlflow-experiment`): loguea params (dataclasses de `config`),
+  métricas en streaming y el modelo `.zip` como artifact.
+- Degrada con elegancia: si `mlflow` no está instalado o `--mlflow` está apagado,
+  los helpers son no-ops. Dependencia opcional: `uv sync --extra tracking`.
+- Backend por defecto **`sqlite:///mlflow.db`** (local, cero infra; el file store
+  `./mlruns` está en modo mantenimiento y falla en MLflow 3.x). Ver con
+  `mlflow ui --backend-store-uri sqlite:///mlflow.db`. Artefactos en `./mlartifacts`.
+- 11 tests nuevos (96 en total); `.gitignore` excluye `mlflow.db`/`mlruns`/`mlartifacts`.
+
+#### Pendiente (requiere hardware)
+- Split del `esp32_qube_l298n.ino` (~2290 líneas) en módulos: la compilación se
+  verifica (25 s) pero la preservación de comportamiento no, sin pruebas en hardware.
+- Des-trackear binarios ya versionados: `git rm --cached models/*.zip runs/` (decidir
+  destino externo, p. ej. Zenodo/HF, antes de commitear).
+
+---
+
+## [1.41.0] — 2026-06-17
+### Entrenamiento 500K steps con linear_alpha: swing-up alcanzado en sim
+
+#### Problema identificado
+- El agente SAC previo (COS_ALPHA, 50K steps) no alcanzaba swing-up.
+- El timeout de 3600s del harness solo permite ~250K steps por sesión (~75 fps CPU).
+
+#### Cambios aplicados
+
+**1. Entrenamiento 500K steps con `linear_alpha`**
+- Se entrenó SAC con reward `linear_alpha`, red [64,64], lr=3e-4.
+- Primera sesión: 250K steps (fast_train con chunks de 50K, 5 checkpoints guardados).
+- Segunda sesión: continuación desde C5 (250K) por 250K más = 500K total.
+- Modelo final: `models/qube_sac_linear_alpha_64_c5_cont.zip`.
+
+**2. Evaluación en sim (10 episodios)**
+- 3 de 10 episodios alcanzan max_alpha > 120° (criterio de éxito del handoff).
+- Mejor episodio: max_alpha = 169° (casi inversión completa), reward = 11.4.
+- ep_len_mean subió de 12 steps (C1) a 482 steps (C5_cont) durante entrenamiento.
+- Success rate ~30%, consistencia baja pero swing-up demostrado.
+
+**3. Exportación a C++**
+- Pesos exportados a `src/firmware/esp32_qube_l298n/policy_weights.h`.
+- Arquitectura: 36 → 64 → 64 → 1, 6,593 parámetros, 25.8 KB flash.
+- Compatible con modo 7 (on-device inference en ESP32).
+
+#### Cambios de firmware
+```cpp
+// policy_weights.h regenerado con pesos de 500K steps (linear_alpha)
+// Arquitectura: [36, 64, 64, 1] — RLtools compatible
+```
+
+#### Notas
+- El reward oscila durante entrenamiento (patrón típico de SAC en swing-up).
+- La continuación desde C5 permitió alcanzar 169° de alpha donde C5 solo llegaba a 31°.
+- Siguiente paso: fine-tuning en hardware o continuar entrenamiento para mejorar success rate.
+- Verificar flash usage: `cd src/firmware && pio run -e esp32dev 2>&1 | grep Flash`.
+
+
+## [1.40.0] — 2026-06-16
+### Rewards densas para swing-up, fixes real env, modo 7 on-device inference
+
+#### Problema identificado
+- El agente SAC con `cos_alpha` no aprendía swing-up: gradiente ~0 cuando el péndulo cuelga (25x menor que lineal).
+- Real env tenía obs mismatch (6 dims vs 8 de sim) y no convertía grados a radianes.
+- `handleCmd` rechazaba `mode=7` (limitaba a 0-6).
+- Modelo fine-tuned no funcionaba en hardware real (nada se movía).
+
+#### Cambios aplicados
+
+**1. Nuevas rewards densas (`src/qube_rl/rewards.py`)**
+- `linear_alpha`: gradiente lineal `|alpha|/pi` — 25x más fuerte que `cos_alpha` near hanging.
+- `linear_alpha_dense`: añade velocity shaping — recompensa al_dot cuando péndulo en mitad inferior (pumping).
+- Ambas con penalty ligera de theta (-0.2 at ±90°), clip [-2, 1].
+- Verificado: DOWN=0.0, 45°=0.25, UP=1.0.
+
+**2. Fixes en real env (`src/qube_rl/envs/qube_real.py`)**
+- Obs space corregido: 8 dims `[θ, α, cosθ, sinθ, cosα, sinα, θ̇, α̇]` (match sim).
+- Conversión grados→radianes en `step()` y `reset()` (`np.radians(data["th"])`).
+
+**3. Fix firmware (`esp32_qube_l298n.ino`)**
+- `handleCmd`: `m <= 6` → `m <= 7` (acepta modo 7).
+- Modo 7: forward pass on-device [36→64→64→1], ReLU, Hardtanh(-2,2).
+- Historial buffer 4 pasos × 9 features = 36 inputs.
+- Safety brake si theta > 90°.
+
+**4. Handoff para entrenamiento overnight**
+- Documento `HANDOFF_OVERNIGHT_TRAINING.md` con plan completo.
+- Entrenamiento 500K steps con `linear_alpha` + [64,64].
+- Monitoreo cada ~20 min vía TensorBoard.
+
+#### Cambios de Python
+```python
+# rewards.py — nuevas rewards densas
+def linear_alpha(state):
+    al_rew = np.abs(al) / np.pi  # 25x gradiente near 0
+    th_penalty = -0.2 * (state[THETA] / (np.pi / 2)) ** 2
+    return float(al_rew + th_penalty)
+
+# real env — fix grados→radianes
+self._state[THETA] = np.radians(data["th"])
+self._state[ALPHA] = np.radians(data["al"])
+```
+
+#### Notas
+- Entrenamiento: `uv run python -m qube_rl.train --timesteps 500000 --reward linear_alpha --net-arch 64`
+- Export: `uv run python -m qube_rl.export_rltools --model models/qube_sac_64x2.zip`
+- Deploy: `pio run -e esp32dev --target upload` → `GET /cmd?m=7`
+- Verificar en sim antes de deploy: max_alpha debe superar 120° en al menos 1/10 episodios.
+
 ## [1.39.0] — 2026-06-16
 ### Entrenamiento RLtools-compatible: reward swingup_balance, red [64,64], exportación C++
 

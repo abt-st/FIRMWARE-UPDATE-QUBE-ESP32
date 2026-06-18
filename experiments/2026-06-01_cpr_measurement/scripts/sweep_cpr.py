@@ -33,8 +33,12 @@ def send_cmd(ip: str, params: dict[str, str | int]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Barrido de CPR")
     parser.add_argument("--ip", default=DEFAULT_IP, help=f"IP del ESP32 (default: {DEFAULT_IP})")
-    parser.add_argument("--encoder", choices=["servo", "pendulum"], default="servo",
-                        help="Encoder a medir: servo (GPIO34/35) o pendulum (GPIO32/33)")
+    parser.add_argument(
+        "--encoder",
+        choices=["servo", "pendulum"],
+        default="servo",
+        help="Encoder a medir: servo (GPIO34/35) o pendulum (GPIO32/33)",
+    )
     parser.add_argument("--duracion", "-t", type=float, default=20.0, help="Segundos de grabacion (default: 20)")
     parser.add_argument("--vueltas", "-n", type=int, default=1, help="Vueltas objetivo (default: 1)")
     args = parser.parse_args()

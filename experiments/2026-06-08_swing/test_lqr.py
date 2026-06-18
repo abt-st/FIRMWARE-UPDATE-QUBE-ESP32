@@ -2,6 +2,7 @@
 """LQR stability test - configurable ke, 10 attempts x 90s.
 Usage: python test_lqr.py [ke] [attempts] [duration]
 """
+
 import sys
 import time
 import json

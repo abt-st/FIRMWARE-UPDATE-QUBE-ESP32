@@ -12,6 +12,7 @@ policy robust to modelling errors (key technique for sim-to-real transfer).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 import numpy as np
 
@@ -55,23 +56,47 @@ class QubeDynamics:
     # --- Precomputed constants (populated by _init_const) ---
     _c: np.ndarray = field(default_factory=lambda: np.zeros(5), repr=False)
 
+    # Names of the parameters perturbed by domain randomisation.
+    _RANDOM_PARAMS: ClassVar[tuple[str, ...]] = ("Rm", "km", "Mr", "Lr", "Dr", "Mp", "Lp", "Dp")
+    # Parameters that must stay strictly positive (the rest may reach zero).
+    _STRICTLY_POSITIVE: ClassVar[frozenset[str]] = frozenset({"Rm", "km", "Mr", "Lr", "Mp", "Lp"})
+
     def __post_init__(self) -> None:
+        # Snapshot the nominal means BEFORE the first randomisation so every
+        # subsequent randomize() samples around the nominal value rather than
+        # around the previously-sampled one (which would make the distribution
+        # drift further from nominal on every episode).
+        self._nominal: dict[str, float] = {name: float(getattr(self, name)) for name in self._RANDOM_PARAMS}
         self.randomize()
 
     # ------------------------------------------------------------------
     # Domain randomisation
     # ------------------------------------------------------------------
 
-    def randomize(self) -> None:
-        """Sample physical parameters from their Gaussian distributions."""
-        self.Rm = float(np.random.normal(self.Rm, self.Rm_std))
-        self.km = float(np.random.normal(self.km, self.km_std))
-        self.Mr = float(np.random.normal(self.Mr, self.Mr_std))
-        self.Lr = float(np.random.normal(self.Lr, self.Lr_std))
-        self.Dr = float(np.random.normal(self.Dr, self.Dr_std))
-        self.Mp = float(np.random.normal(self.Mp, self.Mp_std))
-        self.Lp = float(np.random.normal(self.Lp, self.Lp_std))
-        self.Dp = float(np.random.normal(self.Dp, self.Dp_std))
+    def randomize(self, rng: np.random.Generator | None = None) -> None:
+        """Sample physical parameters from their Gaussian distributions.
+
+        Parameters
+        ----------
+        rng : np.random.Generator, optional
+            Random generator to draw from.  Pass the environment's
+            ``np_random`` for reproducible, seed-controlled episodes.  Defaults
+            to the legacy global ``numpy.random`` state when ``None``.
+
+        Each parameter is sampled around its *nominal* mean (snapshotted at
+        construction), never around the last sample, so the randomisation does
+        not drift across episodes.  Samples are floored at a small positive (or
+        zero) value: several ``*_std`` are comparable to their mean, so an
+        unclamped Gaussian can yield negative mass/length/friction — which is
+        unphysical and can drive the mass matrix singular.
+        """
+        draw = rng.normal if rng is not None else np.random.normal
+        eps = 1e-9
+        for name in self._RANDOM_PARAMS:
+            mean = self._nominal[name]
+            std = getattr(self, f"{name}_std")
+            floor = eps if name in self._STRICTLY_POSITIVE else 0.0
+            setattr(self, name, max(floor, float(draw(mean, std))))
         self._init_const()
 
     # ------------------------------------------------------------------
@@ -120,7 +145,11 @@ class QubeDynamics:
         a = self._c[0] + self._c[1] * sin_al**2
         b = self._c[2] * cos_al
         c = self._c[3]
-        d = a * c - b * b  # det(M)
+        d = a * c - b * b  # det(M); positive for any physical (PD) mass matrix
+        # Defensive floor: a (near-)singular M would otherwise produce inf/NaN
+        # accelerations. This only triggers for unphysical sampled parameters.
+        if abs(d) < 1e-12:
+            d = 1e-12 if d >= 0 else -1e-12
 
         # Motor torque (steady-state DC motor model)
         trq = self.reduction_ratio * self.km * (voltage - self.km * thd * self.reduction_ratio) / self.Rm

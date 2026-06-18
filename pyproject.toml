@@ -32,10 +32,13 @@ rl = [
     "tensorboard>=2.15.1",
     "scipy>=1.11.4",
 ]
+tracking = [
+    "mlflow>=2.10",
+]
 
 [tool.ruff]
 line-length = 120
-target-version = "py314"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = [
@@ -60,6 +63,8 @@ ignore = [
     "ARG001",   # allow unused arguments in tests (fixtures)
     "S101",     # allow assert in tests
 ]
+# Control-theory code uses standard uppercase matrix notation (A, B, Q, R, K, S).
+"src/qube_rl/lqr.py" = ["N803", "N806"]
 
 [tool.ruff.format]
 quote-style = "double"

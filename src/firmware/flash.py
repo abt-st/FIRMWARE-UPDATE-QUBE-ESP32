@@ -88,12 +88,17 @@ def elf_to_bin() -> Path:
     tmp_bin = Path(tempfile.gettempdir()) / "qube_firmware.bin"
 
     esptool_parts = find_esptool().split()
-    cmd = esptool_parts + [
-        "--chip", "esp32",
+    cmd = [
+        *esptool_parts,
+        "--chip",
+        "esp32",
         "elf2image",
-        "--flash_mode", "dout",
-        "--flash_size", "4MB",
-        "-o", str(tmp_bin),
+        "--flash_mode",
+        "dout",
+        "--flash_size",
+        "4MB",
+        "-o",
+        str(tmp_bin),
         str(ELF_PATH),
     ]
 

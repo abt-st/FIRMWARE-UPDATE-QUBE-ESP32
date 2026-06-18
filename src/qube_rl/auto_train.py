@@ -7,6 +7,7 @@ Writes progress to training_progress.md for the user to review.
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -14,12 +15,14 @@ from stable_baselines3 import SAC
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
+from qube_rl.config import WrapperConfig, set_global_seeds
 from qube_rl.envs.qube_sim import QubeSimEnv
 from qube_rl.wrappers import DeadZone, GentlyTerminating, HistoryWrapper
 
 
 def make_env(reward: str = "cos_alpha", vel_clamp: float = 50.0) -> object:
     """Build environment with Monitor for episode metrics."""
+    wrap_cfg = WrapperConfig()
     env = QubeSimEnv(
         control_freq=50,
         reward=reward,
@@ -30,8 +33,8 @@ def make_env(reward: str = "cos_alpha", vel_clamp: float = 50.0) -> object:
     )
     env = Monitor(env)
     env = GentlyTerminating(env)
-    env = DeadZone(env, deadzone=0.2, center=0.01, max_act=0.75)
-    env = HistoryWrapper(env, steps=4, use_continuity_cost=True)
+    env = DeadZone(env, deadzone=wrap_cfg.deadzone, center=wrap_cfg.deadzone_center, max_act=wrap_cfg.deadzone_max_act)
+    env = HistoryWrapper(env, steps=wrap_cfg.history_steps, use_continuity_cost=wrap_cfg.use_continuity_cost)
     return env
 
 
@@ -42,6 +45,7 @@ def train_and_evaluate(
     net_size: int = 256,
     vel_clamp: float = 50.0,
     run_name: str = "auto",
+    seed: int | None = None,
 ) -> dict:
     """Train SAC and return metrics."""
     vec_env = DummyVecEnv([lambda: make_env(reward, vel_clamp)])
@@ -59,6 +63,7 @@ def train_and_evaluate(
         train_freq=1,
         gradient_steps=1,
         learning_starts=1000,
+        seed=seed,
         tensorboard_log="runs",
         verbose=0,
         policy_kwargs=dict(net_arch=dict(pi=[net_size, net_size], qf=[net_size, net_size])),
@@ -121,8 +126,24 @@ def train_and_evaluate(
     }
 
 
-def write_progress(results: list[dict], status: str) -> None:
-    """Write training progress to markdown file."""
+def log_run_to_mlflow(result: dict, *, enabled: bool, uri: str | None, experiment: str) -> None:
+    """Log one run's params and final scalar metrics to MLflow (no-op if disabled)."""
+    from qube_rl.mlflow_tracking import mlflow_run
+
+    params = {
+        "run_name": result["run_name"],
+        "timesteps": result["timesteps"],
+    }
+    metric_keys = ("fps", "episodes", "ep_len_mean", "ep_len_max", "ep_rew_mean", "ep_rew_max", "elapsed_s")
+    with mlflow_run(result["run_name"], params, enabled=enabled, uri=uri, experiment=experiment) as run:
+        if run:
+            for key in metric_keys:
+                if key in result:
+                    run.log_metric(key, float(result[key]))
+
+
+def write_progress(results: list[dict], status: str, out_dir: Path) -> None:
+    """Write training progress to a markdown file under ``out_dir``."""
     lines = [
         "# Training Progress — Autonomous Loop",
         f"**Status:** {status}",
@@ -161,29 +182,52 @@ def write_progress(results: list[dict], status: str) -> None:
         else:
             lines.append("❌ **Episodes < 1 second — agent not learning yet**")
 
-    Path("experiments/2026-06-15_training").mkdir(parents=True, exist_ok=True)
-    Path("experiments/2026-06-15_training/training_progress.md").write_text("\n".join(lines))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "training_progress.md").write_text("\n".join(lines))
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Autonomous SAC training loop for QUBE")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed (omit for non-deterministic)")
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help="Output directory for progress report (default: experiments/<today>_training)",
+    )
+    parser.add_argument("--mlflow", action="store_true", help="Log each run's metrics to MLflow")
+    parser.add_argument(
+        "--mlflow-uri", default=None, help="MLflow tracking URI (default: sqlite:///mlflow.db or env var)"
+    )
+    parser.add_argument("--mlflow-experiment", default="qube_sac_auto", help="MLflow experiment name")
+    args = parser.parse_args()
+
+    set_global_seeds(args.seed)
+    out_dir = Path(args.out_dir) if args.out_dir else Path("experiments") / f"{datetime.now():%Y-%m-%d}_training"
+
     results = []
 
     # Run 1: Baseline (50K steps)
     print("=" * 60)
     print("RUN 1: Baseline — 50K steps, cos_alpha, lr=3e-4, net=256")
     print("=" * 60)
-    r1 = train_and_evaluate(timesteps=50_000, run_name="run1_baseline")
+    mlflow_kw = {"enabled": args.mlflow, "uri": args.mlflow_uri, "experiment": args.mlflow_experiment}
+
+    r1 = train_and_evaluate(timesteps=50_000, run_name="run1_baseline", seed=args.seed)
     results.append(r1)
-    write_progress(results, f"Run 1 done — ep_len_mean={r1['ep_len_mean']:.1f}")
+    log_run_to_mlflow(r1, **mlflow_kw)
+    write_progress(results, f"Run 1 done — ep_len_mean={r1['ep_len_mean']:.1f}", out_dir)
     print(f"  Episodes: {r1['episodes']}, Avg len: {r1['ep_len_mean']:.1f}, Avg rew: {r1['ep_rew_mean']:.2f}")
 
     # Run 2: More aggressive reward (50K steps)
     print("=" * 60)
     print("RUN 2: exp_alpha_4 reward — 50K steps")
     print("=" * 60)
-    r2 = train_and_evaluate(timesteps=50_000, reward="exp_alpha_4", run_name="run2_exp_reward")
+    r2 = train_and_evaluate(timesteps=50_000, reward="exp_alpha_4", run_name="run2_exp_reward", seed=args.seed)
     results.append(r2)
-    write_progress(results, f"Run 2 done — ep_len_mean={r2['ep_len_mean']:.1f}")
+    log_run_to_mlflow(r2, **mlflow_kw)
+    write_progress(results, f"Run 2 done — ep_len_mean={r2['ep_len_mean']:.1f}", out_dir)
     print(f"  Episodes: {r2['episodes']}, Avg len: {r2['ep_len_mean']:.1f}, Avg rew: {r2['ep_rew_mean']:.2f}")
 
     # Run 3: Best config so far, longer training (100K steps)
@@ -191,15 +235,16 @@ def main() -> None:
     print("=" * 60)
     print(f"RUN 3: Best ({best_reward}) — 100K steps")
     print("=" * 60)
-    r3 = train_and_evaluate(timesteps=100_000, reward=best_reward, run_name="run3_best_long")
+    r3 = train_and_evaluate(timesteps=100_000, reward=best_reward, run_name="run3_best_long", seed=args.seed)
     results.append(r3)
-    write_progress(results, f"Run 3 done — ep_len_mean={r3['ep_len_mean']:.1f}")
+    log_run_to_mlflow(r3, **mlflow_kw)
+    write_progress(results, f"Run 3 done — ep_len_mean={r3['ep_len_mean']:.1f}", out_dir)
     print(f"  Episodes: {r3['episodes']}, Avg len: {r3['ep_len_mean']:.1f}, Avg rew: {r3['ep_rew_mean']:.2f}")
 
     # Final summary
-    write_progress(results, "All runs complete")
+    write_progress(results, "All runs complete", out_dir)
     print("\n" + "=" * 60)
-    print("TRAINING COMPLETE — see experiments/2026-06-15_training/training_progress.md")
+    print(f"TRAINING COMPLETE — see {out_dir / 'training_progress.md'}")
     print("=" * 60)
 
 

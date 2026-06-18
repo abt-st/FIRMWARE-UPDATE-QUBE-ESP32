@@ -1,4 +1,5 @@
 """Approach C: Firmware swing-up (mode 3) + RL balance (mode 6)."""
+
 import io
 import sys
 import time

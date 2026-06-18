@@ -33,7 +33,7 @@ def _http_get(url: str) -> dict:
             r = requests.get(url, timeout=HTTP_TIMEOUT)
             r.raise_for_status()
             return r.json()
-        except (requests.RequestException, ValueError):
+        except requests.RequestException, ValueError:
             if attempt < MAX_RETRIES - 1:
                 time.sleep(0.05)
             else:
@@ -172,7 +172,9 @@ def run_phase(phase_name: str, sp: int, num_attempts: int, csvfile, results: lis
             # Running stats every 5 attempts
             if i % 5 == 0:
                 total = catches + chatters + misses
-                print(f"  Running: {catches}C + {chatters}CH + {misses}M = {(catches + chatters) / total * 100:.0f}% catch")
+                print(
+                    f"  Running: {catches}C + {chatters}CH + {misses}M = {(catches + chatters) / total * 100:.0f}% catch"
+                )
 
         except Exception as e:
             print(f"ERROR: {e}")
@@ -281,9 +283,11 @@ def main() -> None:
         f.write("=== Phase Results ===\n\n")
         for s in phase_summaries:
             f.write(f"{s['phase']} (sp={s['sp']}):\n")
-            f.write(f"  {s['catches']}C + {s['chatters']}CH + {s['misses']}M "
-                    f"| clean={s['catch_rate']:.0f}% effective={s['effective_rate']:.0f}% "
-                    f"| {s['duration_min']:.1f}min\n\n")
+            f.write(
+                f"  {s['catches']}C + {s['chatters']}CH + {s['misses']}M "
+                f"| clean={s['catch_rate']:.0f}% effective={s['effective_rate']:.0f}% "
+                f"| {s['duration_min']:.1f}min\n\n"
+            )
 
         f.write("=== SP Comparison ===\n\n")
         f.write(f"{'SP':>4} | {'Catch':>5} | {'Chat':>5} | {'Miss':>4} | {'Clean%':>6} | {'Eff%':>6}\n")
@@ -291,8 +295,10 @@ def main() -> None:
         for sp in sorted(sp_stats.keys()):
             st = sp_stats[sp]
             marker = " <-- BEST" if sp == best_sp else ""
-            f.write(f"{sp:>4} | {st['catches']:>5} | {st['chatters']:>5} | {st['misses']:>4} | "
-                    f"{st['clean_rate']:>5.0f}% | {st['effective_rate']:>5.0f}%{marker}\n")
+            f.write(
+                f"{sp:>4} | {st['catches']:>5} | {st['chatters']:>5} | {st['misses']:>4} | "
+                f"{st['clean_rate']:>5.0f}% | {st['effective_rate']:>5.0f}%{marker}\n"
+            )
 
         f.write(f"\nBest SP: {best_sp}\n")
 

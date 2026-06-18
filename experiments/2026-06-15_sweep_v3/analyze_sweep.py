@@ -112,40 +112,48 @@ def audit_quality(attempts: dict[tuple[int, int], dict], duration: float = 30, p
 
         # Poll rate check
         if rate < poll_hz * 0.7:
-            findings.append({
-                "severity": "HIGH",
-                "sp": a["sp"],
-                "attempt": a["attempt"],
-                "issue": f"Poll rate {rate:.1f}Hz < 70% of configured {poll_hz}Hz",
-            })
+            findings.append(
+                {
+                    "severity": "HIGH",
+                    "sp": a["sp"],
+                    "attempt": a["attempt"],
+                    "issue": f"Poll rate {rate:.1f}Hz < 70% of configured {poll_hz}Hz",
+                }
+            )
 
         # Truncation check
         if dur < duration - 2:
-            findings.append({
-                "severity": "HIGH",
-                "sp": a["sp"],
-                "attempt": a["attempt"],
-                "issue": f"Truncated: {dur:.1f}s vs {duration}s expected",
-            })
+            findings.append(
+                {
+                    "severity": "HIGH",
+                    "sp": a["sp"],
+                    "attempt": a["attempt"],
+                    "issue": f"Truncated: {dur:.1f}s vs {duration}s expected",
+                }
+            )
 
         # Sample count check
         if abs(a["rows"] - expected_samples) > expected_samples * 0.1:
-            findings.append({
-                "severity": "MEDIUM",
-                "sp": a["sp"],
-                "attempt": a["attempt"],
-                "issue": f"Sample count {a['rows']} vs expected ~{expected_samples}",
-            })
+            findings.append(
+                {
+                    "severity": "MEDIUM",
+                    "sp": a["sp"],
+                    "attempt": a["attempt"],
+                    "issue": f"Sample count {a['rows']} vs expected ~{expected_samples}",
+                }
+            )
 
         # Unexpected modes
         unexpected = a["modes_seen"] - {0, 4, 5}
         if unexpected:
-            findings.append({
-                "severity": "CRITICAL",
-                "sp": a["sp"],
-                "attempt": a["attempt"],
-                "issue": f"Unexpected modes: {unexpected}",
-            })
+            findings.append(
+                {
+                    "severity": "CRITICAL",
+                    "sp": a["sp"],
+                    "attempt": a["attempt"],
+                    "issue": f"Unexpected modes: {unexpected}",
+                }
+            )
 
     return findings
 
@@ -191,8 +199,7 @@ def main() -> None:
         rate = a["rows"] / dur if dur > 0 else 0
         rates.append(rate)
         flag = " TRUNCATED" if dur < 28 else ""
-        print(f"  sp={a['sp']:>2} att={a['attempt']} rows={a['rows']:>3} "
-              f"dur={dur:>5.1f}s rate={rate:>5.1f}Hz{flag}")
+        print(f"  sp={a['sp']:>2} att={a['attempt']} rows={a['rows']:>3} dur={dur:>5.1f}s rate={rate:>5.1f}Hz{flag}")
 
     avg_rate = sum(rates) / len(rates)
     print(f"  Average poll rate: {avg_rate:.1f}Hz")
@@ -223,8 +230,10 @@ def main() -> None:
             cls = classifications[key]
             lqr_t = f"lqr={a['lqr_entries'][0]:.1f}s" if a["lqr_entries"] else "no_lqr"
             loss_str = f" losses={a['lqr_losses']}" if a["lqr_losses"] > 0 else ""
-            print(f"      att={a['attempt']} {cls:>9} max={max(abs(a['pend_min']), abs(a['pend_max'])):.0f}° "
-                  f"{lqr_t}{loss_str}")
+            print(
+                f"      att={a['attempt']} {cls:>9} max={max(abs(a['pend_min']), abs(a['pend_max'])):.0f}° "
+                f"{lqr_t}{loss_str}"
+            )
 
     # --- Findings ---
     print()

@@ -657,7 +657,6 @@ class App(tk.Tk):
             relief="flat",
         ).pack(side="left")
 
-
         # ── PWM Manual ────────────────────────────────────────────────
         section("PWM MANUAL (-255…255)")
         f_pwm = tk.Frame(inner, bg=COLORS["panel"])
@@ -699,7 +698,6 @@ class App(tk.Tk):
             font=("Consolas", 9),
             relief="flat",
         ).pack(padx=8, pady=4, anchor="w")
-
 
         # ── LQR Gains ────────────────────────────────────────────────
         section("LQR GANANCIAS")
@@ -1119,7 +1117,6 @@ class App(tk.Tk):
             self.client.set_pid(kp, ki, kd)
         except ValueError:
             messagebox.showerror("Error", "Los valores PID deben ser números")
-
 
     def _send_lqr(self) -> None:
         """Enviar ganancias LQR al ESP32."""

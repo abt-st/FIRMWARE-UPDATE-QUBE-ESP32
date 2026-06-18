@@ -13,17 +13,21 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.spaces import Box
 
+from qube_rl.config import MAX_VELOCITY
 from qube_rl.envs.qube_dynamics import QubeDynamics
 from qube_rl.rewards import REWARDS
-from qube_rl.utils import ALPHA, ALPHA_DOT, THETA, THETA_DOT, Timing, VelocityFilter
+from qube_rl.utils import ALPHA, ALPHA_DOT, THETA, THETA_DOT, Timing, VelocityFilter, observation_from_state
 
 
 class QubeSimEnv(gym.Env):
     """Simulation environment for the QUBE Servo rotary inverted pendulum.
 
-    Observation space (6-D)::
+    Observation (see :func:`qube_rl.utils.observation_from_state`): 6-D when the
+    angular range is unbounded, or 8-D when ``angle_limits`` are finite (raw
+    ``theta``/``alpha`` prepended).  Training uses the bounded 8-D form so the
+    layout matches :class:`~qube_rl.envs.qube_real.QubeRealEnv`::
 
-        [cos(theta), sin(theta), cos(alpha), sin(alpha), theta_dot, alpha_dot]
+        [theta, alpha, cos(theta), sin(theta), cos(alpha), sin(alpha), theta_dot, alpha_dot]
 
     Action space (1-D)::
 
@@ -75,8 +79,10 @@ class QubeSimEnv(gym.Env):
 
         self.state_max = np.array(angle_limits + speed_limits, dtype=np.float32)
 
-        # Observation: [cos_th, sin_th, cos_al, sin_al, th_d, al_d]
-        obs_max = np.array([1.0, 1.0, 1.0, 1.0, 30.0, 30.0], dtype=np.float32)
+        # Observation: [cos_th, sin_th, cos_al, sin_al, th_d, al_d].
+        # Velocity bound matches the integration clamp (MAX_VELOCITY) so the
+        # declared observation box can never be exceeded by a produced state.
+        obs_max = np.array([1.0, 1.0, 1.0, 1.0, MAX_VELOCITY, MAX_VELOCITY], dtype=np.float32)
         if not np.isinf(self.state_max[ALPHA]):
             obs_max = np.concatenate([[self.state_max[ALPHA]], obs_max])
         if not np.isinf(self.state_max[THETA]):
@@ -95,16 +101,22 @@ class QubeSimEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
-        rwd = float(self._reward_func(self._state))
-        obs = self._get_obs()
+        # Apply the action, then observe and reward the resulting state. The
+        # observation and reward must describe the post-action state, otherwise
+        # the agent receives the reward/observation of the state *before* its
+        # action took effect (an off-by-one in the MDP).
         self._update_state(float(action[0]))
+        obs = self._get_obs()
+        rwd = float(self._reward_func(self._state))
         terminated = not self.state_space.contains(self._state)
         terminated = terminated or not np.all(np.isfinite(self._state))
         return obs, rwd, terminated, False, {}
 
     def reset(self, *, seed: int | None = None, options: dict | None = None) -> tuple[np.ndarray, dict]:
         super().reset(seed=seed, options=options)
-        self.dyn.randomize()
+        # Draw domain-randomisation and the initial state from the env's own
+        # seeded generator so a given seed reproduces the same episode sequence.
+        self.dyn.randomize(rng=self.np_random)
         self._init_state()
         self._init_vel_filt()
         return self._get_obs(), {}
@@ -121,7 +133,7 @@ class QubeSimEnv(gym.Env):
 
     def _init_state(self) -> None:
         """Initialise state near the unstable equilibrium (pendulum inverted)."""
-        self._sim_state = (0.01 * np.random.randn(4)).astype(np.float32)
+        self._sim_state = (0.01 * self.np_random.standard_normal(4)).astype(np.float32)
         self._state = self._sim_state.copy()
 
     def _init_vel_filt(self) -> None:
@@ -130,65 +142,69 @@ class QubeSimEnv(gym.Env):
         else:
             self.vel_filt = None
 
+    # Acceleration clamp [rad/s^2] — overflow protection against diverging dynamics.
+    _MAX_ACCEL = 1000.0
+
     def _update_state(self, action: float) -> None:
-        """Integrate dynamics and simulate encoder measurements."""
+        """Advance the true state, then derive the measured state.
+
+        Pipeline: integrate the continuous dynamics, simulate encoder
+        quantisation of the angles, then estimate velocities the same way the
+        firmware does (filtered derivative).
+        """
+        self._integrate_euler(action)
+        self._quantize_angles()
+        self._estimate_velocities()
+
+    def _integrate_euler(self, action: float) -> None:
+        """Semi-implicit Euler integration of the true (unmeasured) state."""
         integration_steps = int(self.timing.dt / self.integration_dt)
         for _ in range(integration_steps):
             thdd, aldd = self.dyn(self._sim_state, action)
-            # Overflow protection: clamp accelerations
-            max_acc = 1000.0  # rad/s^2 — physical limit
-            thdd = float(np.clip(thdd, -max_acc, max_acc))
-            aldd = float(np.clip(aldd, -max_acc, max_acc))
+            thdd = float(np.clip(thdd, -self._MAX_ACCEL, self._MAX_ACCEL))
+            aldd = float(np.clip(aldd, -self._MAX_ACCEL, self._MAX_ACCEL))
             if not np.isfinite(thdd) or not np.isfinite(aldd):
                 break  # dynamics diverged — stop integrating
             self._sim_state[ALPHA_DOT] += self.integration_dt * aldd
             self._sim_state[THETA_DOT] += self.integration_dt * thdd
             self._sim_state[ALPHA] += self.integration_dt * self._sim_state[ALPHA_DOT]
             self._sim_state[THETA] += self.integration_dt * self._sim_state[THETA_DOT]
-            # Clamp velocities to physical range
-            self._sim_state[THETA_DOT] = np.clip(self._sim_state[THETA_DOT], -50.0, 50.0)
-            self._sim_state[ALPHA_DOT] = np.clip(self._sim_state[ALPHA_DOT], -50.0, 50.0)
+            # Clamp velocities to the physical range (shared with the obs bound)
+            self._sim_state[THETA_DOT] = np.clip(self._sim_state[THETA_DOT], -MAX_VELOCITY, MAX_VELOCITY)
+            self._sim_state[ALPHA_DOT] = np.clip(self._sim_state[ALPHA_DOT], -MAX_VELOCITY, MAX_VELOCITY)
 
-        # Simulate encoder quantisation
-        if self.encoders_cprs:
-            th_cpr, al_cpr = self.encoders_cprs
-            if th_cpr is not None:
-                inc = 2 * np.pi / th_cpr
-                self._state[THETA] = np.round(self._sim_state[THETA] / inc) * inc
+    def _quantize_angles(self) -> None:
+        """Copy true angles into the measured state, applying encoder quantisation."""
+        cprs = self.encoders_cprs or [None, None]
+        for idx, cpr in zip((THETA, ALPHA), cprs, strict=True):
+            if cpr is not None:
+                inc = 2 * np.pi / cpr
+                self._state[idx] = np.round(self._sim_state[idx] / inc) * inc
             else:
-                self._state[THETA] = self._sim_state[THETA]
-            if al_cpr is not None:
-                inc = 2 * np.pi / al_cpr
-                self._state[ALPHA] = np.round(self._sim_state[ALPHA] / inc) * inc
-            else:
-                self._state[ALPHA] = self._sim_state[ALPHA]
-        else:
-            self._state[THETA] = self._sim_state[THETA]
-            self._state[ALPHA] = self._sim_state[ALPHA]
+                self._state[idx] = self._sim_state[idx]
 
-        # Velocity estimation (filtered derivative, matches firmware)
+    def _estimate_velocities(self) -> None:
+        """Estimate velocities from measured angles (filtered, matches firmware).
+
+        The filtered derivative can transiently overshoot, so clamp it to
+        MAX_VELOCITY — the same bound declared by the observation space.
+        """
         if self.vel_filt is not None:
             self._state[THETA_DOT : ALPHA_DOT + 1] = self.vel_filt(self._state[THETA : ALPHA + 1])
         else:
             self._state[THETA_DOT] = self._sim_state[THETA_DOT]
             self._state[ALPHA_DOT] = self._sim_state[ALPHA_DOT]
+        self._state[THETA_DOT] = np.clip(self._state[THETA_DOT], -MAX_VELOCITY, MAX_VELOCITY)
+        self._state[ALPHA_DOT] = np.clip(self._state[ALPHA_DOT], -MAX_VELOCITY, MAX_VELOCITY)
 
     def _get_obs(self) -> np.ndarray:
-        """Build the observation vector from the current state."""
-        obs = np.array(
-            [
-                np.cos(self._state[THETA]),
-                np.sin(self._state[THETA]),
-                np.cos(self._state[ALPHA]),
-                np.sin(self._state[ALPHA]),
-                self._state[THETA_DOT],
-                self._state[ALPHA_DOT],
-            ],
-            dtype=np.float32,
+        """Build the observation vector from the current state.
+
+        Raw angles are included only when the corresponding range is bounded,
+        matching the observation-space construction in ``__init__``.
+        """
+        return observation_from_state(
+            self._state,
+            include_raw_theta=not np.isinf(self.state_max[THETA]),
+            include_raw_alpha=not np.isinf(self.state_max[ALPHA]),
         )
-        # Append raw angles if limits are set (gives the agent direct access)
-        if not np.isinf(self.state_max[ALPHA]):
-            obs = np.concatenate([[self._state[ALPHA]], obs])
-        if not np.isinf(self.state_max[THETA]):
-            obs = np.concatenate([[self._state[THETA]], obs])
-        return obs

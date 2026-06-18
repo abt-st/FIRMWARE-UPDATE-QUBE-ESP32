@@ -40,7 +40,7 @@ def _http_get(url: str, retries: int = MAX_RETRIES) -> dict:
             r = requests.get(url, timeout=HTTP_TIMEOUT)
             r.raise_for_status()
             return r.json()
-        except (requests.RequestException, ValueError):
+        except requests.RequestException, ValueError:
             if attempt < retries - 1:
                 time.sleep(0.1 * (attempt + 1))
             else:
@@ -127,10 +127,18 @@ def run_attempt(sp: int, attempt: int, csvfile) -> dict:
         prev_pend = pend
 
         # Log sample
-        csvfile.writerow([
-            sp, attempt, f"{t:.3f}", f"{servo:.2f}", f"{pend:.2f}",
-            mode, pwm, f"{v_bus:.3f}",
-        ])
+        csvfile.writerow(
+            [
+                sp,
+                attempt,
+                f"{t:.3f}",
+                f"{servo:.2f}",
+                f"{pend:.2f}",
+                mode,
+                pwm,
+                f"{v_bus:.3f}",
+            ]
+        )
         samples += 1
 
         time.sleep(1.0 / POLL_HZ)
@@ -234,13 +242,25 @@ def main() -> None:
                 )
             except Exception as e:
                 print(f"ERROR: {e}")
-                sp_results.append({
-                    "sp": sp, "attempt": i, "max_angle": 0, "max_angle_time": 0,
-                    "lqr_catch_time": None, "lqr_losses": 0, "lqr_loss_times": [],
-                    "spin_events": 0, "final_pend": 0, "final_servo": 0,
-                    "final_mode": -1, "classification": "ERROR", "samples": 0,
-                    "duration": 0, "aborted": False,
-                })
+                sp_results.append(
+                    {
+                        "sp": sp,
+                        "attempt": i,
+                        "max_angle": 0,
+                        "max_angle_time": 0,
+                        "lqr_catch_time": None,
+                        "lqr_losses": 0,
+                        "lqr_loss_times": [],
+                        "spin_events": 0,
+                        "final_pend": 0,
+                        "final_servo": 0,
+                        "final_mode": -1,
+                        "classification": "ERROR",
+                        "samples": 0,
+                        "duration": 0,
+                        "aborted": False,
+                    }
+                )
 
             time.sleep(PAUSE_BETWEEN)
 
@@ -286,7 +306,9 @@ def main() -> None:
         for sp in SP_VALUES:
             sp_r = [r for r in results if r["sp"] == sp and r["samples"] > 0]
             if not sp_r:
-                f.write(f"{sp:>4} | {'N/A':>5} | {'N/A':>5} | {'N/A':>5} | {'N/A':>4} | {'N/A':>6} | {'N/A':>6} | {'N/A':>7} | {'N/A':>8}\n")
+                f.write(
+                    f"{sp:>4} | {'N/A':>5} | {'N/A':>5} | {'N/A':>5} | {'N/A':>4} | {'N/A':>6} | {'N/A':>6} | {'N/A':>7} | {'N/A':>8}\n"
+                )
                 continue
 
             catches = sum(1 for r in sp_r if r["classification"] == "CATCH")

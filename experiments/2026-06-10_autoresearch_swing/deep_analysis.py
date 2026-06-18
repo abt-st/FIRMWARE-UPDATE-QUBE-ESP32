@@ -9,12 +9,14 @@ Analyzes per-attempt:
 4. Time to reach max angle
 5. Voltage drop (brownout indicator)
 """
+
 import os
 import csv
 import glob
 import math
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+
 
 def analyze_csv(path):
     rows = []
@@ -24,36 +26,40 @@ def analyze_csv(path):
         for row in reader:
             # Handle two CSV formats
             if "servo_deg" in headers:
-                rows.append({
-                    "t": float(row["t"]),
-                    "servo_deg": float(row["servo_deg"]),
-                    "pend_deg": float(row["pend_deg"]),
-                    "pend_raw_deg": float(row["pend_raw_deg"]),
-                    "pwm": int(row["pwm"]),
-                    "mode": int(row["mode"]),
-                    "v_bus": float(row["v_bus"]),
-                    "i_ma": float(row["i_ma"]),
-                    "p_mw": float(row["p_mw"]),
-                })
+                rows.append(
+                    {
+                        "t": float(row["t"]),
+                        "servo_deg": float(row["servo_deg"]),
+                        "pend_deg": float(row["pend_deg"]),
+                        "pend_raw_deg": float(row["pend_raw_deg"]),
+                        "pwm": int(row["pwm"]),
+                        "mode": int(row["mode"]),
+                        "v_bus": float(row["v_bus"]),
+                        "i_ma": float(row["i_ma"]),
+                        "p_mw": float(row["p_mw"]),
+                    }
+                )
             elif "servo" in headers:
-                rows.append({
-                    "t": float(row["t"]),
-                    "servo_deg": float(row["servo"]),
-                    "pend_deg": float(row["pend"]),
-                    "pend_raw_deg": float(row["pend"]),
-                    "pwm": int(row["pwm"]),
-                    "mode": int(row["mode"]),
-                    "v_bus": float(row["v"]),
-                    "i_ma": 0.0,
-                    "p_mw": 0.0,
-                })
+                rows.append(
+                    {
+                        "t": float(row["t"]),
+                        "servo_deg": float(row["servo"]),
+                        "pend_deg": float(row["pend"]),
+                        "pend_raw_deg": float(row["pend"]),
+                        "pwm": int(row["pwm"]),
+                        "mode": int(row["mode"]),
+                        "v_bus": float(row["v"]),
+                        "i_ma": 0.0,
+                        "p_mw": 0.0,
+                    }
+                )
     if len(rows) < 3:
         return None
         return None
 
     # Physics constants (from firmware)
-    PEND_MASS = 0.025   # kg
-    GRAVITY = 9.81      # m/s^2
+    PEND_MASS = 0.025  # kg
+    GRAVITY = 9.81  # m/s^2
     PEND_LENGTH = 0.065  # m (pivot to CM)
     PEND_INERTIA = 2.0e-5  # kg*m^2
     mgl = PEND_MASS * GRAVITY * PEND_LENGTH
@@ -92,7 +98,7 @@ def analyze_csv(path):
             voltage_min_time = r["t"]
 
         # Detect LQR transition (mode change from 5 to 4)
-        if i > 0 and rows[i-1]["mode"] == 5 and r["mode"] == 4:
+        if i > 0 and rows[i - 1]["mode"] == 5 and r["mode"] == 4:
             transition_idx = i
             transition_pend = r["pend_deg"]
             transition_servo = r["servo_deg"]
@@ -110,7 +116,7 @@ def analyze_csv(path):
                 hold_start = r["t"]
 
         # Detect LQR loss (mode change from 4 to something else, or crash)
-        if i > 0 and rows[i-1]["mode"] == 4 and r["mode"] != 4:
+        if i > 0 and rows[i - 1]["mode"] == 4 and r["mode"] != 4:
             if hold_start is not None:
                 hold_time = r["t"] - hold_start
                 if hold_time > max_hold:
@@ -156,6 +162,7 @@ def analyze_csv(path):
         "duration": round(float(rows[-1]["t"]), 1),
     }
 
+
 # Analyze all files
 all_files = sorted(glob.glob(os.path.join(DATA_DIR, "*.csv")))
 results = []
@@ -191,14 +198,14 @@ for range_name, (lo, hi) in ranges.items():
     avg_transition_energy = [r["transition_energy"] for r in subset if r["transition_energy"] != 0]
 
     print(f"\n--- Range {range_name}° ({len(subset)} trials) ---")
-    print(f"  Catches: {catches}/{len(subset)} = {100*catches/len(subset):.0f}%")
-    print(f"  Crashes: {crashes}/{len(subset)} = {100*crashes/len(subset):.0f}%")
+    print(f"  Catches: {catches}/{len(subset)} = {100 * catches / len(subset):.0f}%")
+    print(f"  Crashes: {crashes}/{len(subset)} = {100 * crashes / len(subset):.0f}%")
     print(f"  Avg voltage drop: {avg_vdrop:.2f}V")
     print(f"  Avg energy ratio (E/Etarget): {avg_energy_ratio:.3f}")
     if avg_transition_vel:
-        print(f"  Avg transition velocity: {sum(avg_transition_vel)/len(avg_transition_vel):.1f}°/s")
+        print(f"  Avg transition velocity: {sum(avg_transition_vel) / len(avg_transition_vel):.1f}°/s")
     if avg_transition_energy:
-        print(f"  Avg transition energy: {sum(avg_transition_energy)/len(avg_transition_energy):.2f}mJ")
+        print(f"  Avg transition energy: {sum(avg_transition_energy) / len(avg_transition_energy):.2f}mJ")
     print(f"  E_target: {results[0]['E_target_mJ']:.2f}mJ")
 
 # Specific: analyze the 150-200° range failures in detail
@@ -209,13 +216,15 @@ critical = [r for r in results if 150 <= r["max_pend"] < 200]
 for r in sorted(critical, key=lambda x: x["max_pend"], reverse=True):
     status = "CATCH" if r["catches"] > 0 else "MISS"
     crash_s = " CRASH" if r["crash"] else ""
-    print(f"  {r['file'][:25]:25s} max={r['max_pend']:6.1f}° "
-          f"e_ratio={r['energy_ratio']:.3f} "
-          f"v_drop={r['voltage_drop']:.1f}V "
-          f"t_vel={r['transition_vel']:6.1f}°/s "
-          f"t_energy={r['transition_energy']:5.1f}mJ "
-          f"hold={r['max_hold']:5.1f}s "
-          f"{status}{crash_s}")
+    print(
+        f"  {r['file'][:25]:25s} max={r['max_pend']:6.1f}° "
+        f"e_ratio={r['energy_ratio']:.3f} "
+        f"v_drop={r['voltage_drop']:.1f}V "
+        f"t_vel={r['transition_vel']:6.1f}°/s "
+        f"t_energy={r['transition_energy']:5.1f}mJ "
+        f"hold={r['max_hold']:5.1f}s "
+        f"{status}{crash_s}"
+    )
 
 # The successful catches for comparison
 print("\n" + "=" * 100)
@@ -223,12 +232,14 @@ print("SUCCESSFUL CATCHES (all ranges)")
 print("=" * 100)
 caught = [r for r in results if r["catches"] > 0]
 for r in sorted(caught, key=lambda x: x["max_hold"], reverse=True):
-    print(f"  {r['file'][:25]:25s} max={r['max_pend']:6.1f}° "
-          f"e_ratio={r['energy_ratio']:.3f} "
-          f"v_drop={r['voltage_drop']:.1f}V "
-          f"t_vel={r['transition_vel']:6.1f}°/s "
-          f"t_energy={r['transition_energy']:5.1f}mJ "
-          f"hold={r['max_hold']:5.1f}s")
+    print(
+        f"  {r['file'][:25]:25s} max={r['max_pend']:6.1f}° "
+        f"e_ratio={r['energy_ratio']:.3f} "
+        f"v_drop={r['voltage_drop']:.1f}V "
+        f"t_vel={r['transition_vel']:6.1f}°/s "
+        f"t_energy={r['transition_energy']:5.1f}mJ "
+        f"hold={r['max_hold']:5.1f}s"
+    )
 
 # Key insight: what distinguishes successful catches?
 print("\n" + "=" * 100)
@@ -238,13 +249,17 @@ if caught:
     avg_caught_energy = sum(r["energy_ratio"] for r in caught) / len(caught)
     avg_caught_vdrop = sum(r["voltage_drop"] for r in caught) / len(caught)
     avg_caught_max = sum(r["max_pend"] for r in caught) / len(caught)
-    print(f"Successful catches: avg energy_ratio={avg_caught_energy:.3f}, avg v_drop={avg_caught_vdrop:.1f}V, avg max_angle={avg_caught_max:.1f}°")
+    print(
+        f"Successful catches: avg energy_ratio={avg_caught_energy:.3f}, avg v_drop={avg_caught_vdrop:.1f}V, avg max_angle={avg_caught_max:.1f}°"
+    )
 
 missed = [r for r in results if r["catches"] == 0 and r["max_pend"] > 100]
 if missed:
     avg_missed_energy = sum(r["energy_ratio"] for r in missed) / len(missed)
     avg_missed_vdrop = sum(r["voltage_drop"] for r in missed) / len(missed)
     avg_missed_max = sum(r["max_pend"] for r in missed) / len(missed)
-    print(f"Misses (>100°):    avg energy_ratio={avg_missed_energy:.3f}, avg v_drop={avg_missed_vdrop:.1f}V, avg max_angle={avg_missed_max:.1f}°")
+    print(
+        f"Misses (>100°):    avg energy_ratio={avg_missed_energy:.3f}, avg v_drop={avg_missed_vdrop:.1f}V, avg max_angle={avg_missed_max:.1f}°"
+    )
 
 print(f"\nDelta energy_ratio (catch vs miss): {avg_caught_energy - avg_missed_energy:.3f}")
