@@ -9,7 +9,7 @@ Instrucciones base para agentes AI que trabajen en este repositorio.
 
 ## Estructura clave
 
-- `firmware/esp32_qube_l298n/esp32_qube_l298n.ino`: firmware principal del sistema de control.
+- `firmware/esp32_qube/esp32_qube.ino`: firmware principal del sistema de control.
 - `firmware/CHANGELOG.md`: historial de versiones del firmware.
 - `src/firmware/data/index.html`: GUI web embebida (SPIFFS) para monitoreo y control.
 - `Data/`: capturas CSV de sesiones experimentales.
@@ -47,7 +47,7 @@ Nota: si el PDF destino esta abierto, el script genera un nombre alternativo con
 ## Pitfalls conocidos
 
 - La GUI web usa `location.hostname`; en modo AP el ESP32 responde en `192.168.4.1`.
-- En `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` existen credenciales STA configurables (`STA_SSID`, `STA_PASS`); tratarlas con cuidado y no exponerlas fuera del repo.
+- En `firmware/esp32_qube/esp32_qube.ino` existen credenciales STA configurables (`STA_SSID`, `STA_PASS`); tratarlas con cuidado y no exponerlas fuera del repo.
 - En compilacion PDF, un archivo abierto puede bloquear sobrescritura.
 
 ## Personalizaciones existentes (usar en lugar de duplicar)

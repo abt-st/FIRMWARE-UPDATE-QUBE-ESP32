@@ -42,7 +42,7 @@ git diff --name-only HEAD
 ```
 
 Archivos clave que requieren registro en CHANGELOG:
-- `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` → **siempre**
+- `firmware/esp32_qube/esp32_qube.ino` → **siempre**
 - `firmware/platformio.ini` → si cambian dependencias, flags o plataforma
 - `src/firmware/data/index.html` → si cambia la GUI web embebida
 - `pyproject.toml` → si cambian dependencias Python
@@ -108,7 +108,7 @@ El archivo `CHANGELOG.md` tiene esta estructura:
 ```markdown
 # CHANGELOG — QUBE ESP32 (Firmware + Documentación)
 
-Registro de cambios del firmware `esp32_qube_l298n.ino` y documentación del proyecto.
+Registro de cambios del firmware `esp32_qube.ino` y documentación del proyecto.
 
 ---
 

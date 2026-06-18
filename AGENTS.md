@@ -90,7 +90,7 @@ Este repositorio cuenta con un ecosistema de **agentes, skills, instrucciones y 
 - Registro de cambios en firmware, documentación, dependencias y configuración
 
 **Archivos monitoreados:**
-- `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` — siempre
+- `firmware/esp32_qube/esp32_qube.ino` — siempre
 - `firmware/platformio.ini` — dependencias, flags, plataforma
 - `src/firmware/data/index.html` — GUI web embebida (SPIFFS)
 - `pyproject.toml` — dependencias Python
@@ -250,7 +250,7 @@ El firmware expone endpoints HTTP dedicados para el control por RL:
 
 ### Actualizar CHANGELOG del Firmware
 
-**Regla obligatoria:** Cada vez que se modifique `firmware/esp32_qube_l298n/esp32_qube_l298n.ino`, **debe** agregarse una entrada al tope de `firmware/CHANGELOG.md` en la misma respuesta.
+**Regla obligatoria:** Cada vez que se modifique `firmware/esp32_qube/esp32_qube.ino`, **debe** agregarse una entrada al tope de `firmware/CHANGELOG.md` en la misma respuesta.
 
 **Formato de entrada CHANGELOG:**
 ```markdown
@@ -318,7 +318,7 @@ El firmware expone endpoints HTTP dedicados para el control por RL:
 
 | Archivo | Propósito |
 |---------|-----------|
-| `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` | Firmware principal del sistema de control |
+| `firmware/esp32_qube/esp32_qube.ino` | Firmware principal del sistema de control |
 | `firmware/CHANGELOG.md` | Historial de versiones del firmware |
 | `src/firmware/data/index.html` | GUI web embebida (SPIFFS) para monitoreo y control |
 | `experiments/` | Datos CSV organizados por experimento |
@@ -365,8 +365,8 @@ El firmware expone endpoints HTTP dedicados para el control por RL:
 | **HTML / JS / CSS / JSON / Markdown** | [Biome](https://biomejs.dev/) | `npx @biomejs/biome check --write .` |
 | **JavaScript / TypeScript** | [Biome](https://biomejs.dev/) | `npx @biomejs/biome check --write .` |
 | **Markdown** | [markdownlint](https://github.com/DavidAnson/markdownlint) | `npx markdownlint-cli "**/*.md" --fix` |
-| **C / C++ (firmware)** | [clang-format](https://clang.llvm.org/docs/ClangFormat.html) | `clang-format -i firmware/esp32_qube_l298n/*.ino` |
-| **C / C++ (firmware)** | [clang-tidy](https://clang.llvm.org/extra/clang-tidy/) | `clang-tidy firmware/esp32_qube_l298n/*.ino` |
+| **C / C++ (firmware)** | [clang-format](https://clang.llvm.org/docs/ClangFormat.html) | `clang-format -i firmware/esp32_qube/*.ino` |
+| **C / C++ (firmware)** | [clang-tidy](https://clang.llvm.org/extra/clang-tidy/) | `clang-tidy firmware/esp32_qube/*.ino` |
 | **TOML** | [taplo](https://taplo.tamasfe.dev/) | `taplo format pyproject.toml` |
 | **PowerShell** | [PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer) | `Invoke-ScriptAnalyzer -Path script.ps1` |
 

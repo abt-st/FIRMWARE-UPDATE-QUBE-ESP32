@@ -82,7 +82,7 @@ Fuentes de contenido del proyecto:
 - `docs/research/Investigación Modernización del QUBE Servo.md` — investigación consolidada
 - `docs/MODELO_FISICO_SISTEMA_QUBE.md` — modelo matemático completo
 - `docs/validation/` — validación científica
-- `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` — código firmware
+- `firmware/esp32_qube/esp32_qube.ino` — código firmware
 - `experiments/` — datos experimentales CSV
 - `src/firmware/data/index.html` — GUI web embebida
 
@@ -251,7 +251,7 @@ No considera rediseño mecánico completo ni reemplazo de actuadores principales
 | `docs/validation/resumen_ejecutivo.md` | Validación científica 91/100 | Cap 4, 5 |
 | `docs/validation/marco_cientifico.md` | Criterios ABET, fortalezas | Cap 1, 5 |
 | `docs/validation/lista_verificacion.md` | 160 items verificados | Validación |
-| `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` | Código fuente firmware | Cap 3 |
+| `firmware/esp32_qube/esp32_qube.ino` | Código fuente firmware | Cap 3 |
 | `experiments/` | Datos CSV experimentales | Cap 4 |
 | `src/firmware/data/index.html` | GUI web embebida | Cap 3 |
 | `CHANGELOG.md` | Historial de versiones | Cap 3 |

@@ -43,7 +43,7 @@ clean:             ## Limpiar archivos temporales de Python
 
 export-policy:     ## Export SAC model weights INTO the firmware header (MODEL=path)
 	$(PYTHON) -m qube_rl.export_rltools --model $(MODEL) \
-		--output src/firmware/esp32_qube_l298n/policy_weights.h
+		--output src/firmware/esp32_qube/policy_weights.h
 
 flash:             ## Build + upload firmware via HTTP (OneDrive-safe)
 	$(PYTHON) src/firmware/flash.py

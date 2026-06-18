@@ -229,7 +229,7 @@ tesis_usach/
 | `docs/research/Investigación Modernización del QUBE Servo.md` | Investigación, estado del arte |
 | `docs/MODELO_FISICO_SISTEMA_QUBE.md` | Modelo matemático, PID, LQR |
 | `docs/validation/resumen_ejecutivo.md` | Validación científica |
-| `firmware/esp32_qube_l298n/esp32_qube_l298n.ino` | Código firmware |
+| `firmware/esp32_qube/esp32_qube.ino` | Código firmware |
 | `experiments/` | Datos CSV experimentales |
 | `src/firmware/data/index.html` | GUI web embebida |
 | `CHANGELOG.md` | Historial de versiones |

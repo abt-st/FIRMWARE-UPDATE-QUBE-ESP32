@@ -29,7 +29,7 @@ except ImportError as e:
 
 FIRMWARE_DIR = Path(__file__).resolve().parent.parent / "firmware"
 EXPERIMENTS_DIR = Path(__file__).resolve().parent.parent / "experiments"
-INOTEO_FILE = FIRMWARE_DIR / "esp32_qube_l298n" / "esp32_qube_l298n.ino"
+INOTEO_FILE = FIRMWARE_DIR / "esp32_qube" / "esp32_qube.ino"
 PLATFORMIO_INI = FIRMWARE_DIR / "platformio.ini"
 
 # ── Servidor MCP ──────────────────────────────────────────────────────────────
@@ -192,7 +192,7 @@ def pio_serial_monitor(baud: int = 115200, _lines: int = 50) -> str:
 
 @mcp.tool()
 def read_firmware_source() -> str:
-    """Lee el código fuente completo del firmware principal (esp32_qube_l298n.ino).
+    """Lee el código fuente completo del firmware principal (esp32_qube.ino).
 
     Returns:
         Contenido del archivo .ino con su ruta absoluta.

@@ -1,11 +1,11 @@
 ---
-description: "Actualizar CHANGELOG del firmware. Usar cuando se modifique esp32_qube_l298n.ino: agregar nueva versión, registrar cambios, corregir bugs, ajustar parámetros PID, cambiar pines, o cualquier modificación al firmware del QUBE Servo. Aplica también en chats del agente cuando se proponga, discuta o implemente cualquier cambio de firmware, incluso si el archivo no está adjunto explícitamente."
+description: "Actualizar CHANGELOG del firmware. Usar cuando se modifique esp32_qube.ino: agregar nueva versión, registrar cambios, corregir bugs, ajustar parámetros PID, cambiar pines, o cualquier modificación al firmware del QUBE Servo. Aplica también en chats del agente cuando se proponga, discuta o implemente cualquier cambio de firmware, incluso si el archivo no está adjunto explícitamente."
 applyTo: "firmware/**/*.ino"
 ---
 
 # Regla: Actualizar CHANGELOG tras cada edición del firmware
 
-Cada vez que modifiques `firmware/esp32_qube_l298n/esp32_qube_l298n.ino`, **debes** agregar una entrada al tope de `firmware/CHANGELOG.md` **en la misma respuesta**, antes de terminar.
+Cada vez que modifiques `firmware/esp32_qube/esp32_qube.ino`, **debes** agregar una entrada al tope de `firmware/CHANGELOG.md` **en la misma respuesta**, antes de terminar.
 
 ## Formato de entrada
 

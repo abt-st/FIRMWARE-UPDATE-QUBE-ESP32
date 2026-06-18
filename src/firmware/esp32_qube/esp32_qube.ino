@@ -1,10 +1,10 @@
 // ============================================================
 // QUBE Servo - Firmware base oficial
-// Arquitectura: ESP32 + L298N + INA219 + LM2596 + CD40106BE Schmitt Trigger
-// Fecha: 2026-05-28
+// Arquitectura: ESP32 + BTS7960 (IBT-2) + INA219 + LM2596 + CD40106BE Schmitt Trigger
+// Fecha: 2026-05-28 (driver migrado de L298N a BTS7960 el 2026-06-08, commit 78b4e7e)
 // ============================================================
 // Topologia de potencia y logica:
-// 1) Fuente principal (12V-15V) -> INA219 (serie) -> L298N VS
+// 1) Fuente principal (12V-15V) -> INA219 (serie) -> BTS7960 B+ (VS motor)
 // 2) Fuente principal -> LM2596 -> 5V para logica auxiliar
 // 3) Encoder servo (open-drain 5V) -> pull-up 4.7kΩ a 3.3V
 //    -> Schmitt Trigger CD40106BE (doble inversion, Vcc=3.3V)
@@ -12,17 +12,11 @@
 // 4) INA219 en I2C para telemetria de voltaje, corriente y potencia
 // 5) GND comun entre potencia y logica (topologia estrella)
 //
-// Pines recomendados:
-// Opcion A (PWM en ENA):
-// L298N ENA -> GPIO25 (PWM)
-// L298N IN1 -> GPIO26
-// L298N IN2 -> GPIO27
-//
-// Opcion B (sin cable ENA):
-// Deja el jumper ENA habilitado en el L298N y usa PWM en IN1/IN2.
-// En ese caso, ENA no se conecta al ESP32.
-// L298N IN1 -> GPIO26
-// L298N IN2 -> GPIO27
+// Pines recomendados (BTS7960 / IBT-2):
+// BTS7960 R_EN + L_EN -> GPIO25  (habilitacion; puentear R_EN->L_EN en el modulo)
+// BTS7960 RPWM        -> GPIO26  (IN1: PWM sentido horario)
+// BTS7960 LPWM        -> GPIO27  (IN2: PWM sentido antihorario)
+// BTS7960 VCC (logica)-> 5V      | B+/B- -> potencia motor 12-15V (via INA219)
 // Encoder servo A -> Schmitt INV_A (pin 1) -> GPIO34
 // Encoder servo B -> Schmitt INV_C (pin 5) -> GPIO35
 // INA219 SDA -> GPIO21
@@ -504,7 +498,6 @@ const int PWM_LIMIT_CLASSIC_NEAR = 35;
 const int PWM_LIMIT_CLASSIC_MID = 55;
 const int PWM_LIMIT_CLASSIC_FAR = 80;
 
-// ── Umbrales PID Péndulo (modo 3) ────────────────────────────────────────────
 // ── INA219 watchdog ───────────────────────────────────────────────────────────
 const unsigned long INA_WATCHDOG_PERIOD_MS = 1000;       // Periodo del watchdog I2C
 const unsigned long INA_INIT_RETRY_MS = 5000;            // Periodo de reintento de init
@@ -1309,7 +1302,10 @@ void processSerialCommand() {
     case 'm':
       {
         const int m = cmd.substring(1).toInt();
-        if (m >= 0 && m <= 5) {
+        // Modes 0,1,2,4,5,6,7 (mode 3 / pendulum-PID was removed in v1.34).
+        // Upper bound was 5, which silently blocked selecting the RL modes
+        // (6 = RL over HTTP, 7 = on-device RL) from the serial console.
+        if (m >= 0 && m <= 7) {
           setMode(m);
           lastCommandMs = millis();
         }
@@ -1660,7 +1656,7 @@ void setup() {
   lastTelemetryMs = millis();
   lastCommandMs = millis();
 
-  Serial.println("=== QUBE ESP32 + L298N + INA219 ===");
+  Serial.println("=== QUBE ESP32 + BTS7960 + INA219 ===");
   Serial.print("AP: ");
   Serial.println(AP_SSID);
   Serial.print("IP: ");
