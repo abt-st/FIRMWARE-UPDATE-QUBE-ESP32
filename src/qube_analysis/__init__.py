@@ -8,13 +8,29 @@ from .dataset import (
     load_session,
 )
 from .metrics import compute_overshoot, compute_settling_time, compute_steady_state_error
+from .sysid import (
+    DampedFit,
+    DeadzoneResult,
+    PendulumParams,
+    estimate_deadzone,
+    fit_damped_oscillation,
+    identify_pendulum,
+    identify_pendulum_from_runs,
+)
 
 __all__ = [
     "DRIVER_MIGRATION_DATE",
+    "DampedFit",
+    "DeadzoneResult",
+    "PendulumParams",
     "QubeRun",
     "compute_overshoot",
     "compute_settling_time",
     "compute_steady_state_error",
+    "estimate_deadzone",
+    "fit_damped_oscillation",
+    "identify_pendulum",
+    "identify_pendulum_from_runs",
     "infer_driver",
     "load_run",
     "load_session",

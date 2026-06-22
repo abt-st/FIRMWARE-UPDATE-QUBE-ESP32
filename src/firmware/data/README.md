@@ -97,8 +97,9 @@ Parámetros de `/cmd` emitidos por los paneles actuales: `m`, `s`, `p`, `x`,
 
 `0` STOP · `1` PWM · `2` PID Servo · `4` LQR · `5` Swing-up · `6` Deep RL (HTTP) · `7` Deep RL (chip).
 
-> El firmware acepta `m=0..7`. El selector **no** expone `m3` (PID péndulo)
-> porque ese modo será removido del firmware próximamente.
+> El firmware acepta `m=0..7` (con un hueco en `m3`). El modo `m3` (PID péndulo)
+> fue **removido** del firmware: el péndulo es un eslabón pasivo (sistema
+> subactuado), por lo que un PID de posición directa sobre él no es realizable.
 
 ---
 
@@ -141,4 +142,4 @@ Auditoría de `index.html` (2026-06-18). Prioridad: 🔴 alta · 🟡 media · �
 | - | -------- | ---- | ----- |
 | 9 | Sin autenticación / `ws://` plano | 🟢 | Aceptable solo en LAN aislada (AP del ESP32). No exponer a redes no confiables. |
 | 10 | Handlers `onclick` inline (incompatibles con CSP estricta), sin `aria-label`/`<form>` | 🟢 | De-inlinar todos los handlers es un refactor amplio; diferido para no arriesgar la GUI compacta actual. |
-| — | `m3` (PID péndulo) no expuesto en el selector | — | Intencional: el modo será removido del firmware próximamente. |
+| — | `m3` (PID péndulo) removido del firmware | — | Intencional: péndulo subactuado; control vía LQR (m4), swing-up (m5) y RL (m6/m7). |

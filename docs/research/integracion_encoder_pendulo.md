@@ -142,7 +142,7 @@ void updatePendEncoder();
 2. **Lectura en firmware (sin control)** — Contador de péndulo y conversión a grados
 3. **Calibración** — Medir CPR real, ajustar `pendCountsPerRev` y `pendDir`
 4. **Filtrado y velocidad** — Derivada + filtro EMA para `pend_vel`
-5. **Integración de control** — Agregar modo m3, mantener fallback a m2
+5. **Integración de control** — El encoder de péndulo alimenta LQR (m4), swing-up (m5) y RL (m6/m7). (El modo PID de péndulo m3 fue descartado: péndulo subactuado.)
 
 ---
 

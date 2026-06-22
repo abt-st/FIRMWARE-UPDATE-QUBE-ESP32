@@ -1,3 +1,56 @@
+## [1.44.0] — 2026-06-18
+### Correcciones de RL (REFERENCE.md Partes V/VI), auditoría de firmware y sync de docs
+
+Implementa los arreglos identificados en `REFERENCE.md`. Los cambios de *defaults*
+de entrenamiento mejoran el planteamiento pero **requieren reentrenar** para verse
+reflejados en resultados; los modelos `.zip` existentes siguen cargando (layout 8-D
+intacto). 84 tests pasan (`tests/test_fixes.py` añadido).
+
+#### RL — correcciones (`src/qube_rl/`)
+- **C1 — No terminar el episodio en el objetivo.** La terminación ya no depende de
+  `alpha`: el invertido (α=±π) era el objetivo y estaba en el borde de terminación,
+  por lo que el episodio terminaba justo al alcanzarlo. Ahora se termina solo por
+  límite de servo (θ), sobrevelocidad, estado no finito o `TimeLimit`. Corregido en
+  `envs/qube_sim.py` (`_is_terminal`) y `envs/qube_real.py` (antes terminaba a ~171°).
+- **M3 — `TimeLimit`.** Nueva factory `envs/factory.py` (fuente única para construir
+  entornos) que envuelve `gymnasium.wrappers.TimeLimit` (`max_episode_steps=500`,
+  10 s a 50 Hz). Consolida las 5–6 copias divergentes de `make_env`/`make_real_env`.
+- **A2 — Layout 8-D preservado.** `observation_from_state` envuelve `alpha` a [-π,π]
+  (nuevo `utils.wrap_angle`) para no violar el `observation_space` aunque el péndulo gire.
+- **C3 — Límite de brazo θ a ±120°** (`config.py`), según evidencia de los handoffs
+  (reach ~8–10 % a ±90° → ~38 % a ±120°). `qube_real` ajustado para igualar el box.
+- **C2 — Reward shaping basado en potencial** (policy-invariante, Ng et al. 1999):
+  nuevo wrapper `wrappers/potential_shaping.py` (`PotentialShaping`), opt-in vía
+  `--potential upright` en `train`/factory.
+- **M2 — Métrica de éxito correcta.** Nuevo `metrics.py::evaluate_balance` (reach,
+  balance ≥1 s invertido-y-lento, fracción de tiempo arriba, hold máximo). Reemplaza
+  el proxy "pico α>120°" en `distill.py`; integrado en `auto_train.py`.
+- **M1 — Multi-semilla.** `auto_train.py` corre cada config sobre `--seeds` y reporta
+  media ± std (≥5 recomendado); selecciona el mejor reward por `balance_rate`.
+- **D5 — Destilación.** Eliminados `temperature`/`alpha` muertos (nunca conectados a
+  ninguna pérdida) en `distill.py`; documentado que es BC + RL, no KD con soft-targets.
+- **D3 — Guard de exportación.** `export_rltools.py` avisa si `INPUT_DIM` del modelo no
+  coincide con el dim esperado por el firmware (36 = 4×9). El rewire firmware 36→8 queda
+  documentado como issue conocido (requiere prueba en HW).
+- **D1/D2 — Docstrings/comentarios.** Corregido el docstring de `_init_state` (era
+  "unstable/inverted", inicializa colgando/estable) y el comentario invertido en
+  `exp_alpha_reward`.
+
+#### Firmware (`esp32_qube/esp32_qube.ino`) — limpieza segura
+- Eliminado el comentario huérfano `// Umbrales PID Péndulo (modo 3)` (sin código asociado).
+- **Bug:** el parser serial aceptaba solo `m<=5`, bloqueando seleccionar los modos RL
+  6/7 por consola serial; corregido a `m<=7`.
+- Fallas de control profundas (ciclo límite del LQR, latencia de brownout ~100 ms,
+  discontinuidad ±180°, mismatch de despliegue RL 36-hist vs 8-raw) **documentadas**
+  como issues conocidos en `REFERENCE.md` (no se tocan sin pruebas en hardware).
+
+#### Documentación — sincronización (Modo 3 ya estaba removido del firmware en v1.34)
+- Quitado el Modo 3 (PID péndulo) de: `README.md`, `docs/http_api.md`,
+  `docs/MODELO_FISICO_SISTEMA_QUBE.md`, `docs/mine/arquitectura.md`, `mcp/README.md`,
+  `src/firmware/data/README.md`, `docs/research/*`, `docs/research/DRL_IMPLEMENTATION_PLAN.md`
+  y la tesis (`tesis_usach/capitulos/Capitulo_04.tex`). `REFERENCE.md` marca como resueltos
+  los ítems corregidos. `backup_l298n/` se deja intacto como registro histórico.
+
 ## [1.43.0] — 2026-06-18
 ### Cleanup GUI Tkinter + auditoría y mejoras de la GUI web embebida
 

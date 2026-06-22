@@ -1564,7 +1564,19 @@ void setup() {
   loadWifiCredentials();
 
   WiFi.mode(ENABLE_STA ? WIFI_AP_STA : WIFI_AP);
-  WiFi.softAP(AP_SSID, AP_PASS, 6, false, 4);  // canal 6, SSID visible, max 4 clientes
+  // Coexistencia AP+STA: el ESP32 tiene UNA sola radio, por lo que el SoftAP
+  // debe operar en el MISMO canal que el router STA. Si se fuerza un canal
+  // distinto al del router, el STA no logra autenticar (Reason 2 AUTH_EXPIRE).
+  // Detectamos el canal del SSID objetivo por escaneo; fallback a 6.
+  uint8_t apChannel = 6;
+  if (ENABLE_STA && staSsid[0] != '\0') {
+    int n = WiFi.scanNetworks();
+    for (int i = 0; i < n; i++) {
+      if (WiFi.SSID(i) == staSsid) { apChannel = WiFi.channel(i); break; }
+    }
+    WiFi.scanDelete();
+  }
+  WiFi.softAP(AP_SSID, AP_PASS, apChannel, false, 4);  // canal = STA, SSID visible, max 4
   connectStaIfConfigured();
 
   ws.onEvent(onWsEvent);

@@ -71,9 +71,10 @@ El servidor se comunica por `stdio` (transporte estándar de MCP).
 | 0 | STOP | Motor detenido |
 | 1 | PWM Manual | Control directo de PWM (`p` parameter) |
 | 2 | PID Servo | Control PID de posición del servo |
-| 3 | PID Péndulo | Control PID de posición del péndulo |
 | 4 | LQR Invertido | Controlador LQR para péndulo invertido |
 | 5 | Swing-up | Bombeo de energía para llevar péndulo a vertical |
+| 6 | Deep RL (HTTP) | Control por agente SAC externo vía HTTP |
+| 7 | Deep RL (on-device) | Inferencia de red neuronal en el ESP32 |
 
 ---
 

@@ -25,35 +25,16 @@ logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def make_env(control_freq: int = 50, reward: str = "cos_alpha") -> gym.Env:
-    """Build the simulation environment with standard wrappers (no real-time delay)."""
-    from stable_baselines3.common.monitor import Monitor
+def make_env(control_freq: int = 50, reward: str = "cos_alpha", potential: str | None = None) -> gym.Env:
+    """Build the simulation environment with the standard wrapper stack.
 
-    from qube_rl.config import EnvConfig, WrapperConfig
-    from qube_rl.envs.qube_sim import QubeSimEnv
-    from qube_rl.wrappers import (
-        DeadZone,
-        GentlyTerminating,
-        HistoryWrapper,
-    )
+    Thin wrapper around :func:`qube_rl.envs.factory.make_sim_env` (the single
+    source of truth for env construction).  ``potential`` optionally enables
+    policy-invariant PBRS shaping.
+    """
+    from qube_rl.envs.factory import make_sim_env
 
-    env_cfg = EnvConfig(control_freq=control_freq, reward=reward)
-    wrap_cfg = WrapperConfig()
-
-    env = QubeSimEnv(
-        control_freq=env_cfg.control_freq,
-        reward=env_cfg.reward,
-        angle_limits=env_cfg.angle_limits,  # theta ±90°, alpha ±180°
-        speed_limits=env_cfg.speed_limits,
-        encoders_cprs=None,  # continuous in initial training
-        velocity_filter_order=env_cfg.velocity_filter_order,
-    )
-    env = Monitor(env)
-    env = GentlyTerminating(env)
-    env = DeadZone(env, deadzone=wrap_cfg.deadzone, center=wrap_cfg.deadzone_center, max_act=wrap_cfg.deadzone_max_act)
-    env = HistoryWrapper(env, steps=wrap_cfg.history_steps, use_continuity_cost=wrap_cfg.use_continuity_cost)
-    # NOTE: ControlFrequency is NOT used in training — only for real-time inference
-    return env
+    return make_sim_env(control_freq=control_freq, reward=reward, potential=potential)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -64,6 +45,11 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Train SAC on QUBE Servo simulation")
     parser.add_argument("--timesteps", type=int, default=200_000, help="Total training timesteps")
     parser.add_argument("--reward", default="swingup_balance", help="Reward function name")
+    parser.add_argument(
+        "--potential",
+        default=None,
+        help="Optional policy-invariant PBRS shaping potential (e.g. 'upright'); off by default",
+    )
     parser.add_argument("--lr", type=float, default=sac_cfg.learning_rate, help="Learning rate")
     parser.add_argument("--batch-size", type=int, default=sac_cfg.batch_size, help="Batch size")
     parser.add_argument("--buffer-size", type=int, default=sac_cfg.buffer_size, help="Replay buffer size")
@@ -90,7 +76,7 @@ def main(argv: list[str] | None = None) -> None:
     from stable_baselines3.common.vec_env import DummyVecEnv
 
     # Build environment
-    raw_env = make_env(control_freq=args.freq, reward=args.reward)
+    raw_env = make_env(control_freq=args.freq, reward=args.reward, potential=args.potential)
     if args.seed is not None:
         raw_env.reset(seed=args.seed)
     logger.info("Checking environment compatibility with SB3...")

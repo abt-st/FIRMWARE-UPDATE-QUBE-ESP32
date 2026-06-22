@@ -28,13 +28,26 @@ class EnvConfig:
 
     control_freq: int = 50  # Hz — must match the deployment/inference frequency
     reward: str = "swingup_balance"
-    # State-space (termination) bounds: theta ±90°, alpha ±180°.
-    angle_limit_theta: float = math.pi / 2
+    # State-space (termination) bounds.
+    # theta = ±120°: the handoffs show the swing-up reach rate climbs from ~8-10%
+    # at ±90° to ~38% at ±120° (the arm needs room to pump energy), so the
+    # training env must not forbid the very maneuver the task requires.
+    angle_limit_theta: float = 2 * math.pi / 3  # ±120°
+    # alpha bound is kept for the observation-space scale only; the pendulum
+    # angle is NOT a termination condition (see QubeSimEnv._is_terminal), so the
+    # episode is no longer ended the instant the agent reaches the inverted goal.
     angle_limit_alpha: float = math.pi
+    # Episode length cap (steps) applied via gymnasium.wrappers.TimeLimit in the
+    # env factory; at 50 Hz, 500 steps = 10 s — long enough to swing up AND hold.
+    max_episode_steps: int = 500
     # Speed termination bounds [rad/s] (separate from MAX_VELOCITY clamp).
     speed_limit_theta: float = 50.0
     speed_limit_alpha: float = 400.0
     velocity_filter_order: int = 2
+    # Reverse-curriculum reset: fraction of episodes that start near the inverted
+    # apex (alpha ~= pi) instead of hanging, giving the agent dense balance
+    # experience.  0.0 = original hanging-only reset (Florensa et al., CoRL 2017).
+    near_upright_prob: float = 0.0
 
     @property
     def angle_limits(self) -> list[float]:

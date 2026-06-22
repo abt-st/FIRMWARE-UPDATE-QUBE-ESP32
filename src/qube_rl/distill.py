@@ -28,11 +28,16 @@ def distill(
     student_arch: int = 64,
     timesteps: int = 200_000,
     lr: float = 3e-4,
-    temperature: float = 2.0,  # noqa: ARG001  TODO: not yet wired into the BC loss (soft-target temperature)
-    alpha: float = 0.5,  # noqa: ARG001  TODO: not yet wired into the BC/RL blend
     save_dir: str = "models",
 ) -> None:
-    """Distill teacher policy into student via behavioral cloning + RL fine-tuning.
+    """Compress a teacher policy into a smaller student via behavioral cloning + RL.
+
+    This is **behavioral cloning + RL fine-tuning**, not soft-target knowledge
+    distillation: the student's replay buffer is pre-filled with the teacher's
+    deterministic actions and then trained with ordinary SAC.  (A real KD loss
+    with a temperature-scaled soft target is listed as future work — earlier
+    ``temperature``/``alpha`` arguments were never wired into any loss and have
+    been removed to avoid implying otherwise.)
 
     Parameters
     ----------
@@ -44,10 +49,6 @@ def distill(
         Total training timesteps for student.
     lr : float
         Learning rate for student.
-    temperature : float
-        Softmax temperature for teacher action distribution.
-    alpha : float
-        Blending factor: 0 = pure BC, 1 = pure RL. 0.5 = balanced.
     save_dir : str
         Directory to save student model.
     """
@@ -140,32 +141,21 @@ def distill(
     student.save(str(save_path))
     logger.info("Student saved to %s", save_path)
 
-    # Verify
+    # Verify — balance-aware metric (not a one-off peak-angle proxy): reports
+    # reach rate, true balance rate (held inverted+slow for >=1 s) and the
+    # fraction of time spent upright.  See qube_rl.metrics.
     logger.info("Verifying student...")
-    test_env = DummyVecEnv([lambda: make_env(reward="linear_alpha")])
-    swingups = 0
-    n_test_episodes = 20
-    for _ep in range(n_test_episodes):
-        obs = test_env.reset()
-        max_alpha = 0
-        for _step in range(500):
-            action, _ = student.predict(obs, deterministic=True)
-            obs, _reward, done, _info = test_env.step(action)
-            al = obs[0][1]
-            if abs(np.degrees(al)) > abs(max_alpha):
-                max_alpha = np.degrees(al)
-            if done[0]:
-                break
-        if abs(max_alpha) > 120:
-            swingups += 1
+    from qube_rl.metrics import evaluate_balance, format_balance_metrics
 
-    logger.info("Student swing-up rate: %d/%d (%.0f%%)", swingups, n_test_episodes, swingups / n_test_episodes * 100)
+    eval_env = make_env(reward="linear_alpha")
+    balance = evaluate_balance(student, eval_env, n_episodes=20, control_freq=50)
+    logger.info("Student balance: %s", format_balance_metrics(balance))
 
     # Export to C++ header (writes directly into the firmware tree so the
     # flashed weights always match the distilled student).
     from qube_rl.export_rltools import export_model_to_header
 
-    header_path = Path("src/firmware/esp32_qube_l298n/policy_weights.h")
+    header_path = Path("src/firmware/esp32_qube/policy_weights.h")
     export_model_to_header(str(save_path), str(header_path))
 
 
@@ -175,8 +165,6 @@ def main() -> None:
     parser.add_argument("--student-arch", type=int, default=64, help="Student hidden size")
     parser.add_argument("--timesteps", type=int, default=200_000, help="Training timesteps")
     parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate")
-    parser.add_argument("--temperature", type=float, default=2.0, help="Teacher temperature")
-    parser.add_argument("--alpha", type=float, default=0.5, help="BC/RL blend (0=BC, 1=RL)")
     parser.add_argument("--save-dir", default="models", help="Save directory")
     args = parser.parse_args()
 
@@ -185,8 +173,6 @@ def main() -> None:
         student_arch=args.student_arch,
         timesteps=args.timesteps,
         lr=args.lr,
-        temperature=args.temperature,
-        alpha=args.alpha,
         save_dir=args.save_dir,
     )
 

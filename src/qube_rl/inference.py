@@ -20,15 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 def make_real_env(esp32_ip: str = "192.168.4.1", control_freq: int = 50) -> gym.Env:
-    """Build the real-hardware environment with standard wrappers."""
-    from qube_rl.envs.qube_real import QubeRealEnv
-    from qube_rl.wrappers import DeadZone, GentlyTerminating, HistoryWrapper
+    """Build the real-hardware environment (delegates to the env factory)."""
+    from qube_rl.envs.factory import make_real_env as _make_real_env
 
-    env = QubeRealEnv(esp32_ip=esp32_ip, control_freq=control_freq)
-    env = GentlyTerminating(env)
-    env = DeadZone(env, deadzone=0.2, center=0.01, max_act=0.75)
-    env = HistoryWrapper(env, steps=4, use_continuity_cost=False)
-    return env
+    return _make_real_env(esp32_ip=esp32_ip, control_freq=control_freq, use_continuity_cost=False)
 
 
 def main(argv: list[str] | None = None) -> None:

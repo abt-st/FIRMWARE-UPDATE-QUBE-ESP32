@@ -14,7 +14,7 @@ Control PID, LQR con gain scheduling, swing-up por energía, filtro de Kalman (L
 
 ## Características
 
-- **8 modos de operación** — libre, PWM, PID servo, PID péndulo, LQR, swing-up, Deep RL (HTTP), Deep RL (on-device)
+- **7 modos de operación** — libre, PWM, PID servo, LQR, swing-up, Deep RL (HTTP), Deep RL (on-device)
 - **500 Hz** — control en lazo cerrado dual-core (FreeRTOS)
 - **Encoders duales** — servo + péndulo con acondicionamiento Schmitt + RC
 - **Telemetría INA219** — voltaje, corriente, potencia en tiempo real
@@ -167,7 +167,6 @@ curl "http://192.168.4.1/cmd?x=1"
 | Libre | `m0`  | Motor deshabilitado, encoders activos     |
 | PWM manual | `m1`  | PWM fijo, sin lazo (`/cmd?p=100`)    |
 | PID servo | `m2`  | Setpoint en grados, lazo cerrado (`/cmd?s=20`) |
-| PID péndulo | `m3`  | Setpoint en grados, lazo cerrado péndulo (en validación) |
 | LQR | `m4`  | Control en espacio de estados (gain scheduling) |
 | Swing-up | `m5`  | Levantamiento por energía (`/cmd?m=5&ke=0.75`) |
 | Deep RL (HTTP) | `m6`  | Control por agente SAC externo vía HTTP |
@@ -183,8 +182,8 @@ curl "http://192.168.4.1/cmd?x=1"
 
 ```
 src/firmware/
-├── esp32_qube_l298n/
-│   ├── esp32_qube_l298n.ino   ← Firmware principal (~2290 líneas)
+├── esp32_qube/
+│   ├── esp32_qube.ino   ← Firmware principal (~2290 líneas)
 │   └── credentials.h          ← WiFi STA (gitignored)
 ├── data/                      ← GUI web embebida (SPIFFS) — ver data/README.md
 │   └── index.html
@@ -219,15 +218,15 @@ src/firmware/
 
 ### Parámetros PID por defecto
 
-| Parámetro           | Servo (m2) | Péndulo (m3) | LQR (m4) |
-| -------------------- | ---------- | ------------- | -------- |
-| `Kp`               | 3.0        | 15.0          | —       |
-| `Ki`               | 0.5        | 0.5           | —       |
-| `Kd`               | 0.15       | 2.0           | —       |
-| `K1` (θ servo)    | —         | —            | 2.0      |
-| `K2` (α péndulo) | —         | —            | 22.0     |
-| `K3` (θ')         | —         | —            | 1.5      |
-| `K4` (α')         | —         | —            | 9.0      |
+| Parámetro           | Servo (m2) | LQR (m4) |
+| -------------------- | ---------- | -------- |
+| `Kp`               | 3.0        | —       |
+| `Ki`               | 0.5        | —       |
+| `Kd`               | 0.15       | —       |
+| `K1` (θ servo)    | —         | 2.0      |
+| `K2` (α péndulo) | —         | 22.0     |
+| `K3` (θ')         | —         | 1.5      |
+| `K4` (α')         | —         | 9.0      |
 
 ### Gain scheduling LQR
 
@@ -437,7 +436,7 @@ experiments/
 - [x] Deep RL modo 7 (on-device inference, pesos en firmware)
 - [x] Paquete `qube_rl` (entrenamiento, inferencia, export)
 - [x] Servidor MCP (flash, control, RL, análisis)
-- [ ] Integración encoder péndulo (modo 3) — validación
+- [x] Encoder de péndulo integrado (usado por LQR, swing-up y RL; el modo PID de péndulo fue descartado por subactuación)
 - [ ] LQR péndulo invertido (modo 4) — validación
 - [ ] SAC sim-to-real — fine-tuning completo en hardware
 - [ ] Dashboard web en tiempo real (WebSocket)

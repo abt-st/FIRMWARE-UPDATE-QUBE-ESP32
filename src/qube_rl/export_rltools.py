@@ -34,6 +34,28 @@ import numpy as np
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# The ESP32 on-device inference (firmware mode 7) hardcodes its input layout as
+# RL_HISTORY_STEPS * RL_OBS_PER_STEP = 4 * 9 = 36 floats.  A model whose actor
+# input dimension differs (e.g. a raw 8-D policy trained without HistoryWrapper)
+# will read past / short of the firmware's input buffer and produce garbage.
+# Keep this in sync with esp32_qube.ino if the firmware layout changes.
+FIRMWARE_INPUT_DIM: int = 36
+
+
+def check_firmware_contract(input_dim: int, expected: int = FIRMWARE_INPUT_DIM) -> bool:
+    """Warn if a model's input dim does not match the firmware's expectation."""
+    if input_dim != expected:
+        logger.warning(
+            "Model INPUT_DIM=%d does NOT match the firmware on-device input (%d). "
+            "Flashing this header into mode-7 inference will misalign the input "
+            "buffer. Either re-train with the matching observation/history layout "
+            "or update RL_HISTORY_STEPS / RL_OBS_PER_STEP in the firmware.",
+            input_dim,
+            expected,
+        )
+        return False
+    return True
+
 
 def extract_actor_weights(model_path: str) -> tuple[list[np.ndarray], list[np.ndarray], list[int]]:
     """Extract actor network weights from an SB3 SAC model.
@@ -75,6 +97,7 @@ def extract_actor_weights(model_path: str) -> tuple[list[np.ndarray], list[np.nd
     logger.info("Actor architecture: %s", " → ".join(f"{d}" for d in dims))
     total_params = sum(w.size + b.size for w, b in zip(weights, biases, strict=True))
     logger.info("Total parameters: %d (%.1f KB flash at float32)", total_params, total_params * 4 / 1024)
+    check_firmware_contract(dims[0])
 
     return weights, biases, dims
 

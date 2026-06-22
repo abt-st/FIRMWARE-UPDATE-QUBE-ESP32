@@ -1077,16 +1077,7 @@ $$
 | Banda muerta          | deadband           | ±0.8° |
 | Dirección motor      | `MOTOR_DIR`      | -1      |
 
-### 12.2 PID Péndulo (Modo 3)
-
-| Parámetro            | Variable           | Valor |
-| --------------------- | ------------------ | ----- |
-| Ganancia proporcional | `Kp_pend`        | 15.0  |
-| Ganancia integral     | `Ki_pend`        | 0.5   |
-| Ganancia derivativa   | `Kd_pend`        | 2.0   |
-| Filtro EMA velocidad  | `VEL_ALPHA_PEND` | 0.15  |
-
-### 12.3 LQR (Modo 4)
+### 12.2 LQR (Modo 4)
 
 | Parámetro                  | Variable   | Valor |
 | --------------------------- | ---------- | ----- |
@@ -1095,7 +1086,7 @@ $$
 | Ganancia velocidad servo    | `lqr_K3` | 0.5   |
 | Ganancia velocidad péndulo | `lqr_K4` | 3.0   |
 
-### 12.4 Swing-Up (Modo 5)
+### 12.3 Swing-Up (Modo 5)
 
 | Parámetro         | Variable              | Valor                 |
 | ------------------ | --------------------- | --------------------- |
@@ -1105,16 +1096,21 @@ $$
 | Distancia pivot-CM | `PEND_LENGTH`       | 0.065 m               |
 | Inercia péndulo   | `PEND_INERTIA`      | 2.0 × 10⁻⁵ kg·m² |
 
-### 12.5 Modos de Operación
+### 12.4 Modos de Operación
 
 | Modo                | Código | Descripción                           |
 | ------------------- | ------- | -------------------------------------- |
 | STOP                | m0      | Motor deshabilitado                    |
 | PWM Manual          | m1      | PWM fijo (sin lazo)                    |
 | PID Posición Servo | m2      | Control de posición del brazo         |
-| PID Péndulo        | m3      | Control de posición del péndulo      |
 | LQR                 | m4      | Control óptimo péndulo invertido     |
 | Swing-Up            | m5      | Bombeo de energía + transición a LQR |
+| Deep RL (HTTP)      | m6      | Acción de agente SAC externo vía HTTP |
+| Deep RL (on-device) | m7      | Inferencia de red neuronal en el ESP32 |
+
+> El modo 3 (PID de péndulo) fue descartado: el péndulo es un eslabón pasivo
+> (sistema subactuado), por lo que un PID de posición directa sobre él no es
+> físicamente realizable. Su control se aborda con LQR (m4), swing-up (m5) y RL (m6/m7).
 
 ---
 
@@ -1130,14 +1126,7 @@ $$
 | Error estacionario ($e_{ss}$)     | < 2°             | Valor en régimen                          |
 | Oscilaciones                        | Ninguna sostenida | Observación visual + datos                |
 
-### 13.2 Respuesta al Escalón (Péndulo, Modo 3)
-
-| Métrica                      | Objetivo          | Método                |
-| ----------------------------- | ----------------- | ---------------------- |
-| Capacidad de mantener ángulo | ±30° sin caída | Setpoint fijo por 30 s |
-| Oscilación en régimen       | < ±3°           | Amplitud pico a pico   |
-
-### 13.3 Balance LQR (Modo 4)
+### 13.2 Balance LQR (Modo 4)
 
 | Métrica               | Objetivo                       | Método                  |
 | ---------------------- | ------------------------------ | ------------------------ |
@@ -1145,7 +1134,7 @@ $$
 | Mantenimiento vertical | > 60 s sin intervención       | Observación             |
 | Perturbación          | Recuperación de empuje manual | Prueba cualitativa       |
 
-### 13.4 Swing-Up (Modo 5)
+### 13.3 Swing-Up (Modo 5)
 
 | Métrica           | Objetivo           | Método                       |
 | ------------------ | ------------------ | ----------------------------- |

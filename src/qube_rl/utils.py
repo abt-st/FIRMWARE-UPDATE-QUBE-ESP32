@@ -12,6 +12,11 @@ THETA_DOT: int = 2  # Servo angular velocity [rad/s]
 ALPHA_DOT: int = 3  # Pendulum angular velocity [rad/s]
 
 
+def wrap_angle(angle: float) -> float:
+    """Wrap an angle to the ``[-pi, pi]`` interval."""
+    return float((angle + np.pi) % (2 * np.pi) - np.pi)
+
+
 def observation_from_state(
     state: np.ndarray,
     include_raw_theta: bool = True,
@@ -27,8 +32,16 @@ def observation_from_state(
 
     The raw angles are optional so the simulator can emit a 6-D observation
     when its angular range is unbounded (no meaningful raw-angle scale).
+
+    ``alpha`` is wrapped to ``[-pi, pi]`` before being emitted as a raw value so
+    the observation always stays inside the declared ``observation_space`` even
+    when the simulator lets the pendulum spin past +/-pi (the pendulum angle is
+    no longer a termination condition — see ``QubeSimEnv.step``).  Wrapping is a
+    no-op for ``cos``/``sin`` (they are periodic) and for the real hardware,
+    whose firmware already reports alpha in ``[-180, 180]`` degrees.
     """
-    th, al = float(state[THETA]), float(state[ALPHA])
+    th = float(state[THETA])
+    al = wrap_angle(float(state[ALPHA]))
     obs: list[float] = [
         np.cos(th),
         np.sin(th),

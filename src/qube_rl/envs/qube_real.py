@@ -72,14 +72,15 @@ class QubeRealEnv(gym.Env):
             raise ValueError(f"Unknown reward '{reward}'. Choose from {list(REWARDS)}")
         self._reward_func = REWARDS[reward]
 
-        # Spaces — bounds mirror the 8-D observation layout; velocity bound
-        # shares MAX_VELOCITY with the simulator so sim/real spaces agree.
-        half_pi = np.float32(np.pi / 2)
+        # Spaces — bounds mirror the 8-D observation layout; the theta bound
+        # (±120°) and velocity bound (MAX_VELOCITY) match the simulator so the
+        # sim and real observation spaces agree (see EnvConfig.angle_limit_theta).
+        th_max = np.float32(2 * np.pi / 3)  # ±120°, matches EnvConfig
         pi = np.float32(np.pi)
         v = np.float32(MAX_VELOCITY)
         self.observation_space = Box(
-            low=np.array([-half_pi, -pi, -1, -1, -1, -1, -v, -v], dtype=np.float32),
-            high=np.array([half_pi, pi, 1, 1, 1, 1, v, v], dtype=np.float32),
+            low=np.array([-th_max, -pi, -1, -1, -1, -1, -v, -v], dtype=np.float32),
+            high=np.array([th_max, pi, 1, 1, 1, 1, v, v], dtype=np.float32),
             dtype=np.float32,
         )
         self.action_space = Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
@@ -166,16 +167,15 @@ class QubeRealEnv(gym.Env):
         obs = self._get_obs()
         rwd = float(self._reward_func(self._state))
 
-        # Termination: pendulum fell or servo hit mechanical limit
-        terminated = bool(abs(self._state[ALPHA]) > np.pi * 0.95)
-        if not terminated:
-            terminated = bool(abs(self._state[THETA]) > np.pi / 2 * 0.95)  # servo ±85°
+        # Termination: only the servo (arm) hitting its mechanical limit ends an
+        # episode.  We deliberately do NOT terminate on the pendulum angle: the
+        # inverted goal is alpha = ±pi, so terminating near ±pi (the previous
+        # ``abs(alpha) > 0.95*pi`` check, ~171°) ended the episode exactly when
+        # the agent reached the target — making balancing impossible.  Episode
+        # length is instead bounded by the ``TimeLimit`` wrapper (env factory).
+        terminated = bool(abs(self._state[THETA]) > np.pi / 2 * 0.95)  # servo ±85°
         if terminated:
-            logger.info(
-                "Episode terminated: alpha=%.1f theta=%.1f",
-                np.degrees(self._state[ALPHA]),
-                np.degrees(self._state[THETA]),
-            )
+            logger.info("Episode terminated: servo limit, theta=%.1f", np.degrees(self._state[THETA]))
 
         return obs, rwd, terminated, False, {}
 

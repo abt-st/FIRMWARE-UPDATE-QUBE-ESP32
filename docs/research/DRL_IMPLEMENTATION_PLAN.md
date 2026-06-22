@@ -128,7 +128,6 @@ rotatorio del QUBE Servo, usando un pipeline sim-to-real:
 │    Modo 0: Stop                                                     │
 │    Modo 1: PWM manual                                               │
 │    Modo 2: PID servo                                                │
-│    Modo 3: PID péndulo                                              │
 │    Modo 4: LQR péndulo invertido                                    │
 │    Modo 5: Swing-up energético                                      │
 │                                                                     │

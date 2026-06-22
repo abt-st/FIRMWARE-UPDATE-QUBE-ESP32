@@ -19,34 +19,18 @@ import time
 from pathlib import Path
 
 from stable_baselines3 import SAC
-from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
-from qube_rl.config import DEFAULT_SEED, EnvConfig, SACConfig, WrapperConfig, set_global_seeds
-from qube_rl.envs.qube_sim import QubeSimEnv
-from qube_rl.wrappers import DeadZone, GentlyTerminating, HistoryWrapper
+from qube_rl.config import DEFAULT_SEED, EnvConfig, SACConfig, set_global_seeds
+from qube_rl.envs.factory import make_sim_env
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def make_env(reward: str = "swingup_balance") -> object:
-    """Build environment for fast training with standard wrappers."""
-    env_cfg = EnvConfig(reward=reward)
-    wrap_cfg = WrapperConfig()
-    env = QubeSimEnv(
-        control_freq=env_cfg.control_freq,
-        reward=env_cfg.reward,
-        angle_limits=env_cfg.angle_limits,
-        speed_limits=env_cfg.speed_limits,
-        encoders_cprs=None,
-        velocity_filter_order=env_cfg.velocity_filter_order,
-    )
-    env = Monitor(env)
-    env = GentlyTerminating(env)
-    env = DeadZone(env, deadzone=wrap_cfg.deadzone, center=wrap_cfg.deadzone_center, max_act=wrap_cfg.deadzone_max_act)
-    env = HistoryWrapper(env, steps=wrap_cfg.history_steps, use_continuity_cost=wrap_cfg.use_continuity_cost)
-    return env
+def make_env(reward: str = "swingup_balance", potential: str | None = None) -> object:
+    """Build the fast-training environment (delegates to the env factory)."""
+    return make_sim_env(reward=reward, potential=potential)
 
 
 def main(argv: list[str] | None = None) -> None:

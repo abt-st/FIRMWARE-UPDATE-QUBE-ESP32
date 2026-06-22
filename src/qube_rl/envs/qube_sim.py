@@ -51,12 +51,18 @@ class QubeSimEnv(gym.Env):
         velocity_filter_order: int = 2,
         integration_dt: float = 1 / 500,
         render_mode: str = "rgb_array",
+        near_upright_prob: float = 0.0,
     ) -> None:
         super().__init__()
         self.dyn = dyn or QubeDynamics()
         self.timing = Timing(control_freq)
         self.integration_dt = integration_dt
         self.render_mode = render_mode
+        # Reverse-curriculum reset: fraction of episodes that start *near the
+        # inverted apex* (alpha ~= pi) instead of hanging, so the agent gets the
+        # dense balance experience it otherwise never receives (it only visits
+        # the apex in passing).  0.0 reproduces the original hanging-only reset.
+        self.near_upright_prob = float(near_upright_prob)
 
         # Reward function
         if reward not in REWARDS:
@@ -108,16 +114,34 @@ class QubeSimEnv(gym.Env):
         self._update_state(float(action[0]))
         obs = self._get_obs()
         rwd = float(self._reward_func(self._state))
-        terminated = not self.state_space.contains(self._state)
-        terminated = terminated or not np.all(np.isfinite(self._state))
+        terminated = self._is_terminal()
         return obs, rwd, terminated, False, {}
+
+    def _is_terminal(self) -> bool:
+        """Whether the post-action state should end the episode.
+
+        The pendulum angle ``alpha`` is the *controlled* variable and its goal
+        (inverted, ``alpha = ±pi``) sits exactly on the old ``±pi`` bound, so the
+        previous ``state_space.contains`` check terminated the episode the moment
+        the agent reached the target — actively penalising success and making
+        balancing impossible.  Termination now ignores ``alpha`` entirely:
+        episodes end only on a servo-angle limit, an over-speed, a non-finite
+        state, or the ``TimeLimit`` wrapper added by the env factory.
+        """
+        if not np.all(np.isfinite(self._state)):
+            return True
+        if not np.isinf(self.state_max[THETA]) and abs(self._state[THETA]) > self.state_max[THETA]:
+            return True
+        if abs(self._state[THETA_DOT]) > self.state_max[THETA_DOT]:
+            return True
+        return bool(abs(self._state[ALPHA_DOT]) > self.state_max[ALPHA_DOT])
 
     def reset(self, *, seed: int | None = None, options: dict | None = None) -> tuple[np.ndarray, dict]:
         super().reset(seed=seed, options=options)
         # Draw domain-randomisation and the initial state from the env's own
         # seeded generator so a given seed reproduces the same episode sequence.
         self.dyn.randomize(rng=self.np_random)
-        self._init_state()
+        self._init_state(options)
         self._init_vel_filt()
         return self._get_obs(), {}
 
@@ -131,9 +155,34 @@ class QubeSimEnv(gym.Env):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _init_state(self) -> None:
-        """Initialise state near the unstable equilibrium (pendulum inverted)."""
-        self._sim_state = (0.01 * self.np_random.standard_normal(4)).astype(np.float32)
+    # Reverse-curriculum start: pendulum within ±15° of the inverted apex.
+    _NEAR_UPRIGHT_SPREAD = np.radians(15.0)
+
+    def _init_state(self, options: dict | None = None) -> None:
+        """Initialise the physical state for a new episode.
+
+        By default the pendulum starts hanging (alpha ~= 0, the stable
+        equilibrium) with a small Gaussian perturbation; the agent must pump
+        energy to swing it up to the inverted equilibrium.
+
+        A *near-upright* start (alpha ~= pi ± 15°, near-zero velocity) is used
+        instead when either ``options["near_upright"]`` is set (e.g. the
+        ``evaluate_balance`` diagnostic) **or**, stochastically, with probability
+        ``near_upright_prob`` (the reverse-curriculum schedule).  Starting in the
+        basin of the goal gives the agent the dense stabilisation experience that
+        a hanging-only reset never provides (Florensa et al., CoRL 2017).
+        """
+        forced = bool(options and options.get("near_upright"))
+        near_upright = forced or (self.np_random.random() < self.near_upright_prob)
+
+        noise = (0.01 * self.np_random.standard_normal(4)).astype(np.float32)
+        if near_upright:
+            self._sim_state = noise
+            self._sim_state[ALPHA] += np.pi + self.np_random.uniform(
+                -self._NEAR_UPRIGHT_SPREAD, self._NEAR_UPRIGHT_SPREAD
+            )
+        else:
+            self._sim_state = noise
         self._state = self._sim_state.copy()
 
     def _init_vel_filt(self) -> None:

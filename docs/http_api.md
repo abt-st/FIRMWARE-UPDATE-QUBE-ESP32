@@ -115,7 +115,6 @@ Envía comandos de configuración y control.
 | 0 | Libre | Motor deshabilitado, encoders activos |
 | 1 | PWM manual | PWM fijo, sin lazo |
 | 2 | PID servo | Setpoint en grados, lazo cerrado |
-| 3 | PID péndulo | Setpoint en grados, lazo cerrado péndulo (en validación) |
 | 4 | LQR | Control en espacio de estados (gain scheduling) |
 | 5 | Swing-up | Levantamiento por energía |
 | 6 | Deep RL (HTTP) | Control por agente SAC externo vía HTTP |
@@ -136,7 +135,7 @@ Envía acciones al agente RL (modo 6).
 # Leer estado
 curl -s http://192.168.4.1/state
 
-# Modos: m0=stop, m1=PWM, m2=PID servo, m3=PID péndulo, m4=LQR, m5=swing-up, m6=RL HTTP, m7=RL on-device
+# Modos: m0=stop, m1=PWM, m2=PID servo, m4=LQR, m5=swing-up, m6=RL HTTP, m7=RL on-device (m3/PID péndulo fue removido)
 curl "http://192.168.4.1/cmd?m=2&s=20"        # PID servo, setpoint 20°
 curl "http://192.168.4.1/cmd?m=4"              # LQR péndulo invertido
 curl "http://192.168.4.1/cmd?m=5"              # Swing-up

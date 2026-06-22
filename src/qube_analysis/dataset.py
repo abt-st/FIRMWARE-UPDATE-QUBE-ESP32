@@ -54,15 +54,17 @@ DEFAULT_MIN_ROWS = 30
 _ALIASES: dict[str, str] = {
     # time
     "t": "t_s", "t_s": "t_s", "time_s": "t_s", "t_ms": "t_s",
-    # rotary arm / servo angle
-    "position_deg": "theta_deg", "servo_deg": "theta_deg",
+    # rotary arm / servo angle (identity entries keep the canonical schema
+    # written by experiments/capture.py loadable without translation)
+    "theta_deg": "theta_deg", "position_deg": "theta_deg", "servo_deg": "theta_deg",
     "servo_pos": "theta_deg", "servo": "theta_deg",
     # pendulum angle
-    "pend_deg": "alpha_deg", "pend_position_deg": "alpha_deg",
+    "alpha_deg": "alpha_deg", "pend_deg": "alpha_deg", "pend_position_deg": "alpha_deg",
     "pend_pos": "alpha_deg", "pend": "alpha_deg",
-    "pend_raw_deg": "alpha_raw_deg",
+    "alpha_raw_deg": "alpha_raw_deg", "pend_raw_deg": "alpha_raw_deg",
     # raw encoder counts
-    "servo_count": "theta_count", "pend_count": "alpha_count",
+    "theta_count": "theta_count", "servo_count": "theta_count",
+    "alpha_count": "alpha_count", "pend_count": "alpha_count",
     # actuator command
     "pwm": "pwm",
     # setpoint / error

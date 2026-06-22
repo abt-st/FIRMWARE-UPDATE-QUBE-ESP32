@@ -66,7 +66,7 @@ mantenerlo en equilibrio, comparándolo con controladores clásicos (PID, LQR, c
 **Componentes del repo (orientación):**
 
 - `src/qube_rl/` — todo el RL en Python (entorno simulado, recompensas, entrenamiento SAC).
-- `src/firmware/esp32_qube_l298n/` — el firmware C/Arduino del ESP32 (7 modos de control).
+- `src/firmware/esp32_qube/` — el firmware C/Arduino del ESP32 (7 modos de control).
 - `docs/` — documentación de hardware (`bom.md`, `pinout.md`, `http_api.md`) y `docs/handoffs/`
   (bitácoras de las sesiones de entrenamiento, con los resultados numéricos).
 - `models/` — modelos entrenados (`.zip`) y `policy_weights.h` (pesos exportados a C++).
@@ -645,6 +645,12 @@ Ordenado de **mayor impacto / menor esfuerzo** a **mayor alcance**.
 > El tono es directo a propósito: estos son los puntos que más debilitan las conclusiones de la
 > tesis y conviene atacarlos antes de sacar más resultados.
 
+> **Estado (v1.44.0):** ✅ **Resueltos en código:** M1, M2, M3, C1, C2, C3, D1, D2, D5.
+> 🟡 **Documentados como issues conocidos (requieren prueba en hardware o reentrenamiento):**
+> D3 y D4, más las fallas profundas de firmware (ver al final de la parte). Los ítems resueltos
+> **cambian el planteamiento** pero para verse en *resultados* hay que **reentrenar**. Detalle de
+> los cambios en `CHANGELOG.md` [1.44.0] y en la Parte V.
+
 ## 🔴 Severidad alta — metodológicos (invalidan comparaciones)
 
 **M1. Comparaciones con una sola semilla ($n=1$).**
@@ -653,6 +659,8 @@ SAC es notoriamente sensible a la semilla; con $n=1$ las diferencias observadas 
 mejor que hist-4", "8 % vs 4 %") pueden ser **puro ruido**.
 *Impacto:* ninguna conclusión comparativa es defendible estadísticamente.
 *Corrección:* $\ge5$ semillas, reportar media ± std (ver Parte V.A.2).
+✅ **Resuelto (v1.44.0):** `auto_train.py` corre cada config sobre `--seeds` y reporta media ± std
+(`evaluate_over_seeds`); selecciona el mejor reward por `balance_rate`.
 
 **M2. Métrica de éxito engañosa (conflación *reach* ↔ *balance*).**
 El "éxito" se mide como pico $\alpha>120°$ (`src/qube_rl/distill.py`, función de verificación).
@@ -662,6 +670,9 @@ relativamente altos mientras el **balance sostenido es 0 %** — la métrica esc
 *spinning* (giro continuo que acumula $\alpha$ sin balancear) — un caso de libro de **reward
 hacking** habilitado por una métrica/recompensa mal especificadas.
 *Corrección:* métrica de balance basada en tiempo + tolerancia angular + velocidad (Parte V.A.1).
+✅ **Resuelto (v1.44.0):** nuevo `qube_rl/metrics.py::evaluate_balance` (reach, `balance_rate` =
+mantener invertido-y-lento ≥1 s, fracción de tiempo arriba, hold máximo). Reemplaza el proxy en
+`distill.py` e integrado en `auto_train.py`.
 
 **M3. Sin `TimeLimit` ni manejo de truncación.**
 `qube_sim.py:113` devuelve siempre `truncated=False`; no hay límite de tiempo de episodio.
@@ -670,6 +681,8 @@ de terminación, el bootstrapping del crítico de SAC trata mal el fin de episod
 valores aprendidos.
 *Corrección:* `TimeLimit` + propagación correcta de la bandera de truncación al algoritmo
 (Parte V.A.3).
+✅ **Resuelto (v1.44.0):** nueva factory `envs/factory.py` envuelve `gymnasium.wrappers.TimeLimit`
+(`max_episode_steps=500`) dentro de `Monitor`, así la truncación se registra y se propaga a SAC.
 
 ## 🟠 Severidad media-alta — conceptuales/teóricos
 
@@ -680,12 +693,18 @@ episodio**, es decir, el entorno castiga llegar a la meta y hace el balance estr
 frágil.
 *Corrección:* $\alpha$ no acotado representado por $\cos/\sin$; terminar solo por velocidad/brazo
 (Parte V.B.4).
+✅ **Resuelto (v1.44.0):** `QubeSimEnv._is_terminal` y `QubeRealEnv.step` ya **no** terminan por
+$\alpha$ (sim terminaba en `state_space.contains`, real a ~171°); solo θ/sobrevelocidad/no-finito +
+`TimeLimit`. La observación sigue 8-D (raw $\alpha$ envuelto a $[-\pi,\pi]$).
 
 **C2. Las recompensas no son potential-based; riesgo de reward hacking.**
 Las 9 recompensas de `rewards.py` son funciones ad-hoc del estado; cambiar entre ellas **cambia la
 política óptima**, así que no son intercambiables como "shaping" ni comparables limpiamente. Además,
 recompensar $|\alpha|/\pi$ sin estructura puede premiar el *spinning* (ya ocurrió).
 *Corrección:* PBRS (Ng et al. 1999), Parte V.B.6.
+✅ **Resuelto (v1.44.0):** nuevo wrapper policy-invariante `wrappers/potential_shaping.py`
+(`PotentialShaping`, $F=\gamma\Phi(s')-\Phi(s)$); opt-in con `--potential upright`. Las 9 recompensas
+ad-hoc siguen disponibles, pero ahora existe la alternativa correcta.
 
 **C3. El entrenamiento prohíbe la maniobra que el análisis dice necesaria.**
 El límite $\theta=\pm90°$ (`config.py:32`) termina el episodio si el brazo pasa de 90°, pero los
@@ -693,6 +712,8 @@ handoffs muestran que el swing-up necesita $\pm120°$ o más.
 *Impacto:* se entrena en un régimen donde la tarea es casi imposible y luego se concluye que "RL no
 funciona".
 *Corrección:* subir el límite de $\theta$ en sim (Parte V.B.5).
+✅ **Resuelto (v1.44.0):** `EnvConfig.angle_limit_theta = 2π/3` (±120°); `qube_real` ajustado para
+igualar el box de observación.
 
 ## 🟡 Severidad media — código / documentación
 
@@ -703,6 +724,7 @@ $\alpha\approx0$ con ruido $0.01$ — es decir, **colgando** (el equilibrio **es
 lo que dice. Contradice además el docstring del módulo. Confunde a cualquiera que lea el código para
 entender desde dónde empieza el swing-up.
 *Corrección:* corregir el docstring a "near the stable (hanging) equilibrium".
+✅ **Resuelto (v1.44.0):** docstring de `_init_state` corregido.
 
 **D2. Comentario invertido en `exp_alpha_reward`.**
 `src/qube_rl/rewards.py:37`: el comentario dice `# 0 at vertical, 1 at hanging`, pero
@@ -711,6 +733,7 @@ amplio: el término "vertical" se usa de forma ambigua en todo el repo (a veces 
 = colgando).
 *Corrección:* corregir el comentario y unificar terminología (usar "hanging"/"inverted",
 evitar "vertical").
+✅ **Resuelto (v1.44.0):** comentario en `exp_alpha_reward` corregido a "0 colgando, 1 invertido".
 
 **D3. Desajuste entre la mejor config y la que se despliega.**
 Los hallazgos dicen que la mejor config para ESP32 es **raw-8 `[64,64]`** y que el *history wrapper*
@@ -720,6 +743,10 @@ codifica una `[128,128]` (36→128→128→1).
 *Impacto:* se corre el riesgo de **flashear precisamente la variante peor/descartada**.
 *Corrección:* regenerar y verificar que el header exportado corresponde al mejor modelo (raw-8,
 `[64,64]`); documentar inequívocamente qué `.zip` produjo qué `.h`.
+🟡 **Mitigado/documentado (v1.44.0):** `export_rltools.py` ahora **avisa** si el `INPUT_DIM` del
+modelo no coincide con el dim esperado por el firmware (`FIRMWARE_INPUT_DIM=36`). El **rewire del
+firmware** (pasar la inferencia on-device de 36-hist a 8-raw) sigue **pendiente** porque requiere
+re-flasheo y prueba en hardware — issue conocido, no resuelto en código aún.
 
 **D4. Posible inconsistencia en la longitud del péndulo.**
 La sim usa `Lp = 0.129 m` (`qube_dynamics.py:51`), mientras el firmware usa
@@ -738,6 +765,28 @@ cloning + RL, no *knowledge distillation* con soft targets. Esto puede dar una f
 que se aplicó KD.
 *Corrección:* o implementar la pérdida de KD (con esos hiperparámetros) o eliminar los parámetros y
 renombrar el módulo para reflejar que es BC+RL.
+✅ **Resuelto (v1.44.0):** parámetros `temperature`/`alpha` muertos eliminados de `distill.py`;
+docstring aclara que es **behavioral cloning + RL** (KD real con soft-targets queda como futuro).
+
+## 🟡 Issues conocidos de firmware (documentados, requieren hardware para arreglar)
+La auditoría del firmware (`src/firmware/esp32_qube/esp32_qube.ino`) encontró, además
+del Modo 3 ya removido (solo quedaban comentarios huérfanos, ya limpiados) y de un **bug real ya
+corregido** (el parser serial aceptaba solo `m<=5`, bloqueando seleccionar los modos RL 6/7 por
+serial → ahora `m<=7`), varias **fallas de control profundas** que **no se tocan** sin poder probar
+en el péndulo físico (modificarlas a ciegas podría empeorar el comportamiento real):
+
+- **Ciclo límite del LQR:** el balance se sostiene oscilando alrededor de ±180° en vez de quedar
+  estático; el término de amortiguamiento solo actúa con $|\alpha|<25°$, lejos de donde aparece el
+  ringing. Requiere re-tuning con HW.
+- **Latencia de brownout (~100 ms):** el voltaje del bus se lee al ritmo de telemetría (~100 ms)
+  pero el lazo corre a 2 ms; el corte por bajo voltaje puede llegar tarde. Idealmente leer el INA219
+  al ritmo del lazo o usar interrupción de brownout.
+- **Discontinuidad ±180° en la derivada:** el cálculo de velocidad del péndulo mezcla ángulo
+  envuelto y sin envolver al cruzar ±180°.
+- **Mismatch de despliegue RL (36-hist vs 8-raw):** la inferencia on-device fija 36 entradas
+  (4×9, history), pero los hallazgos indican que la mejor config ESP32 es raw-8 `[64,64]` (ver D3).
+- **Arreglo de hardware del brownout:** condensador de 470–1000 µF en el riel de 5 V (los handoffs
+  reportan ~20 % de caídas de swing-up por caída de tensión).
 
 ## Nota sobre lo que **sí** está bien hecho
 Para equilibrio (y porque es justo): el repo hace varias cosas correctamente y por encima del nivel

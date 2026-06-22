@@ -367,8 +367,7 @@ float i_filtered = 0.9f * i_filtered_prev + 0.1f * i_measured;
 | STOP          | m0      | Motor deshabilitado, encoders activos         |
 | PWM Manual    | m1      | PWM fijo, sin lazo de control                 |
 | PID Posición | m2      | Setpoint en grados, lazo cerrado              |
-| PID Péndulo  | m3      | Futuro: control con encoder de péndulo       |
-| LQR           | m4      | Futuro: control óptimo en espacio de estados |
+| LQR           | m4      | Control óptimo en espacio de estados (péndulo invertido) |
 
 ### 8.3 GUI Python
 
@@ -520,7 +519,9 @@ Ventajas:
 2. Lectura en firmware sin control
 3. Calibración CPR y signo
 4. Filtrado de velocidad
-5. Activación de modo de control dual (m3)
+5. El encoder de péndulo alimenta LQR (m4), swing-up (m5) y RL (m6/m7).
+   (El modo PID de péndulo dual m3 inicialmente planeado fue descartado: el
+   péndulo es pasivo/subactuado y un PID de posición directa no es realizable.)
 
 ---
 
@@ -538,7 +539,7 @@ Etapa 2: Identificación de parámetros (EN PROGRESO)
 
 Etapa 3: Integración del péndulo (Q2 2026)
 ├── Doble medición angular validada
-└── Control PID péndulo (modo m3)
+└── Encoder de péndulo para LQR/swing-up/RL (PID péndulo m3 descartado: subactuado)
 
 Etapa 4: Control avanzado (Q3 2026)
 ├── Estrategia de swing-up + LQR (modo m4)
