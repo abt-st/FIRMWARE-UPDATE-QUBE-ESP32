@@ -26,9 +26,16 @@ from gymnasium.spaces import Box
 
 from qube_rl.config import MAX_VELOCITY
 from qube_rl.rewards import REWARDS
-from qube_rl.utils import ALPHA, ALPHA_DOT, THETA, THETA_DOT, Timing, observation_from_state, wrap_angle
+from qube_rl.utils import ALPHA, ALPHA_DOT, THETA, THETA_DOT, Timing, observation_from_state
 
 logger = logging.getLogger(__name__)
+
+# /rl_state protocol version this env expects. MUST match RL_PROTO_VERSION in the
+# firmware (src/firmware/esp32_qube/esp32_qube.ino). The firmware reports it as the
+# "pv" field and reset() asserts it, so a firmware/Python mismatch fails loudly
+# instead of training on wrong-signed observations (the sim2real critical caveat).
+# BUMP BOTH SIDES TOGETHER whenever the /rl_state convention changes.
+EXPECTED_RL_PROTO = 2
 
 
 class QubeRealEnv(gym.Env):
@@ -75,12 +82,15 @@ class QubeRealEnv(gym.Env):
         # negate the command at the hardware boundary (AFTER the wrappers, so the
         # action history the policy sees stays in sim convention).
         self._action_sign = -1.0 if invert_action else 1.0
-        # The pendulum encoder also reads with the opposite sign vs sim: with the
-        # action corrected, a sim-negative theta pairs with sim-POSITIVE alpha,
-        # but the raw hardware reported alpha NEGATIVE (clear -56deg under a real
-        # swing pump on 2026-06-22).  Flip alpha + alpha_dot so the (theta, alpha)
-        # coupling the policy sees matches sim (theta and alpha opposite signs).
-        self._alpha_sign = -1.0 if invert_alpha else 1.0
+        # The pendulum encoder reads with the opposite sign vs sim (clear -56deg
+        # under a real swing pump on 2026-06-22). That flip — plus the velocity
+        # sign and the 50 Hz velocity filter — now lives in the FIRMWARE: /rl_state
+        # emits the sim convention directly (the same one mode 7 feeds the on-device
+        # net), so the reads in step()/reset() are PASS-THROUGH. ``invert_alpha`` is
+        # retained for API compatibility and recorded here for introspection;
+        # against LEGACY firmware that still emits raw alpha you must reflash, not
+        # toggle this flag. Firmware and this file must be deployed together.
+        self._invert_alpha = invert_alpha
 
         # Reward
         if reward not in REWARDS:
@@ -170,17 +180,18 @@ class QubeRealEnv(gym.Env):
         time.sleep(0.01)  # 10ms — give ESP32 time to apply PWM
 
         # Read state with fallback to last known.
-        # NOTE: ``/rl_state`` already returns RADIANS / rad·s⁻¹ (firmware
-        # ``handleRlState`` applies ``DEG_TO_RAD``).  Do NOT call ``np.radians``
-        # here — that double-conversion shrank every angle ~57× and was the root
-        # cause of the r4_real failure (policy saw a near-zero state forever).
-        # ``al`` accumulates unbounded across turns, so wrap it to [-π, π].
+        # NOTE: ``/rl_state`` returns the SIM-CONVENTION observation in radians /
+        # rad·s⁻¹ already (firmware ``updateRlObservation``: theta as-is; alpha
+        # flipped + wrapped to [-π, π]; positive-finite-difference velocities at
+        # 50 Hz).  Read PASS-THROUGH — do NOT call ``np.radians`` (that double
+        # conversion was the r4_real root cause), re-flip alpha, or negate the
+        # velocities (the old /rl_state exported the inverted LQR-EMA sign).
         try:
             data = self._get_rl_state()
             self._state[THETA] = float(data["th"])
-            self._state[ALPHA] = wrap_angle(self._alpha_sign * float(data["al"]))
+            self._state[ALPHA] = float(data["al"])
             self._state[THETA_DOT] = float(data["thd"])
-            self._state[ALPHA_DOT] = self._alpha_sign * float(data["ald"])
+            self._state[ALPHA_DOT] = float(data["ald"])
         except requests.RequestException:
             logger.warning("rl_state read failed, using last known state")
 
@@ -194,7 +205,10 @@ class QubeRealEnv(gym.Env):
         # ``abs(alpha) > 0.95*pi`` check, ~171°) ended the episode exactly when
         # the agent reached the target — making balancing impossible.  Episode
         # length is instead bounded by the ``TimeLimit`` wrapper (env factory).
-        terminated = bool(abs(self._state[THETA]) > np.radians(100.0))  # servo ±100° (matches sim)
+        # Servo limit ±100°: a deliberate safety margin, ~20° tighter than the
+        # sim's ±120° termination (EnvConfig.angle_limit_theta) to keep the real
+        # arm clear of its mechanical end-stops. NOT meant to "match" the sim.
+        terminated = bool(abs(self._state[THETA]) > np.radians(100.0))
         if terminated:
             logger.info("Episode terminated: servo limit, theta=%.1f", np.degrees(self._state[THETA]))
 
@@ -213,12 +227,13 @@ class QubeRealEnv(gym.Env):
         logger.info("Reset: waiting %.1fs for pendulum to settle...", self.reset_settle_time)
         time.sleep(self.reset_settle_time)
 
-        # Read initial state (radians already — see note in ``step``).
+        # Read initial state (sim-convention radians already — see note in ``step``).
         data = self._get_rl_state()
+        self._assert_protocol(data)
         self._state[THETA] = float(data["th"])
-        self._state[ALPHA] = wrap_angle(self._alpha_sign * float(data["al"]))
+        self._state[ALPHA] = float(data["al"])
         self._state[THETA_DOT] = float(data["thd"])
-        self._state[ALPHA_DOT] = self._alpha_sign * float(data["ald"])
+        self._state[ALPHA_DOT] = float(data["ald"])
 
         return self._get_obs(), {}
 
@@ -231,6 +246,27 @@ class QubeRealEnv(gym.Env):
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    def _assert_protocol(self, data: dict[str, Any]) -> None:
+        """Fail loudly if the firmware /rl_state convention mismatches this env.
+
+        Enforces the sim2real critical caveat: firmware and ``qube_real.py`` must be
+        deployed together. Without this, a stale firmware (raw alpha / inverted
+        velocity sign) would silently feed the policy wrong-signed observations.
+        """
+        pv = data.get("pv")
+        if pv is None:
+            raise RuntimeError(
+                "ESP32 /rl_state has no 'pv' field: the firmware predates the "
+                "sim-convention unification. Reflash src/firmware/esp32_qube "
+                f"(RL_PROTO_VERSION={EXPECTED_RL_PROTO}) before training over HTTP."
+            )
+        if int(pv) != EXPECTED_RL_PROTO:
+            raise RuntimeError(
+                f"ESP32 /rl_state protocol v{pv} != expected v{EXPECTED_RL_PROTO}. "
+                "Firmware and qube_real.py are out of sync — deploy them together "
+                "(sim-convention caveat). Reflash the ESP32 or update the env."
+            )
 
     def _get_obs(self) -> np.ndarray:
         return observation_from_state(self._state, include_raw_theta=True, include_raw_alpha=True)

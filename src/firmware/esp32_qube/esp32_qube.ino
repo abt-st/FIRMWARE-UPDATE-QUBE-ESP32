@@ -77,11 +77,59 @@ float rl_last_action = 0.0f;
 // Runtime torque scale for mode 7 (sim2real dynamics gap tuning). Set via
 // /rl_cmd?scale=X (0..1). 1.0 = full PWM; lower tames over-pumping on the real rig.
 float rl_pwm_scale = 1.0f;
-// Mode-7 velocity filter state — replicates the sim's discrete derivative filter
+// RL velocity filter state — replicates the sim's discrete derivative filter
 // H(s)=50s/(s+50) @ dt=0.02 (qube_rl/utils.py VelocityFilter). Reset on mode entry.
+// Shared by mode 6 (HTTP) and mode 7 (on-device): both tick it at 50 Hz.
 float rl_vf_thPrev = 0.0f, rl_vf_thVel = 0.0f;
 float rl_vf_alPrev = 0.0f, rl_vf_alVel = 0.0f;
 bool  rl_vf_init = false;
+
+// Sim-convention RL observation — single source of truth for what the policy
+// sees, computed by updateRlObservation() in the control loop (modes 6 & 7) and
+// reported verbatim by /rl_state. Keeping the convention in ONE place fixes the
+// old bug where /rl_state (mode 6) exported velocities with the inverted sign
+// of the LQR-era EMA while mode 7 used the corrected sim convention, so the SAME
+// trained policy saw opposite-signed velocities on HTTP vs on-device.
+//   theta: as-is.  alpha: FLIPPED (encoder mirrored vs sim) and wrapped to [-pi,pi].
+//   velocities: positive finite-difference of the sim-convention angles.
+// NOTE: qube_rl/envs/qube_real.py reads these as PASS-THROUGH — it must NOT
+// re-flip alpha or negate velocities. Firmware and qube_real.py must be deployed
+// together.
+volatile float rl_obs_th = 0.0f, rl_obs_al = 0.0f;    // rad
+volatile float rl_obs_thd = 0.0f, rl_obs_ald = 0.0f;  // rad/s
+
+// /rl_state protocol version. BUMP THIS whenever the sim-convention contract of
+// updateRlObservation() / handleRlState changes (sign, units, wrapping, filter).
+// qube_rl/envs/qube_real.py asserts it on connect so a firmware/Python mismatch
+// fails LOUDLY instead of silently feeding the policy wrong-signed observations.
+//   v2 = sim convention: theta as-is; alpha flipped+wrapped; +finite-diff vels @50Hz.
+#define RL_PROTO_VERSION 2
+
+// Update the sim-convention RL observation (rl_obs_*) from the raw encoders.
+// MUST be called at the 50 Hz training rate (the filter coefficients assume
+// dt=0.02; ticking at the 500 Hz loop rate distorts the velocities).
+void updateRlObservation(float pos_deg, float pendPosRaw_deg) {
+  const float theta_rad = pos_deg * DEG_TO_RAD;          // theta_sim
+  const float xth = theta_rad;                            // vel-filter input (unwrapped)
+  const float xal = -pendPosRaw_deg * DEG_TO_RAD;         // alpha_sim, UNWRAPPED (clean derivative)
+  if (!rl_vf_init) {
+    rl_vf_thPrev = xth; rl_vf_alPrev = xal;
+    rl_vf_thVel = 0.0f; rl_vf_alVel = 0.0f;
+    rl_vf_init = true;
+  }
+  // v[n] = 50*(x[n]-x[n-1]) + exp(-1)*v[n-1]  (positive finite difference).
+  rl_vf_thVel = 50.0f * (xth - rl_vf_thPrev) + 0.36787944f * rl_vf_thVel;
+  rl_vf_alVel = 50.0f * (xal - rl_vf_alPrev) + 0.36787944f * rl_vf_alVel;
+  rl_vf_thPrev = xth;
+  rl_vf_alPrev = xal;
+  float alpha_rad = xal;                                  // wrapped only for the obs features
+  while (alpha_rad >  PI) alpha_rad -= TWO_PI;
+  while (alpha_rad < -PI) alpha_rad += TWO_PI;
+  rl_obs_th  = theta_rad;
+  rl_obs_al  = alpha_rad;
+  rl_obs_thd = rl_vf_thVel;
+  rl_obs_ald = rl_vf_alVel;
+}
 
 // Forward pass: input[36] → action in [-1, 1] via tanh (matches SB3 SAC
 // deterministic output; verified numerically vs model.predict, err < 2e-7).
@@ -483,7 +531,13 @@ int swingupPwmMax = 50;  // PWM limit para swing-up (configurable por HTTP: sp<v
 unsigned long telemetryPeriodMs = 100;          // Ajustable por HTTP: tp<ms>
 float prev_alpha_dot_peak = 0.0f;  // Peak detection para transicion LQR
 const unsigned long COMMAND_TIMEOUT_MS = 10000;
-const bool ENABLE_COMMAND_TIMEOUT = false;               // true para seguridad en operacion, false para ajuste en banco
+// Failsafe enabled for unattended operation. It ONLY guards command-driven modes
+// (1 manual PWM, 6 RL-over-HTTP): if their command stream dies, the motor stops.
+// Autonomous modes (2 PID, 4 LQR, 5 swing-up, 7 on-device RL) run without external
+// commands and are NEVER stopped by this timeout. 10 s is safely above the RL
+// env's ~3 s reset settle, so it won't trip mid-episode; a true client disconnect
+// is also bounded meanwhile by the mode-6 centering clamp.
+const bool ENABLE_COMMAND_TIMEOUT = true;
 // ── Umbrales LQR ─────────────────────────────────────────────────────────────
 const unsigned long LQR_FALLBACK_TIME_MS = 500;          // Tiempo fuera de vertical antes de fallback (era 1000)
 const float LQR_FALLBACK_ALPHA_DEG = 45.0f;              // |α| mínimo para iniciar fallback (subido de 30 para dar más tiempo al LQR)
@@ -785,6 +839,11 @@ void setMode(int newMode) {
   // Punto único de cambio de modo. Usado por HTTP y Serial para garantizar
   // que las mismas rutinas de reset y flags se ejecuten siempre.
   if (newMode < 0 || newMode > 7) return;
+  // Stop the motor on ANY mode transition. Previously only mode 0 did this, so
+  // switching e.g. 1->4 or 5->4 left the previous mode's last PWM applied until
+  // the new mode's loop recomputed it. The new mode recomputes PWM within one
+  // 2 ms tick, so a brief stop here is safe and avoids torque carry-over.
+  setMotor(0);
   mode = newMode;
   swing_recovering = false;  // Reset recovery state al cambiar de modo
   resetPid();
@@ -813,6 +872,8 @@ void setMode(int newMode) {
     lqr_prevAlpha = getPendulumPositionDeg();
     lqr_filteredVelTheta = 0.0f;
     lqr_filteredVelAlpha = 0.0f;
+    rl_vf_init = false;  // re-init the sim-convention velocity filter (shared with mode 7)
+    rl_obs_th = rl_obs_al = rl_obs_thd = rl_obs_ald = 0.0f;
   }
   if (mode == 7) {
     // Reset RL inference buffer
@@ -861,7 +922,11 @@ void updateIna219() {
 }
 
 String getStateJson() {
-  updateIna219();
+  // NOTE: do NOT call updateIna219() here. getStateJson() runs in the async web
+  // server context (handleState / broadcastTelemetry); the I2C Wire library is
+  // not reentrant, so touching it here races the 500 Hz control loop that also
+  // reads the INA219. The loop refreshes the cached bus/current values every
+  // telemetryPeriodMs — we just read those cached globals below.
   // Servo encoder
   const long c = getEncoderCountAtomic();
   const int encA = digitalRead(PIN_ENC_A);
@@ -942,16 +1007,19 @@ void handleState(AsyncWebServerRequest *request) {
 
 // ── RL Endpoints (modo 6) ─────────────────────────────────────────────────
 void handleRlState(AsyncWebServerRequest *request) {
-  // JSON compacto de baja latencia para el agente RL
-  const float theta_rad = getPositionDeg() * DEG_TO_RAD;
-  const float alpha_rad = getPendulumPositionDeg() * DEG_TO_RAD;
-  const float theta_dot = lqr_filteredVelTheta * DEG_TO_RAD;  // deg/s -> rad/s
-  const float alpha_dot = lqr_filteredVelAlpha * DEG_TO_RAD;  // deg/s -> rad/s
+  // JSON compacto de baja latencia para el agente RL (modo 6).
+  // Reports the sim-convention observation computed by the control loop
+  // (updateRlObservation). Same convention the on-device path (mode 7) feeds the
+  // net, so a policy served over HTTP sees identical inputs. qube_real.py reads
+  // these PASS-THROUGH (no alpha re-flip, no velocity negation). Reading cached
+  // globals here (no encoder/I2C access from the async context) also avoids
+  // racing the 500 Hz control loop.
   String json = "{";
-  json += "\"th\":" + String(theta_rad, 4) + ",";
-  json += "\"al\":" + String(alpha_rad, 4) + ",";
-  json += "\"thd\":" + String(theta_dot, 4) + ",";
-  json += "\"ald\":" + String(alpha_dot, 4);
+  json += "\"th\":" + String(rl_obs_th, 4) + ",";
+  json += "\"al\":" + String(rl_obs_al, 4) + ",";
+  json += "\"thd\":" + String(rl_obs_thd, 4) + ",";
+  json += "\"ald\":" + String(rl_obs_ald, 4) + ",";
+  json += "\"pv\":" + String(RL_PROTO_VERSION);  // protocol version handshake
   json += "}";
   request->send(200, "application/json", json);
 }
@@ -970,6 +1038,8 @@ void handleRlCmd(AsyncWebServerRequest *request) {
     lqr_filteredVelAlpha = 0.0f;
     lqr_prevTheta = getPositionDeg();
     lqr_prevAlpha = getPendulumPositionDeg();
+    rl_vf_init = false;  // re-init the sim-convention velocity filter
+    rl_obs_th = rl_obs_al = rl_obs_thd = rl_obs_ald = 0.0f;
     rlAction = 0.0f;
     setMotor(0);
     lastCommandMs = millis();
@@ -2215,9 +2285,22 @@ void loop() {
       setMotor(pwm);
     } else if (mode == 6) {
     // ══════════════════════════════════════════════════════════════════════════
-    // MODO 6: Deep RL — recibe acción por HTTP, aplica PWM directo
+    // MODO 6: Deep RL (HTTP) — Python envía la acción por /rl_cmd?a=, este lazo
+    // la aplica como PWM. La observación de /rl_state se calcula aquí en
+    // convención SIM (updateRlObservation, compartida con el modo 7), de modo que
+    // una política servida por HTTP ve las MISMAS entradas que en on-device.
     // Endpoints: GET /rl_state (obs), GET /rl_cmd?a=X (action)
     // ══════════════════════════════════════════════════════════════════════════
+      // Update the sim-convention observation at the 50 Hz training rate (the
+      // velocity filter assumes dt=0.02; ticking it at the 500 Hz loop rate would
+      // distort velocities). The motor command itself is applied every loop.
+      static unsigned long lastRlUs6 = 0;
+      const unsigned long nowRl6 = micros();
+      if (lastRlUs6 == 0 || (nowRl6 - lastRlUs6) >= 20000UL) {
+        lastRlUs6 = nowRl6;
+        updateRlObservation(pos, pendPosRaw);
+      }
+
       // ── Action clamping: restrict RL to push TOWARD center when far ──
       // When |theta| > SAFE_RANGE, the RL action is clamped so it can only
       // push the servo back toward 0°. This prevents the policy from slamming
@@ -2229,20 +2312,8 @@ void loop() {
         // Pure centering — RL action ignored entirely
         int center_pwm = (int)(-pos * 3.0f);
         setMotorDirect(constrain(center_pwm, -PWM_MAX, PWM_MAX));
-        lqr_prevTheta = pos;
-        lqr_prevAlpha = pendPosRaw;
         return;
       }
-
-      // Compute velocities
-      const float theta_rl = pos;
-      const float alpha_rl_raw = pendPosRaw;
-      const float rawVelTheta_rl = -(theta_rl - lqr_prevTheta) / dt;
-      const float rawVelAlpha_rl = -(alpha_rl_raw - lqr_prevAlpha) / dt;
-      lqr_filteredVelTheta = velAlpha * rawVelTheta_rl + (1.0f - velAlpha) * lqr_filteredVelTheta;
-      lqr_filteredVelAlpha = VEL_ALPHA_PEND * rawVelAlpha_rl + (1.0f - VEL_ALPHA_PEND) * lqr_filteredVelAlpha;
-      lqr_prevTheta = theta_rl;
-      lqr_prevAlpha = alpha_rl_raw;
 
       int rl_pwm = (int)(rlAction * PWM_MAX);
       rl_pwm = constrain(rl_pwm, -PWM_MAX, PWM_MAX);
@@ -2287,35 +2358,14 @@ void loop() {
         return;
       }
 
-      // Build network input in SIM convention (matches QubeRealEnv invert_alpha):
-      //   theta as-is; alpha FLIPPED, wrapped to [-pi,pi] for the position features.
-      const float theta_rad = pos * DEG_TO_RAD;            // theta_sim
-      const float xth = theta_rad;                          // vel-filter input (unwrapped)
-      const float xal = -pendPosRaw * DEG_TO_RAD;           // alpha_sim, UNWRAPPED (clean derivative)
-      float alpha_rad = xal;
-      while (alpha_rad >  PI) alpha_rad -= TWO_PI;           // wrapped only for the obs features
-      while (alpha_rad < -PI) alpha_rad += TWO_PI;
-
-      // Velocities via the sim's EXACT discrete derivative filter H(s)=50s/(s+50)
-      // @ dt=0.02 (VelocityFilter): v[n] = 50*(x[n]-x[n-1]) + 0.36788*v[n-1].
-      // Positive finite difference -> the +d/dt sign the policy trained on; the old
-      // firmware EMA used -(x-prev)/dt, i.e. the velocity sign was INVERTED (a real
-      // swing-up bug: the policy damped when it should pump and vice-versa).
-      if (!rl_vf_init) {
-        rl_vf_thPrev = xth; rl_vf_alPrev = xal;
-        rl_vf_thVel = 0.0f; rl_vf_alVel = 0.0f;
-        rl_vf_init = true;
-      }
-      rl_vf_thVel = 50.0f * (xth - rl_vf_thPrev) + 0.36787944f * rl_vf_thVel;
-      rl_vf_alVel = 50.0f * (xal - rl_vf_alPrev) + 0.36787944f * rl_vf_alVel;
-      rl_vf_thPrev = xth;
-      rl_vf_alPrev = xal;
-      const float theta_dot_rad = rl_vf_thVel;
-      const float alpha_dot_rad = rl_vf_alVel;
+      // Build the sim-convention observation (theta as-is; alpha FLIPPED + wrapped;
+      // positive-finite-difference velocities @ 50 Hz). Shared with mode 6 so the
+      // HTTP path (/rl_state) and on-device inference feed the policy identically.
+      updateRlObservation(pos, pendPosRaw);
 
       // Run on-device inference (returns policy action = tanh(mu) in [-1,1]).
       // rl_last_action stored inside is the un-negated policy action (sim convention).
-      float action = rl_infer_step(theta_rad, alpha_rad, theta_dot_rad, alpha_dot_rad);
+      float action = rl_infer_step(rl_obs_th, rl_obs_al, rl_obs_thd, rl_obs_ald);
 
       // Motor torque is mirrored vs sim -> negate the command (QubeRealEnv invert_action).
       // rl_pwm_scale (runtime, /rl_cmd?scale=) tames over-pumping from the sim2real
@@ -2328,7 +2378,9 @@ void loop() {
   }
   const unsigned long nowMs = millis();
   // Failsafe: si no hay comandos recientes en modos activos, detener.
-  if (ENABLE_COMMAND_TIMEOUT && mode >= 1 && mode <= 7 && (nowMs - lastCommandMs > COMMAND_TIMEOUT_MS)) {
+  // Only guard the command-driven modes (1 manual PWM, 6 RL-over-HTTP); autonomous
+  // modes must keep running without external commands (see ENABLE_COMMAND_TIMEOUT).
+  if (ENABLE_COMMAND_TIMEOUT && (mode == 1 || mode == 6) && (nowMs - lastCommandMs > COMMAND_TIMEOUT_MS)) {
     safeStop();
   }
 
