@@ -26,7 +26,7 @@ from gymnasium.spaces import Box
 
 from qube_rl.config import MAX_VELOCITY
 from qube_rl.rewards import REWARDS
-from qube_rl.utils import ALPHA, ALPHA_DOT, THETA, THETA_DOT, Timing, observation_from_state
+from qube_rl.utils import ALPHA, ALPHA_DOT, THETA, THETA_DOT, Timing, observation_from_state, wrap_angle
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,8 @@ class QubeRealEnv(gym.Env):
         http_timeout: float = 5.0,
         reset_settle_time: float = 3.0,
         auto_set_mode: bool = True,
+        invert_action: bool = True,
+        invert_alpha: bool = True,
     ) -> None:
         super().__init__()
         self.esp32_ip = esp32_ip
@@ -66,6 +68,19 @@ class QubeRealEnv(gym.Env):
         self.http_timeout = http_timeout
         self.reset_settle_time = reset_settle_time
         self.auto_set_mode = auto_set_mode
+        # Bench bring-up (2026-06-22) found the real motor torque is sign-flipped
+        # vs the simulator: a +action drove theta NEGATIVE on hardware but POSITIVE
+        # in sim, while theta/alpha encoders matched sim convention (the alpha
+        # coupling -theta<->+alpha held on both).  So only the motor is mirrored;
+        # negate the command at the hardware boundary (AFTER the wrappers, so the
+        # action history the policy sees stays in sim convention).
+        self._action_sign = -1.0 if invert_action else 1.0
+        # The pendulum encoder also reads with the opposite sign vs sim: with the
+        # action corrected, a sim-negative theta pairs with sim-POSITIVE alpha,
+        # but the raw hardware reported alpha NEGATIVE (clear -56deg under a real
+        # swing pump on 2026-06-22).  Flip alpha + alpha_dot so the (theta, alpha)
+        # coupling the policy sees matches sim (theta and alpha opposite signs).
+        self._alpha_sign = -1.0 if invert_alpha else 1.0
 
         # Reward
         if reward not in REWARDS:
@@ -149,17 +164,23 @@ class QubeRealEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
-        # Send action, then small delay for ESP32 to process
-        self._send_rl_action(float(action[0]))
+        # Send action (sign-corrected for the mirrored real motor), then a small
+        # delay for the ESP32 to apply PWM.
+        self._send_rl_action(self._action_sign * float(action[0]))
         time.sleep(0.01)  # 10ms — give ESP32 time to apply PWM
 
-        # Read state with fallback to last known
+        # Read state with fallback to last known.
+        # NOTE: ``/rl_state`` already returns RADIANS / rad·s⁻¹ (firmware
+        # ``handleRlState`` applies ``DEG_TO_RAD``).  Do NOT call ``np.radians``
+        # here — that double-conversion shrank every angle ~57× and was the root
+        # cause of the r4_real failure (policy saw a near-zero state forever).
+        # ``al`` accumulates unbounded across turns, so wrap it to [-π, π].
         try:
             data = self._get_rl_state()
-            self._state[THETA] = np.radians(data["th"])
-            self._state[ALPHA] = np.radians(data["al"])
-            self._state[THETA_DOT] = np.radians(data["thd"])
-            self._state[ALPHA_DOT] = np.radians(data["ald"])
+            self._state[THETA] = float(data["th"])
+            self._state[ALPHA] = wrap_angle(self._alpha_sign * float(data["al"]))
+            self._state[THETA_DOT] = float(data["thd"])
+            self._state[ALPHA_DOT] = self._alpha_sign * float(data["ald"])
         except requests.RequestException:
             logger.warning("rl_state read failed, using last known state")
 
@@ -173,7 +194,7 @@ class QubeRealEnv(gym.Env):
         # ``abs(alpha) > 0.95*pi`` check, ~171°) ended the episode exactly when
         # the agent reached the target — making balancing impossible.  Episode
         # length is instead bounded by the ``TimeLimit`` wrapper (env factory).
-        terminated = bool(abs(self._state[THETA]) > np.pi / 2 * 0.95)  # servo ±85°
+        terminated = bool(abs(self._state[THETA]) > np.radians(100.0))  # servo ±100° (matches sim)
         if terminated:
             logger.info("Episode terminated: servo limit, theta=%.1f", np.degrees(self._state[THETA]))
 
@@ -192,12 +213,12 @@ class QubeRealEnv(gym.Env):
         logger.info("Reset: waiting %.1fs for pendulum to settle...", self.reset_settle_time)
         time.sleep(self.reset_settle_time)
 
-        # Read initial state
+        # Read initial state (radians already — see note in ``step``).
         data = self._get_rl_state()
-        self._state[THETA] = np.radians(data["th"])
-        self._state[ALPHA] = np.radians(data["al"])
-        self._state[THETA_DOT] = np.radians(data["thd"])
-        self._state[ALPHA_DOT] = np.radians(data["ald"])
+        self._state[THETA] = float(data["th"])
+        self._state[ALPHA] = wrap_angle(self._alpha_sign * float(data["al"]))
+        self._state[THETA_DOT] = float(data["thd"])
+        self._state[ALPHA_DOT] = self._alpha_sign * float(data["ald"])
 
         return self._get_obs(), {}
 

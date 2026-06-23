@@ -525,6 +525,36 @@ def qube_rl_reset() -> str:
         return f"❌ Error en reset RL: {e}"
 
 
+
+@mcp.tool()
+def qube_zero(servo: bool = True, pendulum: bool = False) -> str:
+    """Zeroa el encoder del servo y/o péndulo en modo RL (sin resetear PID).
+
+    Equivale a /rl_cmd?z=1 (servo) y/o /rl_cmd?zp=1 (péndulo).
+    Setea el offset para que la posición actual sea el origen.
+    NO resetea el PID ni detiene el motor — seguro durante operación RL.
+
+    Args:
+        servo: Zeroear encoder del servo (θ). Default True.
+        pendulum: Zeroear encoder del péndulo (α). Default False.
+
+    Returns:
+        Confirmación del zero.
+    """
+    results: list[str] = []
+    try:
+        if servo:
+            _http_get("rl_cmd", params={"z": "1"})
+            results.append("servo θ=0")
+        if pendulum:
+            _http_get("rl_cmd", params={"zp": "1"})
+            results.append("péndulo α=0")
+        if not results:
+            return "⚠️ Selecciona al menos servo=True o pendulum=True."
+        return f"✅ Zero aplicado: {', '.join(results)}."
+    except Exception as e:
+        return f"❌ Error en zero ({', '.join(results)}): {e}"
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  HERRAMIENTAS — Análisis de datos CSV
 # ══════════════════════════════════════════════════════════════════════════════

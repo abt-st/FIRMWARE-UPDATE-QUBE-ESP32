@@ -1,8 +1,8 @@
 # INFORME FINAL - R3 DRL (currículo de reset + recompensa estabilizadora)
 
-- **Inicio:** 2026-06-19 08:00:58  |  **Fin:** 2026-06-19 08:01:26
-- **Tiempo total:** 0:00:28  (presupuesto: 0.3 h)
-- **Experimentos completados:** 2/2  
+- **Inicio:** 2026-06-22 00:43:34  |  **Fin:** 2026-06-22 08:19:15
+- **Tiempo total:** 7:35:41  (presupuesto: 10.0 h)
+- **Experimentos completados:** 1/2  
 
 Metrica de exito = **balance_rate** (episodios que mantienen el pendulo invertido-y-lento >=1 s). Benchmark R1/R2: **0 %**.
 
@@ -25,13 +25,12 @@ Incluso *colocada en el apice*, la politica `linear_alpha` cae en ~0.56 s (balan
 
 | # | Experimento | reward | currículo | warm | balance % | reach % | upright % | hold max (s) | ep_rew |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | 01_curriculum04 | `linear_alpha` | 0.4 | False | 0.0+/-0.0 | 0 | 0.0 | 0.00 | 2.56 |
-| 2 | 02_curriculum06 | `linear_alpha` | 0.6 | False | 0.0+/-0.0 | 0 | 0.0 | 0.00 | 4.17 |
+| 1 | 01_curriculum04 | `linear_alpha` | 0.4 | False | 51.1+/-38.6 | 100 | 72.7 | 6.28 | 475.14 |
 
 ## Conclusiones
 
-- **Mejor configuracion:** `01_curriculum04` (reward=`linear_alpha`). balance **0.0%**, reach 0%, upright 0.0%, hold max 0.00 s.
-- **Balance sigue en 0%.** Priorizar el fallback hibrido (RL swing-up -> LQR modo 4 del firmware).
+- **Mejor configuracion:** `01_curriculum04` (reward=`linear_alpha`). balance **51.1%**, reach 100%, upright 72.7%, hold max 6.28 s.
+- **Objetivo R3 alcanzado** (balance >=10 %). Siguiente: exportar a ESP32 + A/B vs hibrido LQR.
 
 ## Como inspeccionar
 

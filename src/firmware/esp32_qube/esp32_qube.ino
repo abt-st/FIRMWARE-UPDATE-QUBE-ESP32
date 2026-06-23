@@ -44,6 +44,8 @@
 // GET /rl_state            — estado compacto para RL {th,al,thd,ald} (rad, rad/s)
 // GET /rl_cmd?a=0.5        — acción RL [-1.0, 1.0]
 // GET /rl_cmd?r=1          — reset encoders + estado RL
+// GET /rl_cmd?z=1          — zero servo encoder (offset, sin reset PID)
+// GET /rl_cmd?zp=1         — zero péndulo encoder (offset)
 // ============================================================
 
 #include <Arduino.h>
@@ -61,7 +63,7 @@
 
 // ══════════════════════════════════════════════════════════════════════════
 // MODO 7: On-device RL inference (forward pass en ESP32)
-// Red: [36 → 64 → 64 → 1], ReLU, Hardtanh(-2, 2)
+// Red: [36 → 64 → 64 → 1], ReLU, tanh (SB3 SAC: acción determinista = tanh(mu))
 // Observación: 4 pasos × [θ, α, cosθ, sinθ, cosα, sinα, θ̇, α̇, action]
 // ══════════════════════════════════════════════════════════════════════════
 constexpr int RL_HISTORY_STEPS = 4;
@@ -72,8 +74,17 @@ constexpr int RL_HIDDEN = 64;
 float rl_obs_buf[RL_HISTORY_STEPS][RL_OBS_PER_STEP];
 int rl_obs_idx = 0;
 float rl_last_action = 0.0f;
+// Runtime torque scale for mode 7 (sim2real dynamics gap tuning). Set via
+// /rl_cmd?scale=X (0..1). 1.0 = full PWM; lower tames over-pumping on the real rig.
+float rl_pwm_scale = 1.0f;
+// Mode-7 velocity filter state — replicates the sim's discrete derivative filter
+// H(s)=50s/(s+50) @ dt=0.02 (qube_rl/utils.py VelocityFilter). Reset on mode entry.
+float rl_vf_thPrev = 0.0f, rl_vf_thVel = 0.0f;
+float rl_vf_alPrev = 0.0f, rl_vf_alVel = 0.0f;
+bool  rl_vf_init = false;
 
-// Forward pass: input[36] → output (action in [-2, 2] via Hardtanh)
+// Forward pass: input[36] → action in [-1, 1] via tanh (matches SB3 SAC
+// deterministic output; verified numerically vs model.predict, err < 2e-7).
 float rl_forward(const float* input) {
     float h1[RL_HIDDEN];
     for (int j = 0; j < RL_HIDDEN; j++) {
@@ -95,8 +106,9 @@ float rl_forward(const float* input) {
     for (int k = 0; k < RL_HIDDEN; k++) {
         raw_out += policy_weights::LAYER_2_WEIGHT[k] * h2[k];
     }
-    // Hardtanh(-2, 2)
-    return raw_out < -2.0f ? -2.0f : (raw_out > 2.0f ? 2.0f : raw_out);
+    // SB3 SAC squashes the actor mean with tanh for the deterministic action.
+    // (Previously Hardtanh(-2,2)*0.5 downstream — wrong fn, err up to 0.27.)
+    return tanhf(raw_out);
 }
 
 // Build observation from current state and append to history
@@ -444,7 +456,7 @@ const int MOTOR_DIR = -1;  // 1 = normal, -1 = invertido
 
 const float INTEGRAL_LIMIT = 250.0f;
 const int PWM_MIN = 12;
-const int PWM_MAX = 100;
+const int PWM_MAX = 200;
 
 // Parametros del pendulo para calculo de energia (Quanser swing-up)
 const float PEND_MASS = 0.025f;      // Masa del pendulo (kg) - ajustar
@@ -811,6 +823,7 @@ void setMode(int newMode) {
     lqr_prevAlpha = getPendulumPositionDeg();
     lqr_filteredVelTheta = 0.0f;
     lqr_filteredVelAlpha = 0.0f;
+    rl_vf_init = false;  // re-init the mode-7 velocity filter
   }
 }
 
@@ -959,6 +972,20 @@ void handleRlCmd(AsyncWebServerRequest *request) {
     lqr_prevAlpha = getPendulumPositionDeg();
     rlAction = 0.0f;
     setMotor(0);
+    lastCommandMs = millis();
+  }
+  if (request->hasParam("z")) {
+    zeroPositionHere();
+    lqr_prevTheta = 0.0f;
+    lastCommandMs = millis();
+  }
+  if (request->hasParam("zp")) {
+    zeroPendulumHere();
+    lqr_prevAlpha = 0.0f;
+    lastCommandMs = millis();
+  }
+  if (request->hasParam("scale")) {
+    rl_pwm_scale = constrain(request->getParam("scale")->value().toFloat(), 0.0f, 1.0f);
     lastCommandMs = millis();
   }
   request->send(200, "application/json", "{\"ok\":true}");
@@ -2191,14 +2218,23 @@ void loop() {
     // MODO 6: Deep RL — recibe acción por HTTP, aplica PWM directo
     // Endpoints: GET /rl_state (obs), GET /rl_cmd?a=X (action)
     // ══════════════════════════════════════════════════════════════════════════
-      // Safety: brake if servo out of range
-      if (fabsf(pos) > 90.0f) {
-        float brake_dir = (pos > 0) ? -1.0f : 1.0f;
-        setMotor((int)(brake_dir * 70.0f));
+      // ── Action clamping: restrict RL to push TOWARD center when far ──
+      // When |theta| > SAFE_RANGE, the RL action is clamped so it can only
+      // push the servo back toward 0°. This prevents the policy from slamming
+      // into mechanical stops.  Beyond HARD_LIMIT, full centering PWM.
+      const float SAFE_RANGE = 80.0f;   // RL acts freely within ±80°
+      const float HARD_LIMIT = 110.0f;  // Beyond ±110°, pure centering
+
+      if (fabsf(pos) > HARD_LIMIT) {
+        // Pure centering — RL action ignored entirely
+        int center_pwm = (int)(-pos * 3.0f);
+        setMotorDirect(constrain(center_pwm, -PWM_MAX, PWM_MAX));
+        lqr_prevTheta = pos;
+        lqr_prevAlpha = pendPosRaw;
         return;
       }
 
-      // Compute velocities (same EMA filter as LQR — degrees internally)
+      // Compute velocities
       const float theta_rl = pos;
       const float alpha_rl_raw = pendPosRaw;
       const float rawVelTheta_rl = -(theta_rl - lqr_prevTheta) / dt;
@@ -2208,44 +2244,84 @@ void loop() {
       lqr_prevTheta = theta_rl;
       lqr_prevAlpha = alpha_rl_raw;
 
-      // Apply RL action as PWM
       int rl_pwm = (int)(rlAction * PWM_MAX);
       rl_pwm = constrain(rl_pwm, -PWM_MAX, PWM_MAX);
+
+      if (fabsf(pos) > SAFE_RANGE) {
+        // Clamp: only allow action that pushes TOWARD center
+        if (pos > 0 && rl_pwm > 0) rl_pwm = 0;  // positive pos, block positive action
+        if (pos < 0 && rl_pwm < 0) rl_pwm = 0;  // negative pos, block negative action
+        // Add centering assist
+        int center_pwm = (int)(-pos * 2.0f);
+        rl_pwm += constrain(center_pwm, -PWM_MAX, PWM_MAX);
+        rl_pwm = constrain(rl_pwm, -PWM_MAX, PWM_MAX);
+      }
+
       setMotor(rl_pwm);
     } else if (mode == 7) {
     // ══════════════════════════════════════════════════════════════════════════
     // MODO 7: On-device RL inference — forward pass en ESP32
-    // Red entrenada: [36→64→64→1] ReLU, Hardtanh(-2,2)
+    // Red entrenada: [36→64→64→1] ReLU, tanh (SB3 SAC deterministic = tanh(mu))
     // Observación: 4 pasos × [θ, α, cosθ, sinθ, cosα, sinα, θ̇, α̇, action]
+    // Replica EXACTA del env Python corregido (QubeRealEnv, bring-up 2026-06-22):
+    //   theta tal cual; alpha y alpha_dot INVERTIDOS (encoder péndulo espejado vs
+    //   sim) y alpha envuelta a [-pi,pi]; la acción se NIEGA hacia el motor (torque
+    //   espejado) pero el historial guarda la acción de política sin negar.
     // ══════════════════════════════════════════════════════════════════════════
+      // Sub-gate the RL policy to 50 Hz (the training rate). The outer control
+      // loop runs at 500 Hz (CONTROL_PERIOD_US=2000); inference must tick every
+      // 20 ms or the 50Hz-trained net runs 10x too fast and its history/velocity
+      // time-scale is wrong. Hold the last PWM (zero-order hold) between ticks.
+      static unsigned long lastRlUs7 = 0;
+      const unsigned long nowRl7 = micros();
+      if (lastRlUs7 != 0 && (nowRl7 - lastRlUs7) < 20000UL) {
+        return;  // zero-order hold — keep last motor command
+      }
+      lastRlUs7 = nowRl7;
+
       // Safety: brake if servo out of range
       if (fabsf(pos) > 90.0f) {
         float brake_dir = (pos > 0) ? -1.0f : 1.0f;
         setMotor((int)(brake_dir * 70.0f));
+        rl_vf_init = false;  // re-init velocity filter when control resumes
         return;
       }
 
-      // Compute velocities (EMA filter — same as mode 6)
-      const float rawVelTheta7 = -(pos - lqr_prevTheta) / dt;
-      const float rawVelAlpha7 = -(pendPosRaw - lqr_prevAlpha) / dt;
-      lqr_filteredVelTheta = velAlpha * rawVelTheta7 + (1.0f - velAlpha) * lqr_filteredVelTheta;
-      lqr_filteredVelAlpha = VEL_ALPHA_PEND * rawVelAlpha7 + (1.0f - VEL_ALPHA_PEND) * lqr_filteredVelAlpha;
-      lqr_prevTheta = pos;
-      lqr_prevAlpha = pendPosRaw;
+      // Build network input in SIM convention (matches QubeRealEnv invert_alpha):
+      //   theta as-is; alpha FLIPPED, wrapped to [-pi,pi] for the position features.
+      const float theta_rad = pos * DEG_TO_RAD;            // theta_sim
+      const float xth = theta_rad;                          // vel-filter input (unwrapped)
+      const float xal = -pendPosRaw * DEG_TO_RAD;           // alpha_sim, UNWRAPPED (clean derivative)
+      float alpha_rad = xal;
+      while (alpha_rad >  PI) alpha_rad -= TWO_PI;           // wrapped only for the obs features
+      while (alpha_rad < -PI) alpha_rad += TWO_PI;
 
-      // Convert to radians for network input
-      const float theta_rad = pos * DEG_TO_RAD;
-      const float alpha_rad = pendPosRaw * DEG_TO_RAD;
-      const float theta_dot_rad = lqr_filteredVelTheta * DEG_TO_RAD;
-      const float alpha_dot_rad = lqr_filteredVelAlpha * DEG_TO_RAD;
+      // Velocities via the sim's EXACT discrete derivative filter H(s)=50s/(s+50)
+      // @ dt=0.02 (VelocityFilter): v[n] = 50*(x[n]-x[n-1]) + 0.36788*v[n-1].
+      // Positive finite difference -> the +d/dt sign the policy trained on; the old
+      // firmware EMA used -(x-prev)/dt, i.e. the velocity sign was INVERTED (a real
+      // swing-up bug: the policy damped when it should pump and vice-versa).
+      if (!rl_vf_init) {
+        rl_vf_thPrev = xth; rl_vf_alPrev = xal;
+        rl_vf_thVel = 0.0f; rl_vf_alVel = 0.0f;
+        rl_vf_init = true;
+      }
+      rl_vf_thVel = 50.0f * (xth - rl_vf_thPrev) + 0.36787944f * rl_vf_thVel;
+      rl_vf_alVel = 50.0f * (xal - rl_vf_alPrev) + 0.36787944f * rl_vf_alVel;
+      rl_vf_thPrev = xth;
+      rl_vf_alPrev = xal;
+      const float theta_dot_rad = rl_vf_thVel;
+      const float alpha_dot_rad = rl_vf_alVel;
 
-      // Run on-device inference
+      // Run on-device inference (returns policy action = tanh(mu) in [-1,1]).
+      // rl_last_action stored inside is the un-negated policy action (sim convention).
       float action = rl_infer_step(theta_rad, alpha_rad, theta_dot_rad, alpha_dot_rad);
 
-      // Normalize from [-2, 2] to [-1, 1] for PWM (network output range)
-      float action_norm = action * 0.5f;
-      action_norm = constrain(action_norm, -1.0f, 1.0f);
-      int rl_pwm = (int)(action_norm * PWM_MAX);
+      // Motor torque is mirrored vs sim -> negate the command (QubeRealEnv invert_action).
+      // rl_pwm_scale (runtime, /rl_cmd?scale=) tames over-pumping from the sim2real
+      // dynamics gap without re-flashing.
+      float action_norm = constrain(-action, -1.0f, 1.0f);
+      int rl_pwm = (int)(action_norm * PWM_MAX * rl_pwm_scale);
       rl_pwm = constrain(rl_pwm, -PWM_MAX, PWM_MAX);
       setMotor(rl_pwm);
     }

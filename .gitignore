@@ -64,7 +64,7 @@ models/*.zip
 # Logs antiguos de TensorBoard (removido; ya no se generan)
 runs/
 # MLflow (tracking local)
-mlflow.db
+mlflow*.db
 mlruns/
 mlartifacts/
 

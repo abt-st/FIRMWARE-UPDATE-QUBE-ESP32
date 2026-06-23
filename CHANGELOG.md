@@ -1,3 +1,134 @@
+## [1.47.0] — 2026-06-23
+### Inferencia on-device (modo 7) operativa: primer swing-up real a invertido
+
+Continuación directa de 1.46.0. Se aplicó la solución a la causa raíz (control a
+13 Hz por WiFi): correr la política **en el ESP32 a 50 Hz** (modo 7). Tras
+exportar el modelo R6 y corregir tres desajustes más, el rig real hace **swing-up
+hasta vertical (1° del invertido), repetido y estable, con el brazo acotado** — el
+sim2real transfirió. Lo que queda (mantener el balance ≥1 s) es calidad de modelo,
+no integración. Toolchain: PlatformIO (`pio run -d src/firmware -e esp32dev` +
+`-e esp32dev_ota --target upload`).
+
+#### Modo 7 — pesos + forward pass (`firmware/esp32_qube.ino`, `qube_rl/export_rltools.py`)
+- **Pesos del modelo R6 exportados** a `policy_weights.h` (`python -m
+  qube_rl.export_rltools --model .../r6_theta100_s0_step250000.zip`). Arq 36→64→64→1.
+- **Activación corregida a `tanh`**: `rl_forward` hacía `Hardtanh(-2,2)` y el modo 7
+  multiplicaba `×0.5`; SB3-SAC determinista es `tanh(mu)`. **Verificado
+  numéricamente** vs `model.predict`: error 1.7e−07 con tanh, vs 0.27 con el viejo.
+- **Layout 4×9=36 confirmado** idéntico al `HistoryWrapper` (oldest-first, `obs_t`
+  emparejado con `a_{t-1}`).
+
+#### Modo 7 — correcciones de convención y temporización
+- **Replica del env Python corregido on-device**: θ tal cual; **α y α̇ invertidos**
+  (encoder péndulo espejado) y α envuelta a [−π,π]; **acción negada hacia el motor**
+  (torque espejado), pero el historial guarda la acción de política sin negar.
+- **Gate de 50 Hz** con zero-order hold: el loop de control corre a 500 Hz
+  (`CONTROL_PERIOD_US=2000`) → sin gate la red de 50 Hz iría 10× rápido.
+- **Signo + filtro de velocidad** (la pieza final): el firmware computaba
+  `−(x−prev)/dt` → la velocidad llegaba **con signo invertido** vs el `+d/dt` del
+  sim (la política amortiguaba cuando debía bombear). Reemplazado por el filtro
+  discreto **exacto** del sim `H(s)=50s/(s+50)` @ dt=0.02:
+  `v[n]=50·(x[n]−x[n−1])+0.36788·v[n−1]`, verificado contra `utils.VelocityFilter`.
+
+#### Tuning en runtime + harness
+- Nuevo `/rl_cmd?scale=X` (0..1): escala de PWM del modo 7 ajustable **sin
+  reflashear** (`rl_pwm_scale`, reset a 1.0 en boot) para barrer torque.
+- `experiments/2026-06-22_r6_real_aligned/hw_bringup.py`: etapa `mode7`
+  (`--scale`, `--reset-encoders`, monitoreo + e-stop).
+
+#### Resultado
+- A **scale 0.85**: péndulo a **179° (1° del invertido)** repetidamente, brazo
+  acotado (θ ~±48°, sin watchdog, 15 s estables). Swing-up cíclico fiable.
+- Barrido 0.8/0.85/0.9: todos llegan a 180° pero **ninguno mantiene** (hold más
+  largo ~0.12 s; objetivo ≥1 s). El catch/balance es el problema abierto del
+  proyecto (`balance_rate`); el modelo R6 es 50% balance en sim.
+- **Pendiente:** modelo de mejor balance (más pasos / currículo inverso) → soltar en
+  modo 7 (pipeline ya validado). Opcional: subir el freno θ del firmware de ±90°
+  hacia ±100° (límite de sim) para no recortar el catch.
+
+
+## [1.46.0] — 2026-06-22
+### Bring-up sim2real del rig real: 4 bugs de integración corregidos + causa raíz identificada (13 Hz)
+
+Sesión de banco con el modelo R6 (`r6_theta100_s0_step250000.zip`, 50 % balance en
+sim, alineado a ±100°). Se convirtió el problema histórico de "nunca balancea / α≈0"
+en una cadena de causas totalmente diagnosticada. Herramienta nueva:
+`experiments/2026-06-22_r6_real_aligned/hw_bringup.py` (etapas `ping`/`sensors`/
+`estop`/`deploy`, con `--dry-run`, `--reset-encoders`, `--action-mult`, watchdog de θ
+y e-stop por Ctrl+C).
+
+#### Bugs de integración corregidos (`src/qube_rl/envs/`)
+- **Doble conversión de unidades.** `/rl_state` ya entrega **radianes** (firmware
+  `handleRlState` aplica `DEG_TO_RAD`), pero `qube_real.py` y `train_real_v4.py`
+  hacían `np.radians()` encima (÷57.3) → la política veía un estado casi-nulo
+  siempre. **Causa real del `avg_alpha≈0.0001` de r4_real.** Ahora se lee crudo y se
+  envuelve α con `wrap_angle`.
+- **Signo de acción invertido.** En el rig, +acción mueve θ **negativo**; en sim,
+  +acción → +θ. Nuevo `QubeRealEnv(invert_action=True)` (default): niega el comando
+  en la frontera de hardware (tras los wrappers, para que el historial de acciones
+  que ve la política quede en convención de sim).
+- **Signo de α invertido.** Con la acción ya corregida, sim empareja (θ neg ↔ α
+  **pos**) pero el HW crudo daba α **neg** (−56° claro bajo un pump real). Nuevo
+  `QubeRealEnv(invert_alpha=True)` (default): invierte α y α̇. Con ambos signos, la
+  telemetría real del paso 1 (θ−46/α+26) **calza con la trayectoria de sim**
+  (θ−35/α+37).
+- **Recompensa real invertida** (`train_real_v4.py`): `(cos α+1)/2` premiaba α=0
+  (colgando); ahora `|α|/π` igual que la sim (0 colgando, 1 invertido).
+- `make_real_env` propaga `invert_action`/`invert_alpha` (defaults `True`).
+
+#### Causa raíz del fallo sim2real (★)
+- **Frecuencia de control: el lazo PC-en-el-lazo por WiFi corre a ~13 Hz, no a los
+  50 Hz de entrenamiento.** Medido: ~71 ms/paso (`/rl_cmd` ~40 ms + `/rl_state`
+  ~34 ms) vs ≤20 ms necesarios. Cada acción se mantiene ~3.5× de más → el brazo se
+  pasa antes de que la política corrija → runaway garantizado **sin importar signos
+  ni torque**. Esto explica por qué toda prueba de hardware falló históricamente.
+- **Solución: inferencia on-device (modo 7).** El firmware ya tiene el scaffolding
+  (`policy_weights.h`, `rl_forward()`, buffer 4×9=36, freno ±90°); `export_rltools.py`
+  exporta el actor SB3-SAC. Pendiente: conciliar la activación de salida (SAC
+  determinista = `tanh(mu)`; el modo 7 hacía `raw_out*0.5`) y verificar el layout.
+
+
+## [1.45.0] — 2026-06-22
+### Zero de servo/péndulo disponible en modo RL (endpoint `/rl_cmd?z=1`)
+
+#### Problema identificado
+- En modo RL (modo 6), no existía forma de zeroear el encoder del servo o péndulo
+  sin usar `/cmd?z=1` (que también resetea el PID) o `/rl_cmd?r=1` (que pisa el
+  offset a 0, destruyendo cualquier zero previo).
+- Esto impedía calibrar el origen del encoder antes de ensayos RL, afectando la
+  consistencia de las observaciones entre episodios.
+
+#### Cambios aplicados
+**1. Nuevo endpoint `/rl_cmd?z=1` — zero servo en modo RL**
+- Llama `zeroPositionHere()` (setea `positionOffsetDeg` = posición raw actual).
+- Resetea `lqr_prevTheta` a 0 para que la primera derivada no tenga spike.
+- NO llama `resetPid()` — preserva estado integral/derivativo del PID.
+
+**2. Nuevo endpoint `/rl_cmd?zp=1` — zero péndulo en modo RL**
+- Llama `zeroPendulumHere()` (setea `pendulumOffsetDeg` = posición raw actual).
+- Resetea `lqr_prevAlpha` a 0.
+
+#### Cambios de firmware
+```cpp
+// handleRlCmd — nuevos parámetros:
+if (request->hasParam("z")) {
+  zeroPositionHere();
+  lqr_prevTheta = 0.0f;
+  lastCommandMs = millis();
+}
+if (request->hasParam("zp")) {
+  zeroPendulumHere();
+  lqr_prevAlpha = 0.0f;
+  lastCommandMs = millis();
+}
+```
+
+#### Notas
+- Endpoint seguro durante operación RL: no interfiere con `rlAction` ni modo.
+- Uso: `GET /rl_cmd?z=1` antes de iniciar ensayo para calibrar origen.
+- Herramienta MCP `qube_zero()` también agregada.
+
+
 ## [1.44.0] — 2026-06-18
 ### Correcciones de RL (REFERENCE.md Partes V/VI), auditoría de firmware y sync de docs
 

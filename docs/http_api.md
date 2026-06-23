@@ -128,6 +128,8 @@ Envía acciones al agente RL (modo 6).
 | --------- | ----- | ------------------------------ |
 | `a`     | float | Acción RL [−1.0, 1.0] → PWM  |
 | `r`     | 1     | Reset encoders + estado RL     |
+| `z`     | 1     | Zero encoder servo (offset, sin reset PID) |
+| `zp`    | 1     | Zero encoder péndulo (offset)  |
 
 ## Comandos de uso frecuente
 
@@ -156,9 +158,14 @@ curl "http://192.168.4.1/cmd?m=5&ke=0.75&bt=20"
 
 # Leer estado RL (para agente SAC)
 curl -s http://192.168.4.1/rl_state
-
-# Enviar acción RL
 curl "http://192.168.4.1/rl_cmd?a=0.5"
+
+# Zeroear servo antes de ensayo RL
+curl "http://192.168.4.1/rl_cmd?z=1"
+
+# Zeroear péndulo
+curl "http://192.168.4.1/rl_cmd?zp=1"
+
 
 # Paro de emergencia
 curl "http://192.168.4.1/cmd?x=1"

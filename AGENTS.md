@@ -223,6 +223,8 @@ El firmware expone endpoints HTTP dedicados para el control por RL:
 | `/rl_state` | GET | Leer estado completo (ángulo, velocidad, corriente) sin interferir |
 | `/rl_cmd?a=X` | GET | Enviar acción discreta/continua al motor (valor `X`) |
 | `/rl_cmd?r=1` | GET | Resetear encoders e iniciar nuevo episodio |
+| `/rl_cmd?z=1` | GET | Zero encoder del servo (offset, sin resetear PID) |
+| `/rl_cmd?zp=1` | GET | Zero encoder del péndulo (offset) |
 
 ### Herramientas MCP para RL
 
@@ -231,6 +233,7 @@ El firmware expone endpoints HTTP dedicados para el control por RL:
 | `qube_rl_get_state()` | Lee el estado del péndulo sin interferir con la política RL activa |
 | `qube_rl_send_action(a)` | Envía acción al motor (solo para debug, no durante entrenamiento) |
 | `qube_rl_reset()` | Resetea encoders para iniciar nuevo episodio |
+| `qube_zero(servo=True, pendulum=False)` | Zeroa encoder del servo/péndulo en modo RL (sin resetear PID) |
 | `qube_set_mode(6)` | Activa modo RL en el firmware (ahora acepta modo 6) |
 
 ### Concurrencia MCP + RL
