@@ -14,8 +14,15 @@ import numpy as np
 from stable_baselines3 import SAC
 from stable_baselines3.common.vec_env import DummyVecEnv
 
-from qube_rl.config import set_global_seeds
+from qube_rl.config import SACConfig, set_global_seeds
 from qube_rl.envs.factory import make_sim_env
+
+# Network and SAC hyperparameters come from the shared SACConfig so the
+# autonomous loop trains/evaluates the SAME architecture that gets deployed on
+# the ESP32 ([net_arch, net_arch] = [64, 64]).  This loop previously hardcoded
+# net=256, which produced models that did not fit the chip's flash/RAM budget
+# and whose "best reward" did not necessarily transfer to the deployable net.
+_SAC = SACConfig()
 
 
 def make_env(reward: str = "cos_alpha", potential: str | None = None) -> object:
@@ -31,8 +38,8 @@ def make_env(reward: str = "cos_alpha", potential: str | None = None) -> object:
 def train_and_evaluate(
     timesteps: int = 50_000,
     reward: str = "cos_alpha",
-    lr: float = 3e-4,
-    net_size: int = 256,
+    lr: float = _SAC.learning_rate,
+    net_size: int = _SAC.net_arch,
     run_name: str = "auto",
     seed: int | None = None,
     mlflow_kw: dict | None = None,
@@ -57,15 +64,19 @@ def train_and_evaluate(
         "MlpPolicy",
         vec_env,
         learning_rate=lr,
+        # Intentionally smaller than SACConfig.buffer_size (1M): the autonomous
+        # loop does short 50-100k runs on a RAM-constrained box (a 1M buffer adds
+        # ~1 GB and blocks parallel runs). All other hyperparameters mirror SACConfig.
         buffer_size=100_000,
-        batch_size=256,
-        tau=0.005,
-        gamma=0.99,
-        use_sde=True,
-        use_sde_at_warmup=True,
-        train_freq=1,
-        gradient_steps=1,
-        learning_starts=1000,
+        batch_size=_SAC.batch_size,
+        tau=_SAC.tau,
+        gamma=_SAC.gamma,
+        use_sde=_SAC.use_sde,
+        use_sde_at_warmup=_SAC.use_sde_at_warmup,
+        sde_sample_freq=_SAC.sde_sample_freq,
+        train_freq=_SAC.train_freq,
+        gradient_steps=_SAC.gradient_steps,
+        learning_starts=_SAC.learning_starts,
         seed=seed,
         verbose=0,
         policy_kwargs=dict(net_arch=dict(pi=[net_size, net_size], qf=[net_size, net_size])),
@@ -130,8 +141,8 @@ def evaluate_over_seeds(
     timesteps: int,
     reward: str,
     run_name: str,
-    lr: float = 3e-4,
-    net_size: int = 256,
+    lr: float = _SAC.learning_rate,
+    net_size: int = _SAC.net_arch,
     mlflow_kw: dict | None = None,
 ) -> dict:
     """Run ``train_and_evaluate`` once per seed and aggregate mean ± std.
@@ -275,7 +286,7 @@ def main() -> None:
         print(title)
         print("=" * 60)
 
-    announce(f"RUN 1: Baseline — {args.steps} steps, cos_alpha, net=256, seeds={seeds}")
+    announce(f"RUN 1: Baseline — {args.steps} steps, cos_alpha, net={_SAC.net_arch}, seeds={seeds}")
     r1 = evaluate_over_seeds(seeds, timesteps=args.steps, reward="cos_alpha", run_name="run1_baseline", mlflow_kw=mlflow_kw)
     results.append(r1)
     log_run_to_mlflow(r1, **mlflow_kw)
