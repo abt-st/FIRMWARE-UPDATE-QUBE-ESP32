@@ -167,6 +167,7 @@ curl "http://192.168.4.1/cmd?x=1"
 | Libre | `m0`  | Motor deshabilitado, encoders activos     |
 | PWM manual | `m1`  | PWM fijo, sin lazo (`/cmd?p=100`)    |
 | PID servo | `m2`  | Setpoint en grados, lazo cerrado (`/cmd?s=20`) |
+| ~~PID péndulo~~ | ~~`m3`~~ | **Código libre.** Retirado en v1.34: el péndulo es un eslabón pasivo subactuado, un PID de posición directa no es realizable. No se reutiliza para mantener IDs estables. |
 | LQR | `m4`  | Control en espacio de estados (gain scheduling) |
 | Swing-up | `m5`  | Levantamiento por energía (`/cmd?m=5&ke=0.75`) |
 | Deep RL (HTTP) | `m6`  | Control por agente SAC externo vía HTTP |

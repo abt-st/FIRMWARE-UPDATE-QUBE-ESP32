@@ -115,6 +115,7 @@ Envía comandos de configuración y control.
 | 0 | Libre | Motor deshabilitado, encoders activos |
 | 1 | PWM manual | PWM fijo, sin lazo |
 | 2 | PID servo | Setpoint en grados, lazo cerrado |
+| ~~3~~ | ~~PID péndulo~~ | **Código libre** — retirado en v1.34 (péndulo subactuado, PID directo no realizable). No se reutiliza: los IDs de modo son estables para no romper telemetría/datasets. |
 | 4 | LQR | Control en espacio de estados (gain scheduling) |
 | 5 | Swing-up | Levantamiento por energía |
 | 6 | Deep RL (HTTP) | Control por agente SAC externo vía HTTP |
