@@ -59,7 +59,10 @@ logs/
 
 # ── Artefactos de entrenamiento RL (pesados, regenerables) ───────────────────
 # Checkpoints SAC: no versionar binarios. El header exportado SÍ se mantiene.
+# Cubre tanto models/ en la raíz como los models/ de cada experimento.
 models/*.zip
+**/models/*.zip
+**/checkpoints/*.zip
 !models/policy_weights.h
 # Logs antiguos de TensorBoard (removido; ya no se generan)
 runs/
