@@ -38,6 +38,7 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass, field
 from datetime import date
+from itertools import pairwise
 from pathlib import Path
 
 import numpy as np
@@ -53,31 +54,52 @@ DEFAULT_MIN_ROWS = 30
 # Lower-cased keys; the loader lower-cases headers before lookup.
 _ALIASES: dict[str, str] = {
     # time
-    "t": "t_s", "t_s": "t_s", "time_s": "t_s", "t_ms": "t_s",
+    "t": "t_s",
+    "t_s": "t_s",
+    "time_s": "t_s",
+    "t_ms": "t_s",
     # rotary arm / servo angle (identity entries keep the canonical schema
     # written by experiments/capture.py loadable without translation)
-    "theta_deg": "theta_deg", "position_deg": "theta_deg", "servo_deg": "theta_deg",
-    "servo_pos": "theta_deg", "servo": "theta_deg",
+    "theta_deg": "theta_deg",
+    "position_deg": "theta_deg",
+    "servo_deg": "theta_deg",
+    "servo_pos": "theta_deg",
+    "servo": "theta_deg",
     # pendulum angle
-    "alpha_deg": "alpha_deg", "pend_deg": "alpha_deg", "pend_position_deg": "alpha_deg",
-    "pend_pos": "alpha_deg", "pend": "alpha_deg",
-    "alpha_raw_deg": "alpha_raw_deg", "pend_raw_deg": "alpha_raw_deg",
+    "alpha_deg": "alpha_deg",
+    "pend_deg": "alpha_deg",
+    "pend_position_deg": "alpha_deg",
+    "pend_pos": "alpha_deg",
+    "pend": "alpha_deg",
+    "alpha_raw_deg": "alpha_raw_deg",
+    "pend_raw_deg": "alpha_raw_deg",
     # raw encoder counts
-    "theta_count": "theta_count", "servo_count": "theta_count",
-    "alpha_count": "alpha_count", "pend_count": "alpha_count",
+    "theta_count": "theta_count",
+    "servo_count": "theta_count",
+    "alpha_count": "alpha_count",
+    "pend_count": "alpha_count",
     # actuator command
     "pwm": "pwm",
     # setpoint / error
-    "setpoint_deg": "setpoint_deg", "servo_sp": "setpoint_deg",
-    "pend_sp": "setpoint_deg", "sp": "setpoint_deg",
-    "error_deg": "error_deg", "servo_err": "error_deg",
+    "setpoint_deg": "setpoint_deg",
+    "servo_sp": "setpoint_deg",
+    "pend_sp": "setpoint_deg",
+    "sp": "setpoint_deg",
+    "error_deg": "error_deg",
+    "servo_err": "error_deg",
     # firmware mode / metadata
-    "mode": "mode", "attempt": "attempt", "gain_mode": "gain_mode",
+    "mode": "mode",
+    "attempt": "attempt",
+    "gain_mode": "gain_mode",
     "ina_ok": "ina_ok",
     # INA219 power telemetry
-    "voltage_v": "v_bus", "v_bus": "v_bus", "v": "v_bus",
-    "current_ma": "i_ma", "i_ma": "i_ma",
-    "power_mw": "p_mw", "p_mw": "p_mw",
+    "voltage_v": "v_bus",
+    "v_bus": "v_bus",
+    "v": "v_bus",
+    "current_ma": "i_ma",
+    "i_ma": "i_ma",
+    "power_mw": "p_mw",
+    "p_mw": "p_mw",
 }
 
 # Raw header names whose values are in milliseconds (converted to seconds).
@@ -136,10 +158,7 @@ class QubeRun:
     def __repr__(self) -> str:
         sig = ",".join(self.columns)
         seg = f" seg={self.segment}" if self.segment else ""
-        return (
-            f"QubeRun({self.path.name}, n={self.n}, "
-            f"{self.rate_hz:.0f}Hz, driver={self.driver}{seg}, [{sig}])"
-        )
+        return f"QubeRun({self.path.name}, n={self.n}, {self.rate_hz:.0f}Hz, driver={self.driver}{seg}, [{sig}])"
 
 
 def infer_capture_date(path: Path) -> date | None:
@@ -257,7 +276,7 @@ def _split_segments(
     bounds = [0, *(np.flatnonzero(change) + 1).tolist(), len(key_stack)]
 
     runs: list[QubeRun] = []
-    for start, stop in zip(bounds[:-1], bounds[1:], strict=True):
+    for start, stop in pairwise(bounds):
         sl = {k: v[start:stop] for k, v in arrays.items()}
         sp = float(sl["setpoint_deg"][0]) if "setpoint_deg" in sl else None
         at = float(sl["attempt"][0]) if "attempt" in sl else None

@@ -16,8 +16,9 @@ import pytest
 # capture.py lives next to the firmware, not in an importable package.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src" / "firmware"))
 
-import capture  # noqa: E402
-from qube_analysis.dataset import load_run  # noqa: E402
+import capture
+
+from qube_analysis.dataset import load_run
 
 
 class FakeClient:
@@ -25,8 +26,13 @@ class FakeClient:
 
     def __init__(self, state: dict | None = None, fail_stop: bool = False) -> None:
         self._state = state or {
-            "position_deg": 12.0, "pend_position_deg": -3.0, "pend_raw_position_deg": 177.0,
-            "pwm": 0, "mode": 1, "v_bus": 14.8, "i_ma": 50.0,
+            "position_deg": 12.0,
+            "pend_position_deg": -3.0,
+            "pend_raw_position_deg": 177.0,
+            "pwm": 0,
+            "mode": 1,
+            "v_bus": 14.8,
+            "i_ma": 50.0,
         }
         self.modes: list[int] = []
         self.pwms: list[int] = []
@@ -83,9 +89,8 @@ class TestSafetyGuard:
 
     def test_motor_safe_stops_on_exception(self) -> None:
         c = FakeClient()
-        with pytest.raises(ValueError):
-            with capture.motor_safe(c):
-                raise ValueError("boom")
+        with pytest.raises(ValueError), capture.motor_safe(c):
+            raise ValueError("boom")
         assert c.stops == 1  # stopped despite the error
 
     def test_motor_safe_swallows_failed_stop(self) -> None:
@@ -102,15 +107,21 @@ class TestRunSchedule:
         capture.run_schedule(c, plan, max_pwm=120)
         assert c.modes == [1]
         assert c.pwms == [40, 120, -120]  # clamped to +/-max_pwm
-        assert c.stops == 1               # guard fired
+        assert c.stops == 1  # guard fired
 
 
 class TestCsvRoundTrip:
     def test_written_csv_loads_through_dataset(self, tmp_path: Path) -> None:
         rows = [
             capture.row_from_state(
-                {"position_deg": float(i), "pend_position_deg": float(2 * i),
-                 "pwm": 0, "mode": 0, "v_bus": 14.8, "i_ma": 40.0},
+                {
+                    "position_deg": float(i),
+                    "pend_position_deg": float(2 * i),
+                    "pwm": 0,
+                    "mode": 0,
+                    "v_bus": 14.8,
+                    "i_ma": 40.0,
+                },
                 t_s=i * 0.03,
             )
             for i in range(40)

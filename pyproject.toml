@@ -63,6 +63,9 @@ ignore = [
 ]
 # Control-theory code uses standard uppercase matrix notation (A, B, Q, R, K, S).
 "src/qube_rl/lqr.py" = ["N803", "N806"]
+# System-ID uses standard physics symbols (Mp, Lp, Dp, J) for the pendulum params.
+"src/qube_analysis/sysid.py" = ["N803", "N806"]
+"tests/test_sysid.py" = ["N806"]
 
 [tool.ruff.format]
 quote-style = "double"

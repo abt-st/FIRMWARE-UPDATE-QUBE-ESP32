@@ -41,10 +41,11 @@ from __future__ import annotations
 import argparse
 import csv
 import time
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, suppress
 from datetime import date
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
 # --- Canonical output schema (matches qube_analysis.dataset aliases) ----------
 
@@ -59,11 +60,18 @@ _STATE_MAP: dict[str, str] = {
     "i_ma": "i_ma",
 }
 CSV_FIELDS: tuple[str, ...] = (
-    "t_s", "theta_deg", "alpha_deg", "alpha_raw_deg", "pwm", "mode", "v_bus", "i_ma",
+    "t_s",
+    "theta_deg",
+    "alpha_deg",
+    "alpha_raw_deg",
+    "pwm",
+    "mode",
+    "v_bus",
+    "i_ma",
 )
 
-DEFAULT_IP = "192.168.4.1"   # ESP32 SoftAP; pass --ip for the STA address.
-DEFAULT_MAX_PWM = 120        # safety clamp on |PWM| for actuator experiments.
+DEFAULT_IP = "192.168.4.1"  # ESP32 SoftAP; pass --ip for the STA address.
+DEFAULT_MAX_PWM = 120  # safety clamp on |PWM| for actuator experiments.
 
 
 # --- HTTP client --------------------------------------------------------------
@@ -107,10 +115,8 @@ def motor_safe(client: Any) -> Iterator[None]:
     try:
         yield
     finally:
-        try:
+        with suppress(Exception):
             client.stop()
-        except Exception:  # noqa: BLE001 - best-effort kill, never mask the cause
-            pass
 
 
 # --- Pure helpers (unit-tested without hardware) ------------------------------
@@ -180,7 +186,7 @@ def poll(client: Any, duration: float, *, on_tick: Callable[[dict], None] | None
             break
         try:
             st = client.state()
-        except Exception:  # noqa: BLE001 - tolerate a dropped poll, keep sampling
+        except Exception:
             continue
         rows.append(row_from_state(st, t))
         if on_tick is not None:
@@ -204,7 +210,7 @@ def run_schedule(client: Any, plan: list[tuple[float, int]], *, max_pwm: int) ->
             while time.perf_counter() < seg_end:
                 try:
                     st = client.state()
-                except Exception:  # noqa: BLE001
+                except Exception:
                     continue
                 rows.append(row_from_state(st, time.perf_counter() - t0))
     return rows
@@ -230,7 +236,7 @@ def cmd_bench(client: QubeClient, args: argparse.Namespace) -> None:
         a = time.perf_counter()
         try:
             client.state()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"  poll error: {e}")
             continue
         lat.append(time.perf_counter() - a)
@@ -250,10 +256,12 @@ def cmd_monitor(client: QubeClient, args: argparse.Namespace) -> None:
     while time.perf_counter() - t0 < args.duration:
         try:
             s = client.state()
-            print(f"  mode={s.get('mode')} pwm={s.get('pwm'):>+4} "
-                  f"theta={s.get('position_deg', 0):>7.1f} alpha={s.get('pend_position_deg', 0):>7.1f} "
-                  f"V={s.get('v_bus', 0):.2f} I={s.get('i_ma', 0):.0f}mA")
-        except Exception as e:  # noqa: BLE001
+            print(
+                f"  mode={s.get('mode')} pwm={s.get('pwm'):>+4} "
+                f"theta={s.get('position_deg', 0):>7.1f} alpha={s.get('pend_position_deg', 0):>7.1f} "
+                f"V={s.get('v_bus', 0):.2f} I={s.get('i_ma', 0):.0f}mA"
+            )
+        except Exception as e:
             print(f"  no response: {e}")
         time.sleep(0.25)
 
@@ -261,9 +269,20 @@ def cmd_monitor(client: QubeClient, args: argparse.Namespace) -> None:
 def cmd_encoder_check(client: QubeClient, _args: argparse.Namespace) -> None:
     """One-shot encoder/INA sanity dump."""
     s = client.state()
-    keys = ["count", "counts_per_rev", "raw_position_deg", "position_deg", "offset_deg",
-            "pend_count", "pend_raw_position_deg", "pend_position_deg", "pend_offset_deg",
-            "ina_ok", "v_bus", "i_ma"]
+    keys = [
+        "count",
+        "counts_per_rev",
+        "raw_position_deg",
+        "position_deg",
+        "offset_deg",
+        "pend_count",
+        "pend_raw_position_deg",
+        "pend_position_deg",
+        "pend_offset_deg",
+        "ina_ok",
+        "v_bus",
+        "i_ma",
+    ]
     print("Encoder / INA snapshot:")
     for k in keys:
         if k in s:
@@ -304,8 +323,9 @@ def cmd_deadzone(client: QubeClient, args: argparse.Namespace) -> None:
     print(f"Dead-zone capture -> {outdir}")
     print("Arm FREE, pendulum removed/fixed.\n")
     for rep in range(1, args.reps + 1):
-        plan = deadzone_ramp(args.step, args.dwell, args.max_pwm, sign=1) + \
-            deadzone_ramp(args.step, args.dwell, args.max_pwm, sign=-1)
+        plan = deadzone_ramp(args.step, args.dwell, args.max_pwm, sign=1) + deadzone_ramp(
+            args.step, args.dwell, args.max_pwm, sign=-1
+        )
         rows = run_schedule(client, plan, max_pwm=args.max_pwm)
         p = write_csv(outdir / f"deadzone_{rep:02d}.csv", rows)
         print(f"  saved {p.name}: {len(rows)} samples")
@@ -362,8 +382,8 @@ def main(argv: list[str] | None = None) -> None:
     client = QubeClient(ip=args.ip, timeout=args.timeout)
     try:
         client.state()  # fail fast if the ESP32 is unreachable
-    except Exception as e:  # noqa: BLE001
-        raise SystemExit(f"Cannot reach ESP32 at {args.ip}: {e}")
+    except Exception as e:
+        raise SystemExit(f"Cannot reach ESP32 at {args.ip}: {e}") from e
     args.func(client, args)
 
 

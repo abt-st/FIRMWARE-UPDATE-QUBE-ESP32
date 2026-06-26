@@ -58,8 +58,7 @@ class TestDelimiterAndAliases:
     def test_alias_variants_map_to_canonical(self, tmp_path: Path) -> None:
         f = _write(
             tmp_path / "2026-05-07_pid" / "s.csv",
-            "t_s,servo_pos,current_ma,voltage_v\n"
-            + "\n".join(f"{i},{i * 2},{i * 3},12.0" for i in range(40)),
+            "t_s,servo_pos,current_ma,voltage_v\n" + "\n".join(f"{i},{i * 2},{i * 3},12.0" for i in range(40)),
         )
         (run,) = load_run(f)
         assert "theta_deg" in run.data  # servo_pos -> theta_deg

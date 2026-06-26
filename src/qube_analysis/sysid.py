@@ -148,9 +148,14 @@ def fit_damped_oscillation(t: np.ndarray, x: np.ndarray) -> DampedFit:
 
     wd = wn * np.sqrt(max(0.0, 1.0 - zeta**2))
     return DampedFit(
-        omega_n=float(wn), zeta=float(zeta), omega_d=float(wd),
-        amplitude=float(abs(amp)), offset=float(off), phase=float(phi),
-        r2=float(r2), n=int(len(t)),
+        omega_n=float(wn),
+        zeta=float(zeta),
+        omega_d=float(wd),
+        amplitude=float(abs(amp)),
+        offset=float(off),
+        phase=float(phi),
+        r2=float(r2),
+        n=len(t),
     )
 
 
@@ -167,12 +172,12 @@ class PendulumParams:
     ``Mp``.  See module docstring for the (fixed-base, small-angle) assumptions.
     """
 
-    Lp: float           # pendulum length [m]
-    Dp: float           # viscous friction [N*m*s/rad]
-    omega_n: float      # natural frequency [rad/s]
-    zeta: float         # damping ratio
-    Mp: float           # mass used for Dp [kg] (an input, echoed for the record)
-    r2: float           # quality of the underlying damped-sine fit
+    Lp: float  # pendulum length [m]
+    Dp: float  # viscous friction [N*m*s/rad]
+    omega_n: float  # natural frequency [rad/s]
+    zeta: float  # damping ratio
+    Mp: float  # mass used for Dp [kg] (an input, echoed for the record)
+    r2: float  # quality of the underlying damped-sine fit
 
 
 def identify_pendulum(fit: DampedFit, *, Mp: float, g: float = G) -> PendulumParams:
@@ -242,9 +247,9 @@ def identify_pendulum_from_runs(
 class DeadzoneResult:
     """Identified actuator dead-zone (PWM threshold for motion onset)."""
 
-    pwm_threshold: float   # largest |PWM| that still produced no motion
-    pwm_moving: float      # smallest |PWM| that produced motion (NaN if none)
-    speed_noise: float     # arm-speed noise floor [deg/s] used as the cutoff
+    pwm_threshold: float  # largest |PWM| that still produced no motion
+    pwm_moving: float  # smallest |PWM| that produced motion (NaN if none)
+    speed_noise: float  # arm-speed noise floor [deg/s] used as the cutoff
 
 
 def estimate_deadzone(

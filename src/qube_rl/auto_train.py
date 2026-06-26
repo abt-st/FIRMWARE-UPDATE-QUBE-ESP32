@@ -128,7 +128,15 @@ def train_and_evaluate(
         }
 
         if run:
-            for key in ("fps", "ep_len_mean", "ep_rew_mean", "reach_rate", "balance_rate", "upright_fraction", "max_hold_s"):
+            for key in (
+                "fps",
+                "ep_len_mean",
+                "ep_rew_mean",
+                "reach_rate",
+                "balance_rate",
+                "upright_fraction",
+                "max_hold_s",
+            ):
                 run.log_metric(f"final/{key}", float(result[key]))
             run.log_artifact(str(model_path))
 
@@ -222,8 +230,7 @@ def write_progress(results: list[dict], status: str, out_dir: Path) -> None:
                 "",
                 f"- **Balance rate:** {last['balance_rate_mean'] * 100:.0f}% "
                 f"± {last['balance_rate_std'] * 100:.0f}% (held ≥1 s inverted)",
-                f"- **Reach rate:** {last['reach_rate_mean'] * 100:.0f}% "
-                f"± {last['reach_rate_std'] * 100:.0f}%",
+                f"- **Reach rate:** {last['reach_rate_mean'] * 100:.0f}% ± {last['reach_rate_std'] * 100:.0f}%",
                 f"- **Mean upright time fraction:** {last['upright_fraction_mean'] * 100:.0f}%",
                 "",
             ]
@@ -278,7 +285,9 @@ def main() -> None:
     if args.mlflow:
         from qube_rl.mlflow_tracking import resolve_tracking_uri
 
-        print(f"[mlflow] tracking enabled -> {resolve_tracking_uri(args.mlflow_uri)} (experiment: {args.mlflow_experiment})")
+        print(
+            f"[mlflow] tracking enabled -> {resolve_tracking_uri(args.mlflow_uri)} (experiment: {args.mlflow_experiment})"
+        )
     results = []
 
     def announce(title: str) -> None:
@@ -287,7 +296,9 @@ def main() -> None:
         print("=" * 60)
 
     announce(f"RUN 1: Baseline — {args.steps} steps, cos_alpha, net={_SAC.net_arch}, seeds={seeds}")
-    r1 = evaluate_over_seeds(seeds, timesteps=args.steps, reward="cos_alpha", run_name="run1_baseline", mlflow_kw=mlflow_kw)
+    r1 = evaluate_over_seeds(
+        seeds, timesteps=args.steps, reward="cos_alpha", run_name="run1_baseline", mlflow_kw=mlflow_kw
+    )
     results.append(r1)
     log_run_to_mlflow(r1, **mlflow_kw)
     write_progress(results, f"Run 1 done — balance={r1['balance_rate_mean'] * 100:.0f}%", out_dir)

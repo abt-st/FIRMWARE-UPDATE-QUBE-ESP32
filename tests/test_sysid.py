@@ -91,8 +91,7 @@ class TestAggregateAcrossRuns:
         Lp_true = 0.12
         wn = np.sqrt(3 * G / (2 * Lp_true))
         t = np.linspace(0, 3.0, 100)
-        good = [_run({"t_s": t, "alpha_deg": np.rad2deg(_damped(t, np.deg2rad(15), 0.03, wn))})
-                for _ in range(3)]
+        good = [_run({"t_s": t, "alpha_deg": np.rad2deg(_damped(t, np.deg2rad(15), 0.03, wn))}) for _ in range(3)]
         junk = _run({"t_s": t, "alpha_deg": np.zeros_like(t)})  # flat -> bad fit, dropped
         agg, per_run = identify_pendulum_from_runs([*good, junk], Mp=0.024)
         assert agg is not None

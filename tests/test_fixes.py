@@ -164,9 +164,7 @@ class TestNearUprightReset:
 
         env = make_sim_env(reward="linear_alpha", max_episode_steps=10)
         # Zero policy from the apex: reach should be 100% since we start inverted.
-        out = evaluate_balance(
-            None, env, n_episodes=3, max_steps=10, reset_options={"near_upright": True}
-        )
+        out = evaluate_balance(None, env, n_episodes=3, max_steps=10, reset_options={"near_upright": True})
         assert out["reach_rate"] == 1.0
 
 
