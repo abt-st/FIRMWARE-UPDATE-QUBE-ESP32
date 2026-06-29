@@ -68,6 +68,7 @@ class QubeRealEnv(gym.Env):
         auto_set_mode: bool = True,
         invert_action: bool = True,
         invert_alpha: bool = True,
+        angle_limits: list[float] | None = None,
     ) -> None:
         super().__init__()
         self.esp32_ip = esp32_ip
@@ -96,11 +97,11 @@ class QubeRealEnv(gym.Env):
         if reward not in REWARDS:
             raise ValueError(f"Unknown reward '{reward}'. Choose from {list(REWARDS)}")
         self._reward_func = REWARDS[reward]
-
         # Spaces — bounds mirror the 8-D observation layout; the theta bound
-        # (±120°) and velocity bound (MAX_VELOCITY) match the simulator so the
-        # sim and real observation spaces agree (see EnvConfig.angle_limit_theta).
-        th_max = np.float32(2 * np.pi / 3)  # ±120°, matches EnvConfig
+        # and velocity bound (MAX_VELOCITY) match the simulator so the
+        # sim and real observation spaces agree.
+        ecfg_th = 2 * np.pi / 3  # default ±120°, matches EnvConfig
+        th_max = np.float32(angle_limits[0] if angle_limits else ecfg_th)
         pi = np.float32(np.pi)
         v = np.float32(MAX_VELOCITY)
         self.observation_space = Box(

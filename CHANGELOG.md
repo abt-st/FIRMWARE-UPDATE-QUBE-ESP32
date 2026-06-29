@@ -1,3 +1,50 @@
+## [1.48.0] — 2026-06-24
+### GUI web rediseñada: sincronizada con el firmware + pestaña de análisis sim2real
+
+Rediseño completo de la única GUI del proyecto (`src/firmware/data/index.html`),
+servida desde SPIFFS. Se cerró la brecha entre lo que el firmware expone y lo que
+la GUI mostraba, se reorganizó en **pestañas**, y se agregaron herramientas de
+análisis pensadas para el problema abierto (mantener el balance ≥1 s). Verificado
+con un harness Node+shim de DOM: **24/24 checks funcionales** (handler de
+telemetría, watchdog, balance, presets, handshake `pv`, export CSV) + `node
+--check` y cruce de IDs/handlers.
+
+> Para verlo en el rig: `pio run -d src/firmware --target uploadfs` (GUI) y, para
+> los widgets de acción RL/watchdog, también `pio run -d src/firmware --target
+> upload` (campos de telemetría nuevos). Sin reflash, esos widgets quedan en `--`
+> sin romper el resto.
+
+#### Sincronización GUI ↔ firmware (`src/firmware/data/index.html`)
+- **RL/sim2real:** slider de `rl_pwm_scale` (`/rl_cmd?scale=`), **handshake `pv`**
+  contra `EXPECTED_PV=2` (badge verde/amarillo), poll en vivo de `/rl_state`.
+- **Calibración** (panel nuevo): offsets `o/op`, dirección `ed/edp`, counts-per-rev
+  `cpr/cprp`, con lecturas raw/offset en vivo desde el WebSocket.
+- **Ajustes/Kalman** (nuevo): toggle `kf` + telemetría KF, feedforward `ff`, filtro
+  de velocidad `va`, período de telemetría `tp`, `gain_mode` en badge.
+- **Sistema** (nuevo): `/restart`, subir GUI a SPIFFS por web (`/fs`), `/format`
+  con confirmación, config WiFi STA (`wifi_ssid/pass/reconnect`).
+- **Swing-up:** añadido `sp` (PWM máx). Resuelta la colisión de id `sp`→`spt`.
+
+#### Pestaña Análisis + herramientas de balance
+- **Retrato de fase α vs α̇** (scatter con estela), con α̇ por diferencias finitas
+  (EMA), independiente del KF.
+- **Métrica de balance en vivo:** % upright, hold actual y hold máximo, con target
+  (def 180°) y tolerancia configurables — mide directamente el KPI abierto.
+- **Gráfica de acción RL aplicada** (`rl_action`) para diagnosticar el sobrebombeo
+  al ajustar `scale`.
+- **Presets** (localStorage) de PID/LQR/swing-up/gain-scheduling/RL-scale.
+- **CSV extendido** opcional: `rl_action`, `alpha_dot`, `in_upright`, `kf_*`.
+
+#### Telemetría nueva (`firmware/esp32_qube.ino`, `getStateJson()`)
+- `rl_action`: acción aplicada al motor en modo 6/7.
+- `ms_since_cmd`: edad del último comando → cuenta regresiva del watchdog de
+  comandos (auto-STOP a los 10 s en modo 1/6), mostrada como badge.
+
+#### Docs
+- `src/firmware/data/README.md`: tablas de endpoints/paneles/telemetría
+  actualizadas, nota del handshake `pv` y bloque de auditoría 2026-06-24.
+
+
 ## [1.47.0] — 2026-06-23
 ### Inferencia on-device (modo 7) operativa: primer swing-up real a invertido
 

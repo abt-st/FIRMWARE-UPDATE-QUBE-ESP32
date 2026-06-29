@@ -314,13 +314,24 @@ float lqr_K3 = 1.5f;
 float lqr_K4 = 9.0f;    // Ganancia velocidad péndulo (valor original calibrado)
 
 // Gain scheduling: gains moderados cerca del equilibrio
-const float LQR_K2_NEAR = 30.0f;     // K2 cerca de vertical (probado: 55+ segundos)
-const float LQR_K4_NEAR = 15.0f;     // K4 cerca de vertical (no subir a 20)
-const float LQR_NEAR_DEG = 25.0f;    // Umbral para gains agresivos
-const float LQR_K2_VERY_NEAR = 55.0f; // K2 cuando |alpha| < LQR_VERY_NEAR_DEG (muy cerca de vertical)
-const float LQR_K4_VERY_NEAR = 20.0f; // K4 cuando |alpha| < LQR_VERY_NEAR_DEG
-const float LQR_VERY_NEAR_DEG = 5.0f; // Umbral para gains muy agresivos
-const float LQR_DAMPING_GAIN = 0.3f;  // Ganancia de disipación de energía dentro de LQR
+float lqr_K2_near = 30.0f;       // K2 cerca de vertical
+float lqr_K4_near = 15.0f;       // K4 cerca de vertical
+float lqr_near_deg = 25.0f;      // Umbral para gains near
+float lqr_K2_very_near = 55.0f;  // K2 muy cerca de vertical
+float lqr_K4_very_near = 20.0f;  // K4 muy cerca de vertical
+float lqr_very_near_deg = 5.0f;  // Umbral para gains very near
+float lqr_damping_gain = 0.3f;   // Ganancia de disipación de energía
+// Mode-7 hybrid RL→LQR handoff — runtime-tunable via serial (b/j/y) for bench tuning.
+float hybrid_enter_deg = 165.0f; // |alpha|>=this (deg from hanging) → enter LQR catch
+float hybrid_exit_deg  = 130.0f; // |alpha|<this → drop back to RL swing-up
+int   hybrid_lqr_pwm   = 70;     // PWM clamp for the LQR catch branch
+// Velocity-bleed catch-brake (ported from mode 4): on LQR entry, brake against the
+// crossing velocity for a few ms to dissipate excess energy BEFORE the LQR hold.
+// Tunable via serial L8/L9/L10.
+float hybrid_catch_ms    = 250.0f; // brake duration after entering apex zone (ms)
+float hybrid_catch_gain  = 0.10f;  // brake PWM per deg/s of pendulum velocity (sign-flippable)
+int   hybrid_catch_pwm   = 40;     // brake PWM clamp
+float hybrid_catch_angle = 15.0f;  // apex zone half-width (deg from vertical) that arms the brake
 float lqr_prevTheta = 0.0f;
 float lqr_prevAlpha = 0.0f;
 float lqr_filteredVelTheta = 0.0f;
@@ -974,7 +985,10 @@ String getStateJson() {
   json += "\"kf_theta\":" + String(kf_x[0], 3) + ",";
   json += "\"kf_alpha\":" + String(kf_x[1], 3) + ",";
   json += "\"kf_dtheta\":" + String(kf_x[2], 2) + ",";
-  json += "\"kf_dalpha\":" + String(kf_x[3], 2);
+  json += "\"kf_dalpha\":" + String(kf_x[3], 2) + ",";
+  // RL action applied to the motor (mode 6/7) and command-timeout watchdog age.
+  json += "\"rl_action\":" + String(rlAction, 3) + ",";
+  json += "\"ms_since_cmd\":" + String(millis() - lastCommandMs);
   json += "}";
   return json;
 }
@@ -1207,6 +1221,13 @@ void handleCmd(AsyncWebServerRequest *request) {
     lqr_K4 = request->getParam("lqr4")->value().toFloat();
     resetLqr();
   }
+  if (request->hasParam("lqr2n")) { lqr_K2_near = request->getParam("lqr2n")->value().toFloat(); resetLqr(); }
+  if (request->hasParam("lqr4n")) { lqr_K4_near = request->getParam("lqr4n")->value().toFloat(); resetLqr(); }
+  if (request->hasParam("lqrnd")) { lqr_near_deg = request->getParam("lqrnd")->value().toFloat(); resetLqr(); }
+  if (request->hasParam("lqr2vn")) { lqr_K2_very_near = request->getParam("lqr2vn")->value().toFloat(); resetLqr(); }
+  if (request->hasParam("lqr4vn")) { lqr_K4_very_near = request->getParam("lqr4vn")->value().toFloat(); resetLqr(); }
+  if (request->hasParam("lqrvnd")) { lqr_very_near_deg = request->getParam("lqrvnd")->value().toFloat(); resetLqr(); }
+  if (request->hasParam("lqrdamp")) { lqr_damping_gain = request->getParam("lqrdamp")->value().toFloat(); resetLqr(); }
 
   if (request->hasParam("kf")) {
     kf_enabled = (request->getParam("kf")->value().toInt() != 0);
@@ -1416,6 +1437,62 @@ void processSerialCommand() {
           setMotor(pwm);
           lastCommandMs = millis();
         }
+        break;
+      }
+
+    case 'q':
+      {
+        // q<val> — mode-7 on-device RL torque scale (0..1). Serial twin of the
+        // HTTP /rl_cmd?scale path, so the whole mode-7 test can run WiFi-free.
+        rl_pwm_scale = constrain(cmd.substring(1).toFloat(), 0.0f, 1.0f);
+        lastCommandMs = millis();
+        break;
+      }
+
+    case 'b':  // b<deg> — mode-7 hybrid LQR ENTER threshold (|alpha| deg from hanging)
+      {
+        hybrid_enter_deg = constrain(cmd.substring(1).toFloat(), 90.0f, 179.0f);
+        Serial.printf("[HYBRID] enter=%.1fdeg\n", hybrid_enter_deg);
+        lastCommandMs = millis();
+        break;
+      }
+    case 'j':  // j<deg> — mode-7 hybrid LQR EXIT threshold
+      {
+        hybrid_exit_deg = constrain(cmd.substring(1).toFloat(), 60.0f, 175.0f);
+        Serial.printf("[HYBRID] exit=%.1fdeg\n", hybrid_exit_deg);
+        lastCommandMs = millis();
+        break;
+      }
+    case 'y':  // y<pwm> — mode-7 hybrid LQR PWM clamp
+      {
+        hybrid_lqr_pwm = constrain(cmd.substring(1).toInt(), 30, PWM_MAX);
+        Serial.printf("[HYBRID] lqr_pwm=%d\n", hybrid_lqr_pwm);
+        lastCommandMs = millis();
+        break;
+      }
+    case 'L':  // L<n> <val> — tune LQR catch gains live (shared mode4/mode7):
+      {        // 1=K2_near 2=K4_near 3=damping 4=K2_very_near 5=K4_very_near 6=K2 7=K4
+        const int sp = cmd.indexOf(' ');
+        if (sp > 1) {
+          const int n = cmd.substring(1, sp).toInt();
+          const float val = cmd.substring(sp + 1).toFloat();
+          switch (n) {
+            case 1: lqr_K2_near = val; break;
+            case 2: lqr_K4_near = val; break;
+            case 3: lqr_damping_gain = val; break;
+            case 4: lqr_K2_very_near = val; break;
+            case 5: lqr_K4_very_near = val; break;
+            case 6: lqr_K2 = val; break;
+            case 7: lqr_K4 = val; break;
+            case 8: hybrid_catch_ms = val; break;
+            case 9: hybrid_catch_gain = val; break;
+            case 10: hybrid_catch_pwm = (int)val; break;
+            case 11: hybrid_catch_angle = val; break;
+            default: break;
+          }
+          Serial.printf("[LQR] g%d=%.3f\n", n, val);
+        }
+        lastCommandMs = millis();
         break;
       }
 
@@ -1954,12 +2031,12 @@ void loop() {
       // Gain scheduling en 3 tiers: base → NEAR → VERY_NEAR
       float k2_eff = lqr_K2;
       float k4_eff = lqr_K4;
-      if (abs(alpha) < LQR_VERY_NEAR_DEG) {
-        k2_eff = LQR_K2_VERY_NEAR;
-        k4_eff = LQR_K4_VERY_NEAR;
-      } else if (abs(alpha) < LQR_NEAR_DEG) {
-        k2_eff = LQR_K2_NEAR;
-        k4_eff = LQR_K4_NEAR;
+      if (abs(alpha) < lqr_very_near_deg) {
+        k2_eff = lqr_K2_very_near;
+        k4_eff = lqr_K4_very_near;
+      } else if (abs(alpha) < lqr_near_deg) {
+        k2_eff = lqr_K2_near;
+        k4_eff = lqr_K4_near;
       }
       // Usar velocidades: KF si habilitado, EMA como fallback
       float velTheta_ctrl = kf_enabled ? kf_x[2] : lqr_filteredVelTheta;
@@ -1979,8 +2056,8 @@ void loop() {
       // Energy dissipation dentro de LQR: agregar término de amortiguamiento
       // proporcional a la velocidad angular del péndulo. Esto reduce el ciclo
       // límite alrededor de ±180° sin afectar la estabilidad del LQR.
-      if (abs(alpha) < LQR_NEAR_DEG) {
-        u -= LQR_DAMPING_GAIN * velAlpha_ctrl;
+      if (abs(alpha) < lqr_near_deg) {
+        u -= lqr_damping_gain * velAlpha_ctrl;
       }
 
       pwm = constrain((int)(MOTOR_DIR * u), -70, 70);
@@ -2365,14 +2442,110 @@ void loop() {
 
       // Run on-device inference (returns policy action = tanh(mu) in [-1,1]).
       // rl_last_action stored inside is the un-negated policy action (sim convention).
+      // ── Hybrid RL swing-up + LQR balance ────────────────────────────────
+      // When the RL policy brings the pendulum near the inverted position,
+      // smoothly hand off to LQR for balance.  Same velocity estimates,
+      // no HTTP mode switch needed.
+      // rl_obs_al is in sim convention [-π,π]: inverted = |α| ≈ π.
+      static bool hybrid_lqr = false;
+      static unsigned long hybrid_lqr_start = 0;
+
       float action = rl_infer_step(rl_obs_th, rl_obs_al, rl_obs_thd, rl_obs_ald);
 
-      // Motor torque is mirrored vs sim -> negate the command (QubeRealEnv invert_action).
-      // rl_pwm_scale (runtime, /rl_cmd?scale=) tames over-pumping from the sim2real
-      // dynamics gap without re-flashing.
-      float action_norm = constrain(-action, -1.0f, 1.0f);
-      int rl_pwm = (int)(action_norm * PWM_MAX * rl_pwm_scale);
-      rl_pwm = constrain(rl_pwm, -PWM_MAX, PWM_MAX);
+      // LQR transition thresholds — runtime-tunable (serial b/j). rl_obs_al is the
+      // wrapped sim-convention alpha in rad, inverted=±π. Compare against the
+      // tunable degree thresholds converted to rad.
+      const float HYBRID_ENTER = hybrid_enter_deg * DEG_TO_RAD;
+      const float HYBRID_EXIT  = hybrid_exit_deg  * DEG_TO_RAD;
+
+      if (!hybrid_lqr && fabsf(rl_obs_al) >= HYBRID_ENTER) {
+        hybrid_lqr = true;
+        hybrid_lqr_start = millis();
+      } else if (hybrid_lqr && fabsf(rl_obs_al) < HYBRID_EXIT) {
+        hybrid_lqr = false;
+      }
+
+      int rl_pwm;
+      if (hybrid_lqr) {
+        // ── LQR balance (using raw encoder angles, same as mode 4) ──────
+        float theta = constrain(pos, -LQR_SERVO_LIMIT_DEG, LQR_SERVO_LIMIT_DEG);
+        float alpha_raw = pendPosRaw;
+        // alpha to vertical — EXACT mode-4 convention: 0=vertical, negative=below,
+        // positive=above/crossed. (The previous (alpha_raw+180) form gave the
+        // OPPOSITE sign of mode 4, so the tuned gains pushed the pendulum the wrong
+        // way and the catch never held.)
+        float alpha = fmodf(alpha_raw - 180.0f, 360.0f);
+        if (alpha < -180.0f) alpha += 360.0f;
+        else if (alpha > 180.0f) alpha -= 360.0f;
+        alpha = -alpha;
+
+        // Velocities in mode-4 convention (deg/s): velTheta ∝ -dθ/dt,
+        // velAlpha ∝ -d(alpha_raw)/dt. The rl_vf filter stores sim convention
+        // (thVel=+dθ/dt; alVel=-d(alpha_raw)/dt), so: velTheta = -rl_vf_thVel,
+        // velAlpha = +rl_vf_alVel (already -d(alpha_raw)/dt). This makes the
+        // whole LQR law identical to the proven mode-4 controller.
+        float velTheta_ctrl = -rl_vf_thVel * RAD_TO_DEG;
+        float velAlpha_ctrl = rl_vf_alVel * RAD_TO_DEG;
+
+        // ── Apex velocity-bleed catch-brake (ported & adapted from mode 4) ──
+        // We enter LQR LOW (~112°) so the LQR helps pump to the apex; braking at
+        // entry would kill the climb. So the brake is APEX-TRIGGERED: when the
+        // pendulum first reaches within hybrid_catch_angle of vertical, brake
+        // against the crossing velocity (direction locked on zone entry) for
+        // hybrid_catch_ms to dissipate excess energy, THEN let the LQR hold.
+        // Re-arms only after leaving the apex zone. gain is sign-flippable (L9<0)
+        // if the brake assists instead of opposes.
+        static unsigned long apexCatchMs = 0;
+        static float lockedBrakeDir = 0.0f;
+        if (fabsf(alpha) < hybrid_catch_angle && apexCatchMs == 0) {
+          apexCatchMs = millis();
+          lockedBrakeDir = (velAlpha_ctrl > 0.0f) ? 1.0f : -1.0f;
+        }
+        if (apexCatchMs != 0) {
+          if ((millis() - apexCatchMs) < (unsigned long)hybrid_catch_ms) {
+            const float brake = lockedBrakeDir * fabsf(velAlpha_ctrl) * hybrid_catch_gain;
+            setMotor(constrain((int)brake, -hybrid_catch_pwm, hybrid_catch_pwm));
+            return;  // bleed crossing velocity, then the LQR holds
+          } else if (fabsf(alpha) >= hybrid_catch_angle) {
+            apexCatchMs = 0;  // window done and left apex zone → re-arm
+          }
+        }
+
+        // Gain scheduling (same 3-tier as mode 4)
+        float k2_eff = lqr_K2;
+        float k4_eff = lqr_K4;
+        if (fabsf(alpha) < lqr_very_near_deg) {
+          k2_eff = lqr_K2_very_near;
+          k4_eff = lqr_K4_very_near;
+        } else if (fabsf(alpha) < lqr_near_deg) {
+          k2_eff = lqr_K2_near;
+          k4_eff = lqr_K4_near;
+        }
+
+        // High-velocity catch: BOOST damping for a fast entry (mode-4 behaviour).
+        // The old code did the opposite (halved gains for 500ms), which left the
+        // catch too weak to arrest the swing and it fell. velAlpha_ctrl is deg/s.
+        float vel_alpha_dps = fabsf(velAlpha_ctrl);
+        if (vel_alpha_dps > 200.0f) {
+          float vel_scale = 1.0f + (vel_alpha_dps - 200.0f) / 300.0f;
+          vel_scale = (vel_scale > 2.0f) ? 2.0f : vel_scale;
+          k4_eff *= vel_scale;
+        }
+
+        float u = -(lqr_K1 * theta + k2_eff * alpha + lqr_K3 * velTheta_ctrl + k4_eff * velAlpha_ctrl);
+
+        // Damping near inverted
+        if (fabsf(alpha) < lqr_near_deg) {
+          u -= lqr_damping_gain * velAlpha_ctrl;
+        }
+
+        rl_pwm = constrain((int)(MOTOR_DIR * u), -hybrid_lqr_pwm, hybrid_lqr_pwm);
+      } else {
+        // ── RL policy action ────────────────────────────────────────────
+        float action_norm = constrain(-action, -1.0f, 1.0f);
+        rl_pwm = (int)(action_norm * PWM_MAX * rl_pwm_scale);
+        rl_pwm = constrain(rl_pwm, -PWM_MAX, PWM_MAX);
+      }
       setMotor(rl_pwm);
     }
   }

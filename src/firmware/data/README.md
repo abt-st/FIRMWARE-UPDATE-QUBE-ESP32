@@ -64,34 +64,53 @@ hace falta `uploadfs` por separado.)
 
 ## Endpoints que usa la GUI
 
-| Recurso          | Método | Uso en la GUI                                              |
-| ---------------- | ------ | --------------------------------------------------------- |
-| `/`              | GET    | Carga `index.html`                                        |
-| `/ws`            | WS     | Telemetría en vivo (~10 Hz) → gráficas y grabación CSV    |
-| `/cmd?<params>`  | GET    | Cambiar modo, setpoint, PWM, ganancias PID/LQR/swing-up   |
-| `/rl_cmd?a=` `r=`| GET    | Enviar acción RL / reset de episodio (modo 6)             |
-| `/rl_state`      | GET    | Leer estado compacto `{th,al,thd,ald}` en rad (botón)     |
+| Recurso              | Método | Uso en la GUI                                                  |
+| -------------------- | ------ | -------------------------------------------------------------- |
+| `/`                  | GET    | Carga `index.html`                                            |
+| `/ws`                | WS     | Telemetría en vivo → gráficas, badges KF/calibración, CSV     |
+| `/cmd?<params>`      | GET    | Modo, setpoint, PWM, ganancias, calibración, KF, ff/va, tp, WiFi |
+| `/rl_cmd?a=` `r=` `scale=` | GET | Acción RL / reset episodio / escala de PWM (sim2real)      |
+| `/rl_state`          | GET    | Estado compacto `{th,al,thd,ald,pv}` en rad (botón + poll vivo) |
+| `/update` (POST)     | POST   | Flashear firmware `.bin` (OTA) con barra de progreso          |
+| `/fs` (POST)         | POST   | Subir archivos a SPIFFS (actualizar la GUI sin reflashear)    |
+| `/restart`           | GET    | Reinicio del ESP32                                           |
+| `/format`            | GET    | Formatear SPIFFS (con confirmación; borra la GUI)            |
 
 Parámetros de `/cmd` emitidos por los paneles actuales: `m`, `s`, `p`, `x`,
-`z`, `zp`, `r`, `kp/ki/kd`, `lqr1..4`, `ke`, `bt`, `gs`, `kpf/kif/kdf`,
-`kpc/kic/kdc`. La API HTTP completa está en
-[`docs/http_api.md`](../../../docs/http_api.md).
+`z`, `zp`, `r`, `kp/ki/kd`, `lqr1..4`, `ke`, `bt`, `sp` (PWM máx swing-up),
+`gs`, `kpf/kif/kdf`, `kpc/kic/kdc`, `kf`, `ff`, `va`, `tp`, `o/op`, `ed/edp`,
+`cpr/cprp`, `wifi_ssid/wifi_pass/wifi_reconnect`. `/rl_cmd`: `a`, `r`, `scale`.
+La API HTTP completa está en [`docs/http_api.md`](../../../docs/http_api.md).
 
 ---
 
 ## Paneles
 
-| Panel                  | Función                                                      |
+La GUI organiza los paneles en **pestañas** (Control · RL · Ctrl · Ajustes ·
+Calib · Sistema · Datos) en la barra derecha; las 4 gráficas quedan fijas a la
+izquierda con su valor instantáneo en el encabezado.
+
+| Pestaña / Panel        | Función                                                      |
 | ---------------------- | ----------------------------------------------------------- |
-| **Gráficas (×4)**      | Servo (°), Péndulo (°), PWM (−255..255), Potencia (mW)      |
+| **Gráficas (×4)**      | Servo (°), Péndulo (°), PWM (−255..255), Potencia (mW) + valor en vivo |
 | **Control**            | Selector de modo, setpoint servo, PWM manual, Zero/Reset    |
-| **Recolección de datos** | Grabar / Exportar CSV / Borrar (muestras desde el WebSocket) |
-| **PID Servo**          | Kp, Ki, Kd                                                   |
-| **LQR**                | K1..K4                                                       |
-| **Swing-up**           | Ke (ganancia de energía), Thr (umbral de balanceo)          |
-| **Deep RL**            | Acción manual, reset, "Set Mode 6", lectura de estado       |
-| **Gain Scheduling**    | ON/OFF + ganancias modo fino (≤10°) y grueso (>10°)         |
-| **Firmware OTA**       | Subir un `.bin` por web → `POST /update`, con barra de progreso |
+| **RL**                 | Mode 6/7, obs en vivo, **slider `scale`** (PWM sim2real), acción manual, reset, poll vivo de `/rl_state` |
+| **Ctrl**               | PID Servo, LQR, Swing-up (Ke/Thr/**PWMmax**), Gain Scheduling fino/grueso |
+| **Ajustes**            | Toggle Kalman + telemetría KF, feedforward `ff`, filtro velocidad `va`, período de telemetría `tp` |
+| **Calib**              | Lecturas raw/offset en vivo, offsets `o/op`, dirección `ed/edp`, counts-per-rev `cpr/cprp` |
+| **An&aacute;lisis**          | Retrato de fase α vs α̇, m&eacute;trica de balance (% upright / hold actual / hold m&aacute;x) |
+| **Sistema**            | OTA (`/update`), subir GUI a SPIFFS (`/fs`), WiFi STA, reiniciar / formatear |
+| **Datos**              | Grabar / Exportar CSV (base o extendido) / Borrar (muestras desde el WebSocket) |
+
+Extras de UX: badge **watchdog** (cuenta regresiva del auto-STOP en modo 1/6),
+gr&aacute;fica de **acci&oacute;n RL aplicada**, y **presets** (localStorage) de
+ganancias PID/LQR/swing-up/gain-scheduling/RL-scale.
+
+> **Requiere firmware actualizado:** la acci&oacute;n RL (`rl_action`) y el badge de
+> watchdog (`ms_since_cmd`) salen de campos nuevos en `getStateJson()`. Hay que
+> reflashear el firmware (`pio run --target upload`) además de la GUI
+> (`uploadfs`); si el firmware es viejo, esos widgets quedan en `--` sin romper
+> el resto.
 
 ### Modos en el selector
 
@@ -107,9 +126,17 @@ Parámetros de `/cmd` emitidos por los paneles actuales: `m`, `s`, `p`, `x`,
 
 Campos consumidos por la GUI: `mode`, `position_deg`, `setpoint_deg`,
 `pend_position_deg`, `pwm`, `voltage_v`/`v_bus`, `i_ma`, `p_mw`,
-`gain_scheduling`. El JSON completo incluye además `count`, `enc_a/b`,
-`encoder_dir`, `counts_per_rev`, `raw_position_deg`, `error_deg`, `pend_count`,
-`ina_ok`, `v_shunt_mv`, `kf_*`, etc.
+`gain_scheduling`, `gain_mode`, `kf_enabled`, `kf_theta/alpha/dtheta/dalpha`,
+`raw_position_deg`, `offset_deg`, `pend_raw_position_deg`, `pend_offset_deg`,
+`encoder_dir`, `counts_per_rev`, `ina_ok`, `rl_action` (acción aplicada al
+motor en modo 6/7), `ms_since_cmd` (edad del último comando → watchdog). El JSON
+completo incluye además `count`, `enc_a/b`, `error_deg`, `pend_count`,
+`v_shunt_mv`, etc.
+
+> **Handshake de protocolo RL:** `/rl_state` devuelve `pv` (= `RL_PROTO_VERSION`,
+> hoy `2`). La GUI lo muestra en un badge y avisa (amarillo) si no coincide con
+> `EXPECTED_PV` en `index.html`. Al cambiar la convención sim de `/rl_state`,
+> bumpeá `RL_PROTO_VERSION` en el firmware **y** `EXPECTED_PV` en la GUI.
 
 > La columna CSV `voltage_v` se exporta desde `v_bus`. Cuando `ina_ok=false`
 > las columnas de tensión/corriente/potencia quedan vacías (no se falsean con 0)
@@ -120,6 +147,24 @@ Campos consumidos por la GUI: `mode`, `position_deg`, `setpoint_deg`,
 ## Historial de auditoría / Plan de mejora
 
 Auditoría de `index.html` (2026-06-18). Prioridad: 🔴 alta · 🟡 media · 🟢 baja.
+
+### Actualización 2026-06-24 — sincronización + rediseño
+
+Rediseño con pestañas y sincronización de la GUI con las capacidades del
+firmware que estaban sin exponer:
+
+| Área | Cambio |
+| ---- | ------ |
+| **RL sim2real** | Slider `rl_pwm_scale` (`/rl_cmd?scale=`); badge + chequeo de `pv` contra `EXPECTED_PV`; poll en vivo de `/rl_state` (obs en convención sim) |
+| **Calibración** | Panel nuevo: offsets `o/op`, dirección `ed/edp`, counts-per-rev `cpr/cprp`, lecturas raw/offset en vivo |
+| **Kalman / tuning** | Toggle `kf` + telemetría KF, feedforward `ff`, filtro velocidad `va`, `gain_mode` en badge, período `tp` |
+| **Sistema** | `/restart`, subir GUI a SPIFFS (`/fs`), `/format` (con confirmación), WiFi STA (`wifi_ssid/pass/reconnect`) |
+| **Swing-up** | Añadido `sp` (PWM máx) que faltaba |
+| **Análisis** | Pestaña nueva: retrato de fase α vs α̇ (α̇ por diferencias finitas), métrica de balance (% upright / hold actual / hold máx con target/tol configurables) |
+| **RL action** | Gráfica de `rl_action` aplicada + 2 campos de telemetría nuevos en firmware (`rl_action`, `ms_since_cmd`) |
+| **Presets** | Guardar/cargar/borrar perfiles de ganancias en localStorage |
+| **CSV** | Modo extendido opcional: `rl_action`, `alpha_dot`, `in_upright`, `kf_*` |
+| **UX** | Badges de modo/gain/pv/watchdog; valor instantáneo en cada gráfica; tema con variables CSS; `aria-label`; colisión de id `sp`→`spt` resuelta |
 
 ### Resuelto en esta versión
 

@@ -113,6 +113,7 @@ def make_real_env(
     auto_set_mode: bool = True,
     invert_action: bool = True,
     invert_alpha: bool = True,
+    angle_limits: list[float] | None = None,
 ) -> gym.Env:
     """Build the real-hardware (ESP32 over HTTP) environment.
 
@@ -139,6 +140,7 @@ def make_real_env(
         auto_set_mode=auto_set_mode,
         invert_action=invert_action,
         invert_alpha=invert_alpha,
+        angle_limits=angle_limits,
     )
     if max_episode_steps:
         env = TimeLimit(env, max_episode_steps=max_episode_steps)

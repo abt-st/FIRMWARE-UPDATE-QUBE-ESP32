@@ -228,7 +228,11 @@ def main() -> None:
     parser.add_argument("--checkpoint-freq", type=int, default=50_000)
     parser.add_argument("--eval-episodes", type=int, default=20)
     parser.add_argument("--mlflow-uri", default="sqlite:///mlflow.db")
+    parser.add_argument("--keep-onedrive", action="store_true",
+                        help="do NOT pause OneDrive during the sweep (default: pause it)")
     args = parser.parse_args()
+
+    from qube_rl.onedrive_guard import onedrive_paused
 
     mlflow_kw = {"enabled": True, "uri": args.mlflow_uri, "experiment": MLFLOW_EXPERIMENT}
     grid = [(c, s) for c in args.near_upright_probs for s in args.seeds]
@@ -242,27 +246,33 @@ def main() -> None:
     results = _load_results()
     done = {(r["near_upright_prob"], r["seed"]) for r in results if r.get("status") == "ok"}
 
-    for i, (cur, seed) in enumerate(grid, 1):
-        if (cur, seed) in done:
-            log(f"[{i}/{len(grid)}] SKIP cur={cur} seed={seed} (already done)")
-            continue
-        log(f"[{i}/{len(grid)}] TRAIN cur={cur} seed={seed}")
-        try:
-            r = train_one(seed=seed, near_upright_prob=cur, timesteps=args.timesteps,
-                          checkpoint_freq=args.checkpoint_freq, eval_episodes=args.eval_episodes,
-                          mlflow_kw=mlflow_kw)
-        except Exception as exc:  # noqa: BLE001 — overnight: one failure must not kill the sweep
-            log(f"  ERROR cur={cur} seed={seed}: {exc}")
-            traceback.print_exc()
-            r = {"status": "error", "run_name": f"cur{cur:.1f}_s{seed}", "seed": seed,
-                 "near_upright_prob": cur, "timesteps": args.timesteps, "error": str(exc)}
-        results = [x for x in results if not (x.get("near_upright_prob") == cur and x.get("seed") == seed)]
-        results.append(r)
-        _persist(results)
-        log(f"  persisted -> {RESULTS_JSON.name} / {REPORT_MD.name}")
-        gc.collect()
+    # Pause OneDrive sync for the whole sweep: the project (incl. mlflow.db and
+    # the checkpoints/) lives in a synced folder, and sync contention slows runs
+    # and risks DB corruption. Always resumed on exit (even on Ctrl-C / crash).
+    with onedrive_paused(enabled=not args.keep_onedrive):
+        if not args.keep_onedrive:
+            log("OneDrive sync PAUSED for the run (use --keep-onedrive to disable)")
+        for i, (cur, seed) in enumerate(grid, 1):
+            if (cur, seed) in done:
+                log(f"[{i}/{len(grid)}] SKIP cur={cur} seed={seed} (already done)")
+                continue
+            log(f"[{i}/{len(grid)}] TRAIN cur={cur} seed={seed}")
+            try:
+                r = train_one(seed=seed, near_upright_prob=cur, timesteps=args.timesteps,
+                              checkpoint_freq=args.checkpoint_freq, eval_episodes=args.eval_episodes,
+                              mlflow_kw=mlflow_kw)
+            except Exception as exc:  # noqa: BLE001 — overnight: one failure must not kill the sweep
+                log(f"  ERROR cur={cur} seed={seed}: {exc}")
+                traceback.print_exc()
+                r = {"status": "error", "run_name": f"cur{cur:.1f}_s{seed}", "seed": seed,
+                     "near_upright_prob": cur, "timesteps": args.timesteps, "error": str(exc)}
+            results = [x for x in results if not (x.get("near_upright_prob") == cur and x.get("seed") == seed)]
+            results.append(r)
+            _persist(results)
+            log(f"  persisted -> {RESULTS_JSON.name} / {REPORT_MD.name}")
+            gc.collect()
 
-    log("ALL DONE — see REPORT.md")
+    log("ALL DONE — see REPORT.md (OneDrive sync resumed)")
 
 
 if __name__ == "__main__":
