@@ -62,7 +62,11 @@ logs/
 # Cubre tanto models/ en la raíz como los models/ de cada experimento.
 models/*.zip
 **/models/*.zip
-**/checkpoints/*.zip
+# Checkpoints: carpetas checkpoints/ y checkpoints_overnight/ (zips anidados en subdirs).
+**/checkpoints*/**/*.zip
+**/checkpoints*/*.zip
+# Backups del header de pesos exportado.
+**/policy_weights.h.*bak
 !models/policy_weights.h
 # Logs antiguos de TensorBoard (removido; ya no se generan)
 runs/
