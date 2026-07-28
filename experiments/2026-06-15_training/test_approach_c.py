@@ -37,7 +37,7 @@ def wait_for_inverted(timeout_s: float = 15.0) -> bool:
     return False
 
 
-# -- Phase 1: Swing-up via firmware mode 3 --
+# -- Phase 1: Swing-up via firmware mode 5 --
 print("[swing-up] Centering servo...")
 requests.get(f"{BASE}/cmd", params={"m": "2", "sp": "0"}, timeout=5)
 time.sleep(5)
@@ -47,8 +47,10 @@ requests.get(f"{BASE}/cmd", params={"m": "6"}, timeout=5)
 requests.get(f"{BASE}/rl_cmd", params={"r": "1"}, timeout=5)
 time.sleep(2)
 
-print("[swing-up] Activating firmware swing-up (mode 3)...")
-requests.get(f"{BASE}/cmd", params={"m": "3"}, timeout=5)
+# Swing-up is m5. This said m3, which was the removed pendulum-PID slot and did
+# nothing; m3 is now homing, which would drive the arm into both mechanical stops.
+print("[swing-up] Activating firmware swing-up (mode 5)...")
+requests.get(f"{BASE}/cmd", params={"m": "5"}, timeout=5)
 
 print("[swing-up] Waiting for inverted position (max 15s)...")
 inverted = wait_for_inverted(timeout_s=15.0)

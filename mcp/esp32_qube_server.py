@@ -525,7 +525,6 @@ def qube_rl_reset() -> str:
         return f"❌ Error en reset RL: {e}"
 
 
-
 @mcp.tool()
 def qube_zero(servo: bool = True, pendulum: bool = False) -> str:
     """Zeroa el encoder del servo y/o péndulo en modo RL (sin resetear PID).
@@ -554,6 +553,7 @@ def qube_zero(servo: bool = True, pendulum: bool = False) -> str:
         return f"✅ Zero aplicado: {', '.join(results)}."
     except Exception as e:
         return f"❌ Error en zero ({', '.join(results)}): {e}"
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  HERRAMIENTAS — Análisis de datos CSV

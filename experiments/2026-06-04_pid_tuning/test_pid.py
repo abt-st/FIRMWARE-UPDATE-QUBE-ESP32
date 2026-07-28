@@ -290,7 +290,7 @@ def test_pendulum_pid(
 def main() -> None:
     parser = argparse.ArgumentParser(description="PID Servo & Pendulum test")
     parser.add_argument("--ip", default="192.168.100.50", help="ESP32 IP")
-    parser.add_argument("--mode", choices=["servo", "pendulum", "both"], default="both")
+    parser.add_argument("--mode", choices=["servo", "pendulum", "both"], default="servo")
     parser.add_argument("--duration", type=float, default=0, help="Override test duration (0=auto)")
     parser.add_argument("--no-stop", action="store_true", help="Don't stop motor at end")
     parser.add_argument("--ff", type=float, default=None, help="Servo feedforward PWM")
@@ -303,6 +303,17 @@ def main() -> None:
     parser.add_argument("--kip", type=float, default=None, help="Pendulum Ki")
     parser.add_argument("--kdp", type=float, default=None, help="Pendulum Kd")
     args = parser.parse_args()
+
+    # The pendulum-PID path drives firmware mode 3. That mode was removed in v1.34
+    # (the pendulum is a passive underactuated link) and the ID has since been
+    # reassigned to homing, so running it would send the arm into both mechanical
+    # stops instead of doing nothing. Refuse before touching the hardware.
+    if args.mode in ("pendulum", "both"):
+        raise SystemExit(
+            "--mode pendulum/both is retired: firmware m3 was the pendulum PID and "
+            "is now the homing routine. Running it would drive the arm into the "
+            "mechanical stops. Use --mode servo."
+        )
 
     ip = args.ip
     data_dir = Path(__file__).parent / "data"

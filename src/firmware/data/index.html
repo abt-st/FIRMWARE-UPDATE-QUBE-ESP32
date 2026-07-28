@@ -432,7 +432,7 @@ button:disabled{opacity:.4;cursor:default;transform:none}
 var el=function(id){return document.getElementById(id)};
 var st=el('status');
 var t0=Date.now(),rows=[],MAX=200;
-var EXPECTED_PV=2;          /* RL_PROTO_VERSION en el firmware */
+var EXPECTED_PV=3;          /* RL_PROTO_VERSION en el firmware */
 var MODE_NAMES={0:'STOP',1:'PWM',2:'PID',4:'LQR',5:'Swing',6:'RL HTTP',7:'RL chip'};
 
 /* ── Tabs ─────────────────────────────────────────────────── */
@@ -490,8 +490,9 @@ function exportCSV(){
 /* ── Charts ───────────────────────────────────────────────── */
 function mkC(id,col,yMin,yMax){
   if(typeof Chart==='undefined')return null;
+  /* yMin===yMax → eje autoescalado a la ventana visible, con holgura para no pegar la traza al borde */
   var yAxis={ticks:{color:'#8b949e',font:{size:10}},grid:{color:'#21262d'},beginAtZero:false};
-  if(yMin!==yMax){yAxis.min=yMin;yAxis.max=yMax;}
+  if(yMin!==yMax){yAxis.min=yMin;yAxis.max=yMax;}else{yAxis.grace='8%';}
   return new Chart(el(id).getContext('2d'),{
     type:'line',
     data:{labels:[],datasets:[{data:[],borderColor:col,backgroundColor:col+'33',pointRadius:0,borderWidth:1.5,tension:.1,fill:true}]},
@@ -502,7 +503,7 @@ function mkC(id,col,yMin,yMax){
   });
 }
 var cS=mkC('chS','#58a6ff',0,0);
-var cP=mkC('chP','#f0883e',-180,180);
+var cP=mkC('chP','#f0883e',0,0);
 var cW=mkC('chW','#a371f7',-255,255);
 var cPw=mkC('chPw','#3fb950',0,0);
 var cAct=mkC('chAct','#d29922',-1.05,1.05);
@@ -590,7 +591,7 @@ setInterval(function(){
 },FLUSH_MS);
 
 /* ── WebSocket ────────────────────────────────────────────── */
-var ws,modeUserOverride=false,modeOverrideTimer=null;
+var ws,modeUserOverride=false,modeOverrideTimer=null,wsErrCount=0;
 el('mode').onchange=function(){
   modeUserOverride=true;clearTimeout(modeOverrideTimer);
   modeOverrideTimer=setTimeout(function(){modeUserOverride=false;},8000);
@@ -663,7 +664,13 @@ function connect(){
       el('cRawP').textContent=fmt(d.pend_raw_position_deg,2);
       el('cOffP').textContent=fmt(d.pend_offset_deg,2);
       if(d.encoder_dir!==undefined)el('cDirS').textContent=d.encoder_dir+' / '+fmt(d.counts_per_rev,0);
-    }catch(ex){}
+      wsErrCount=0;
+    }catch(ex){
+      /* Un NaN/inf serializado por el firmware rompe JSON.parse y congela el feed con el
+         WS abierto y el badge en "Conectado". Se limita el log para no inundar la consola. */
+      if(wsErrCount<5)console.warn('[ws] muestra descartada:',ex.message,e.data);
+      if(++wsErrCount===5)console.warn('[ws] se silencian los avisos siguientes');
+    }
   };
 }
 connect();

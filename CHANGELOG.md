@@ -1,3 +1,320 @@
+## [1.52.0] — 2026-07-28
+### Reversión de hardware: BTS7960 → L298N (documentación + firmware)
+
+El driver de potencia BTS7960 (migrado el 2026-06-08, commit 78b4e7e) se revierte a
+**L298N** por errores de implementación del usuario durante esa migración. Se actualiza
+la documentación de hardware vigente (`README.md`, `docs/hardware/pinout.md`,
+`docs/hardware/bom.md`, `docs/hardware/signal_conditioning.md`) y los comentarios /
+string de boot de `esp32_qube.ino` para reflejar el sistema actual. **La lógica de
+control no cambió** — ver detalle abajo.
+
+#### Arquitectura de potencia actual
+- **Fuente:** transformador 15V-2A (antes: LiPo 4S / PSU genérica).
+- **Motor:** transformador (+) → INA219 (VIN+/VIN−, high-side) → **L298N VS**, igual
+  posición de medición que con BTS7960 — solo cambia el driver.
+- **Lógica:** **dos** LM2596 en vez de uno.
+  - LM2596 #1 (riel "lógica"): L298N VSS + VCC de ambos encoders + pull-ups/filtro RC
+    de los 2× CD40106BE.
+  - LM2596 #2 (riel dedicado): únicamente ESP32 VIN, aislada del ruido de conmutación
+    del L298N y de la corriente variable de los encoders — reduce el riesgo de
+    brownout documentado previamente en el rail de 5 V compartido.
+- El Vcc de los 2× CD40106BE sigue viniendo del pin 3V3 de la ESP32 (sin cambios) —
+  crítico para no repetir la sobretensión de GPIO32/33 de v1.51.1.
+- **GPIO25 (PIN_ENA): confirmado sin conexión física** en el L298N actual (jumper ENA
+  puesto). El firmware lo deja en HIGH en `setup()` por herencia del wiring BTS7960
+  (R_EN/L_EN) — salida sin efecto eléctrico, no un requisito del L298N.
+
+#### Cambios en `esp32_qube.ino`
+- Header: arquitectura, topología de potencia y pinout actualizados a L298N.
+- String de boot por serial: `"=== QUBE ESP32 + BTS7960 + INA219 ==="` →
+  `"=== QUBE ESP32 + L298N + INA219 ==="`.
+- Comentarios de `PIN_ENA`/`USE_ENA_PWM` y del `setup()` aclaran que GPIO25 no está
+  conectado en el hardware actual.
+- `ke_gain` (swing-up): se conserva la atribución histórica ("calibrado en BTS7960,
+  25% catch rate, hold 86s") con nota de que **no está re-validado en L298N** — la
+  caída de tensión y el par disponible pueden diferir entre drivers.
+- **No se tocó la lógica de control** (PID/LQR/swing-up/RL) ni los pines GPIO26/27:
+  el esquema de PWM dual en dos pines de dirección ya era electricamente equivalente
+  entre BTS7960 (RPWM/LPWM) y L298N (IN1/IN2, opción A, jumper ENA puesto). La
+  reversión de hardware fue solo un recableado físico (GPIO26→IN1, GPIO27→IN2).
+
+#### Pendiente
+- Re-validar `ke_gain` y el resto de ganancias empíricas del swing-up sobre L298N.
+
+#### Fuera de alcance de este cambio
+- Documentos de investigación, validación y memoria de cálculo (`docs/research/`,
+  `docs/validation/`, `docs/hardware/memoria_calculo_electronica.tex`,
+  `docs/hardware/system_wiring.py`, `docs/hardware/perfboard_layout.py`) siguen
+  refiriendo BTS7960 y no se tocaron en esta pasada — son material histórico/análisis,
+  no la documentación de hardware operativa.
+
+---
+
+## [1.51.2] — 2026-07-27
+### Campaña de validación de los 7 modos por HTTP (banco) + hallazgos de firmware
+
+Prueba en vivo de todos los modos (0–7) manejada por HTTP (`/cmd`, `/rl_step`, `/state`),
+en escalera de riesgo con `x=1` entre pasos. **No se modificó `esp32_qube.ino`**; se
+registran resultados y limitaciones detectadas para trabajo futuro.
+
+#### Resultados por modo
+- **m0 STOP**: OK. Estado base sano (`ina_ok`, bus ~14,8 V).
+- **m1 PWM manual**: OK, ambos sentidos. Confirmado: **+PWM → encoder servo negativo**
+  (lo compensa `MOTOR_DIR=-1`). Servo muy rápido (~420°/s a p=60).
+- **m2 PID posición**: OK, converge y es **estable**. Tuning suelto: overshoot ~10-23° y
+  error residual de pocos grados (stiction / desnivel).
+- **m5 swing-up**: bombea pero **débil** (llega a ~84°/47 % de vertical, no captura). Con
+  `sp=70,ke=0.9` **se desestabiliza**: el servo se va al tope y el motor queda calado.
+- **m6 RL-HTTP**: **protocolo `pv=3` y round-trip `/rl_step` OK**; el motor responde a la
+  acción con el signo correcto.
+- **m7 RL on-device**: la inferencia corre (el pwm varía), bombea ~46°, **no balancea**.
+- **m4 LQR**: engancha y **reacciona** (pwm corrige), pero **cae en ~1 s**.
+
+#### Hallazgos (para corregir en futuras versiones)
+
+**1. Lockout de fin de carrera (`esp32_qube.ino:2078`)**
+- `if (mode != 0 && fabsf(pos) > SERVO_HARD_LIMIT_DEG) safeStop();` corre cada tick en
+  todos los modos. Con **|servo|>95° NINGÚN modo por software recupera** el brazo (el
+  modo 1 también se corta antes de aplicar par) → hay que recentrar **a mano**.
+- El servo alcanzó 133°: el rango mecánico es **>±95°**; 95° es umbral de software, no
+  tope físico. Sugerido: modo/ruta de "recover" con PWM bajo acotado que ignore el límite
+  para volver al centro.
+
+**2. Deriva sistemática del servo al tope**
+- En m5(reforzado), m7 y m4 el brazo **no se recentra**: deriva monótona a un lado hasta
+  el lockout. Es el bloqueador #1 del swing-up/balanceo. Revisar signo/ganancia del
+  término de posición del servo (θ) frente a la convención +PWM→encoder negativo.
+
+**3. Bug de telemetría menor**
+- `/state.rl_action` reporta `rlAction` (modo 6); en **modo 7 queda obsoleto** y no
+  refleja la inferencia on-device (el pwm sí la refleja).
+
+#### Notas
+- Encoder del péndulo validado previamente (v1.51.1); toda la campaña usó esa lectura sana.
+- Sistema dejado en estado seguro (modo 0, motor detenido) al finalizar.
+
+---
+
+## [1.51.1] — 2026-07-27
+### Diagnóstico y validación del encoder del péndulo (fix de cableado + calibración CPR)
+
+El encoder del péndulo leía las coordenadas mal (escala y/o signo). Diagnóstico
+eléctrico + validación en vivo por HTTP `/state`. **Fix de hardware (cableado); no se
+modificó `esp32_qube.ino`.** Se confirma la parametrización existente.
+
+#### Problema identificado
+- Síntoma: `pend_raw_position_deg` con escala/signo incorrectos.
+- Medición: **4,1 V y 3,5 V en GPIO32/GPIO33** — fuera del máximo del ESP32 (3,3 V;
+  abs. máx 3,6 V). Leer 4,1 V en el pin es imposible si el acondicionamiento fuera
+  correcto → prueba de un problema eléctrico, no de CPR ni de firmware.
+- **Causa raíz**: la salida acondicionada (Schmitt CD40106, push-pull) hacia el ESP32
+  quedó cableada **en línea con la entrada del canal B**. Dos fuentes en contención en el
+  mismo nodo → sobretensión en el GPIO y cuadratura rota (el PCNT contaba transiciones
+  inventadas → escala/signo mal).
+- Nota: los encoders del péndulo son **push-pull 5 V** (no open-drain); el pull-up de
+  2,2 kΩ a 3V3 no domina el nivel — por eso es obligatorio el Schmitt a 3,3 V como buffer.
+
+#### Cambios aplicados
+**1. Corrección de cableado (hardware, no firmware)**
+- Se separó la salida hacia el ESP32 de la entrada del canal B (fin de la contención).
+- Reafirmado: pull-up 2,2 kΩ a 3V3 antes del Schmitt; CD40106 alimentado a 3,3 V; su
+  salida limpia (≤3,3 V) al GPIO.
+
+#### Validación (en vivo por HTTP `/state`, sin monitor serial — resetea la placa)
+- Ambos canales conmutan (`pend_a`, `pend_b` visitan 0 y 1): cuadratura viva.
+- Reposo sujeto firme: variación de **2 cuentas (~0,35°)** en 6 s → dithering de 1 LSB,
+  sin ruido/conteo fantasma. No hace falta filtro de glitches por ruido.
+- Seguimiento coherente entre `pend_count` y `pend_raw_position_deg`; enlace HTTP con
+  0 errores sobre cientos de muestras.
+
+#### Calibración CPR
+- Método: 3 vueltas físicas contra marca, detección automática de mesetas.
+- Resultado: 6169 cuentas / 3 vueltas = **2056 cuentas/rev**, a **+0,4 %** de 2048
+  (dentro del error de posicionamiento manual).
+- **Confirmado sin cambios**: `pendCountsPerRev = 2048`, `pendulumDir = +1`
+  (`esp32_qube.ino:276-277`). El encoder es el estándar del QUBE (512 líneas × 4 = 2048).
+
+#### Notas — robustez PCNT pendiente (no urgente, no era la causa)
+- `initPcntUnit` (`esp32_qube.ino:702`) no usa `pcnt_set_filter_value`/`pcnt_filter_enable`
+  (filtro de glitches) ni acumulador de overflow int16. La posición absoluta se pierde
+  más allá de ~16 vueltas (±32768 cuentas) — relevante solo para giros libres en swing-up.
+
+---
+
+## [1.51.0] — 2026-07-08
+### Anexo A: memoria de cálculo de la electrónica + correcciones al diagrama de conexionado
+
+Se documenta paso a paso el dimensionamiento de la electrónica del QUBE (resistencias,
+condensadores, sensor de corriente, regulador y tierra en estrella) y se integra como
+**Anexo A** de la tesis. En el camino se corrigieron varios errores de trazado del
+diagrama de conexionado (`system_wiring.py`) que dejaban líneas ocultas o superpuestas.
+
+#### Memoria de cálculo (nuevo anexo)
+- Nuevo `tesis_usach/capitulos/Anexo_A_memoria_calculo.tex` con el desarrollo de:
+  árbol de alimentación y topología, fusible 1,5 A, shunt del INA219 (0,1 Ω),
+  regulador LM2596 (15→5 V), pull-ups de 2,2 kΩ a 3V3, doble inversión Schmitt
+  (CD40106BE) con histéresis, filtro RC anti-alias (τ=100 µs, fc≈1,59 kHz),
+  condensadores (bypass 100 nF, filtro 10 nF, bulk 1000/470/10 µF) y tierra en estrella,
+  con tabla resumen.
+- **Sin dependencias nuevas**: unidades en texto plano con coma decimal (estilo del resto
+  de capítulos), sin `siunitx`; referencias cruzadas con `\Cref` y labels `anx-*`;
+  `\texorpdfstring` en títulos con símbolos para marcadores limpios del PDF.
+- `tesis_usach/main.tex`: bloque `\appendix` tras la bibliografía con
+  `\renewcommand{\appendixname}{Anexo}`, nombres cleveref de anexo e `\include` del capítulo.
+- Figura `system_wiring.png` copiada a `tesis_usach/imagenes/` para que resuelva por el
+  `\graphicspath` de la tesis.
+- Se conserva además una versión autónoma en `docs/memoria_calculo_electronica.{tex,pdf}`
+  (con `siunitx`) para uso suelto.
+
+#### Correcciones al diagrama de conexionado (`docs/system_wiring.py`)
+- **Causa raíz**: los bloques (zorder=3) tapaban las redes (zorder=2) y varias bajadas de
+  GND compartían la misma coordenada x, provocando líneas ocultas o superpuestas.
+- Línea 3V3 del ESP32 re-ruteada para rodear el bloque MOTOR (ya no queda oculta).
+- Línea GND del ESP32 y bajadas de GND (encoder, U1, INA219, LM2596) con coordenadas x
+  únicas para evitar solapes; colector de GND de la sección de potencia en x=104.
+- Pines IN-/OUT- del LM2596 movidos al borde inferior (antes quedaban tapados por el bloque).
+- Identificación de pines del BTS7960/IBT-2 (B+/B-/M+/M-) verificada.
+
+#### Verificación
+- `latexmk -pdf main.tex` (con biber): **95 páginas**, 0 referencias sin resolver,
+  0 avisos de hyperref, sin overfull graves. El anexo aparece en el índice como
+  «A — Memoria de cálculo de la electrónica».
+
+
+## [1.50.0] — 2026-07-08
+### Estabilidad de comunicación WiFi ESP32 ⇄ PC (latencia + cortes)
+
+El enlace HTTP PC-en-el-lazo era **lento (~13 Hz, no 50 Hz)** y **se caía/desconectaba**
+en modo AP+STA. Faltaban las palancas clásicas de estabilidad WiFi del ESP32 y el
+patrón de tráfico era pesado (2 round-trips por paso). Requiere **reflashear** y
+desplegar firmware + `qube_real.py` juntos (contrato `pv`: v2 → **v3**).
+
+#### Causa raíz
+- **Modem-sleep activo por defecto** (sin `WiFi.setSleep(false)`): picos de latencia de
+  ~100 ms y pérdida de paquetes en tráfico latencia-crítico. Factor #1 de lentitud y cortes.
+- **Sin auto-reconexión STA**: `loop()` no verificaba `WiFi.status()`; solo el comando
+  manual `wifi_reconnect`. Si el router soltaba al ESP32, no volvía solo.
+- **2 round-trips por paso** (`/rl_cmd?a=` + `/rl_state` ≈ 71 ms) para un objetivo de 20 ms.
+- **Timeout HTTP de 5 s ×3 reintentos** en el cliente: un paquete perdido congelaba el
+  lazo hasta ~15 s.
+- **Broadcast WebSocket de `/state`** cada `telemetryPeriodMs` competía por la única radio
+  durante los ensayos RL por HTTP.
+
+#### Cambios de firmware (`src/firmware/esp32_qube/esp32_qube.ino`)
+- `WiFi.setSleep(false)` + `WiFi.setAutoReconnect(true)` tras `softAP`/`connectSta`, más
+  `esp_wifi_set_ps(WIFI_PS_NONE)` explícito (re-afirmado en cada `GOT_IP`): en AP+STA
+  `WiFi.setSleep(false)` no siempre desactiva el modem-sleep.
+- **`beacon_interval` del AP 100 → 300 ms** (`esp_wifi_set_config` tras `softAP`). En la
+  radio única del ESP32 el beacon del AP cada ~100 ms competía con el tráfico STA y era
+  la **causa real** de los picos de latencia de ~100 ms (los cambios de power-save no los
+  quitaban; el beacon sí). El AP sigue disponible como fallback/GUI.
+- `WiFi.onEvent(onWifiEvent)`: loguea STA_DISCONNECTED / STA_GOT_IP.
+- **Guardián STA no bloqueante** en `loop()`: si STA no está conectado, reintenta
+  `connectStaIfConfigured()` cada `STA_RECONNECT_PERIOD_MS` (5 s) sin frenar el lazo de 500 Hz.
+- `broadcastTelemetry()`: se omite el broadcast WS en **modo 6** (RL por HTTP) para no
+  robar tiempo de aire; el modo 7 (on-device) lo mantiene.
+- **Nuevo `GET /rl_step?a=X`** (proto **v3**): fija la acción **y** devuelve el JSON
+  compacto de `/rl_state` en **un** round-trip. `RL_PROTO_VERSION` 2 → 3 (convención de
+  observación sin cambios; el bump hace fallar ruidosamente un firmware viejo sin `/rl_step`).
+- **Robustez I2C (INA219) para no tumbar la comunicación**: un INA219 marginal que
+  sostiene SDA en bajo colgaba `scanI2CBus()`/`initIna219()` en `setup()`. Ahora: (a)
+  `i2cBusRecover()` pulsa SCL para soltar el bus antes de `Wire.begin`; (b)
+  `Wire.setTimeOut(50)` acota cada transacción; (c) la init I2C se movió a **después de
+  `server.begin()`** para que un fallo del sensor no impida arrancar WiFi/servidor; (d)
+  el reintento de init respeta `INA_INIT_RETRY_MS` (5 s) en vez de re-escanear el bus en
+  cada tick de telemetría. (Detectado al reflashear: en power-on normal arranca bien; el
+  cuelgue se disparaba sobre todo con el reset por DTR del monitor serie.)
+
+#### Cambios de Python (`src/qube_rl/envs/qube_real.py`)
+- `step()` usa `/rl_step` (una sola llamada) en vez de `_send_rl_action` + `_get_rl_state`.
+- `http_timeout` default 5.0 s → **0.4 s** (reintenta rápido en vez de congelar el lazo).
+- `requests.Session` con `HTTPAdapter` keep-alive (una conexión TCP reutilizada).
+- `EXPECTED_RL_PROTO` 2 → **3** (validado en `reset()`).
+
+#### Resultados medidos (rig real, STA @ 192.168.100.50, AP+STA activos)
+Banco de latencia HTTP (a=0, sin mover el motor), antes/después:
+
+| Config                                   | media | máx   | picos >100 ms | throughput |
+| ---------------------------------------- | ----- | ----- | ------------- | ---------- |
+| Viejo (pv2), 2-RTT `/rl_cmd`+`/rl_state` | 69 ms | 173 ms| —             | 14.6 Hz    |
+| Viejo (pv2), lectura simple `/rl_state`  | 41 ms | 155 ms| 2.1 %         | 24 Hz      |
+| Nuevo, `/rl_step` + beacon 300 ms        | **32 ms** | **63 ms** | —         | **31 Hz**  |
+| Nuevo, soak `/rl_state` (×3)             | 33–40 ms | 71–111 ms | **0–0.3 %** | 25–30 Hz |
+
+Neto: media 2.1× más rápida, cola (máx) 2.7× menor, picos ~eliminados (2.1 % → ~0 %),
+**0 fallos** en varios miles de peticiones. Verificado en 3 flasheos OTA iterativos
+(setSleep → +WIFI_PS_NONE → +beacon 300 ms); los dos primeros no quitaban los picos, el
+beacon sí, lo que confirmó que la causa era la coexistencia AP+STA y no el modem-sleep.
+
+#### Notas
+- **Alternativa estructural**: para control RL estable el ~13 Hz se resuelve de fondo con
+  el **modo 7 (inferencia on-device a 50 Hz)**; estos fixes hacen fiables además el modo 6
+  y el monitoreo por WiFi. Nota: WiFi-en-el-lazo ahora llega a ~25–31 Hz (no 50 Hz), así
+  que el modo 7 sigue siendo la vía para 50 Hz reales.
+- **Brownout** (crash rate ~20% al golpear el tope mecánico) sigue pendiente por hardware:
+  cap 470–1000 µF en el rail 5V. `setSleep(false)` reduce el consumo pulsado que lo agrava.
+- Reflashear: `pio run -e esp32dev --target upload` (o OTA `esp32dev_ota`) y desplegar
+  `qube_real.py` en la misma tanda.
+
+
+## [1.49.0] — 2026-07-08
+### Comando serial `reboot` + lanzable de escritorio para IP/credenciales WiFi
+
+Resuelve el problema del huevo y la gallina para conectarse a la GUI web: como
+`index.html` se sirve **desde** el ESP32 por WiFi, hay que conocer su IP para
+abrirla, pero esa IP la asigna el router. Ahora un lanzable de escritorio la
+descubre por serial (USB) y también permite reconfigurar el WiFi sin abrir la GUI.
+
+#### Problema identificado
+- No había forma de descubrir la IP LAN sin ya estar conectado a la GUI o mirar el
+  monitor serial de PlatformIO manualmente.
+- El firmware ya exponía `i`, `wifi_info`, `wifi_ssid`/`wifi_pass` por serial, pero
+  **no** un reinicio por serial: tras guardar credenciales imprimía "Reiniciar para
+  conectar" y había que pulsar RST físicamente. El reboot solo existía por HTTP
+  (`/restart`), inservible cuando aún no se conoce la IP.
+
+#### Cambios aplicados
+
+**1. Comando serial `reboot` (`firmware/esp32_qube/esp32_qube.ino`)**
+- Nuevo comando de palabra completa `reboot` → `ESP.restart()`, gemelo serial de
+  `/restart`. Chequeado **antes** del `switch` por primer carácter porque `r` ya es
+  reset de encoders y `reboot` colisionaría.
+- `printHelp()`: añadida línea `Sistema: reboot (reinicia el ESP32)`.
+- Mensaje de `saveWifiCredentials()`: ahora sugiere enviar `reboot` por serial o
+  pulsar RST.
+
+**2. Lanzable de escritorio (`firmware/qube_serial_tool.py`, `QUBE-Serial-Tool.bat`)**
+- GUI tkinter (sin dependencias nuevas: `tkinter` stdlib + `pyserial` ya presente).
+- Autodetecta el puerto del ESP32 (reutiliza `find_esp32_port` de `serial_cmd.py`).
+- **Detectar IP**: envía `i`, parsea la `LAN IP` de `printNetworkInfo()` y abre la
+  GUI web en el navegador.
+- **Guardar y reiniciar**: envía `wifi_ssid`/`wifi_pass` (valida clave ≥8), luego
+  `reboot`; reabre el puerto tras ~9 s y muestra la IP nueva.
+- I/O serial en hilo (no congela la ventana), manejo de puerto ocupado y log de
+  diagnóstico. Lanzador `.bat` de doble clic (`uv run python`).
+
+#### Cambios de firmware
+```cpp
+// processSerialCommand(), antes del switch por primer carácter:
+if (cmd == "reboot") {
+  Serial.println("[REBOOT] Reiniciando...");
+  Serial.flush();
+  delay(100);
+  ESP.restart();   // gemelo serial de /restart; 'r' ya es reset de encoders
+}
+```
+
+#### Notas
+- Requiere **reflashear una vez** para tener `reboot` (`pio run -e esp32dev
+  --target upload` o `uv run python src/firmware/flash.py`). Compilación verificada:
+  `pio run -e esp32dev` → SUCCESS (Flash 75.9%).
+- El lanzable se probó sin placa: instancia la GUI, detecta puerto real y el parser
+  separa correctamente `LAN IP` / `AP IP` / `LAN SSID`.
+- Descartada la alternativa de hacerlo dentro de la GUI HTML: Web Serial exige
+  contexto seguro y falla con el puerto tomado por el firmware, y seguiría
+  necesitando la IP para cargar la página.
+
+
 ## [1.48.0] — 2026-06-24
 ### GUI web rediseñada: sincronizada con el firmware + pestaña de análisis sim2real
 

@@ -1,0 +1,2199 @@
+<title>QUBE-ESP32 · Revisión de avance de tesis</title>
+
+<style>
+  /* ---------------------------------------------------------------------
+     Latin Modern: la misma familia con la que compila la tesis y con la que
+     dvisvgm traza las ecuaciones. Titulos y formulas comparten tipografia.
+     --------------------------------------------------------------------- */
+  @font-face {
+    font-family: "LM Roman";
+    src: url({{FONT:lm-regular}}) format("woff2");
+    font-weight: 400;
+    font-display: block;
+  }
+  @font-face {
+    font-family: "LM Roman";
+    src: url({{FONT:lm-bold}}) format("woff2");
+    font-weight: 700;
+    font-display: block;
+  }
+
+  /* ---------------------------------------------------------------------
+     Tokens. Los componentes se estilan SIEMPRE a traves de estas variables,
+     nunca dentro de la media query, para que el toggle de tema del visor
+     (data-theme) pueda ganarle a la preferencia del sistema en ambos sentidos.
+     --------------------------------------------------------------------- */
+  :root {
+    --bg: #eef0f2;
+    --surface: #ffffff;
+    --surface-2: #f4f6f7;
+    --text: #171c22;
+    --muted: #5b6873;
+    --faint: #8b959e;
+    --rule: #d3d9dd;
+    --rule-strong: #b3bcc4;
+    --accent: #1d6675;
+    --accent-bg: #e2eef1;
+    --ok: #3f7a5c;
+    --ok-bg: #e2efe8;
+    --warn: #a8682a;
+    --warn-bg: #f6ebdd;
+    --crit: #a03e40;
+    --crit-bg: #f7e5e5;
+    --shadow: 0 1px 2px rgb(23 28 34 / 0.06), 0 8px 24px -12px rgb(23 28 34 / 0.22);
+
+    --font-display: "LM Roman", "Latin Modern Roman", Georgia, serif;
+    --font-body: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1317;
+      --surface: #171d23;
+      --surface-2: #1e252c;
+      --text: #e4e8ea;
+      --muted: #9aa5ae;
+      --faint: #6c7780;
+      --rule: #2b333b;
+      --rule-strong: #3d474f;
+      --accent: #5fb2c4;
+      --accent-bg: #16323a;
+      --ok: #6fb392;
+      --ok-bg: #172c23;
+      --warn: #d09a5e;
+      --warn-bg: #2e2418;
+      --crit: #d3777a;
+      --crit-bg: #2e1c1d;
+      --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.7);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0f1317;
+    --surface: #171d23;
+    --surface-2: #1e252c;
+    --text: #e4e8ea;
+    --muted: #9aa5ae;
+    --faint: #6c7780;
+    --rule: #2b333b;
+    --rule-strong: #3d474f;
+    --accent: #5fb2c4;
+    --accent-bg: #16323a;
+    --ok: #6fb392;
+    --ok-bg: #172c23;
+    --warn: #d09a5e;
+    --warn-bg: #2e2418;
+    --crit: #d3777a;
+    --crit-bg: #2e1c1d;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.7);
+  }
+
+  :root[data-theme="light"] {
+    --bg: #eef0f2;
+    --surface: #ffffff;
+    --surface-2: #f4f6f7;
+    --text: #171c22;
+    --muted: #5b6873;
+    --faint: #8b959e;
+    --rule: #d3d9dd;
+    --rule-strong: #b3bcc4;
+    --accent: #1d6675;
+    --accent-bg: #e2eef1;
+    --ok: #3f7a5c;
+    --ok-bg: #e2efe8;
+    --warn: #a8682a;
+    --warn-bg: #f6ebdd;
+    --crit: #a03e40;
+    --crit-bg: #f7e5e5;
+    --shadow: 0 1px 2px rgb(23 28 34 / 0.06), 0 8px 24px -12px rgb(23 28 34 / 0.22);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    overflow: hidden;
+  }
+
+  /* ---------------------------------------------------------------------
+     Escenario 16:9. El font-size del escenario es la unidad base: todo el
+     interior se mide en em, asi que el deck escala entero con la ventana.
+     --------------------------------------------------------------------- */
+  #stage {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 1.2vmin;
+  }
+
+  #deck {
+    position: relative;
+    width: min(100%, calc((100vh - 2.4vmin) * 16 / 9));
+    aspect-ratio: 16 / 9;
+    font-size: clamp(8px, min(1.16vw, 2.06vh), 21px);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 0.35em;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: none;
+    grid-template-rows: auto 1fr auto;
+    padding: 2.1em 2.6em 1.5em;
+  }
+  .slide.active { display: grid; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .slide.active { animation: fade 220ms ease-out; }
+    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  }
+
+  /* ---- franja superior ---- */
+  .eyebrow {
+    display: flex;
+    align-items: baseline;
+    gap: 0.9em;
+    font-size: 0.72em;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--faint);
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 0.7em;
+    margin-bottom: 1.3em;
+  }
+  .eyebrow .block { color: var(--accent); font-weight: 600; }
+  .eyebrow .spacer { flex: 1; }
+  .eyebrow .src { font-family: var(--font-mono); letter-spacing: 0; text-transform: none; }
+
+  /* Columna flexible: un hijo .fill absorbe el alto restante. Medir en height:100%
+     lo referiria al .body completo, ignorando el titulo que ya consumio espacio. */
+  .body { min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+  .body > .fill { flex: 1 1 auto; min-height: 0; }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: 2.5em;
+    line-height: 1.12;
+    font-weight: 700;
+    margin: 0 0 0.5em;
+    text-wrap: balance;
+    letter-spacing: -0.005em;
+  }
+  h2 {
+    font-family: var(--font-display);
+    font-size: 1.72em;
+    line-height: 1.18;
+    font-weight: 700;
+    margin: 0 0 0.7em;
+    text-wrap: balance;
+  }
+  h3 {
+    font-size: 0.78em;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 0.7em;
+  }
+
+  p { margin: 0 0 0.75em; line-height: 1.5; max-width: 62ch; }
+  .lead { font-size: 1.06em; color: var(--muted); }
+  strong { font-weight: 600; }
+  em.term { font-style: italic; color: var(--accent); }
+
+  ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.6em; }
+  ul li { position: relative; padding-left: 1.15em; line-height: 1.45; }
+  ul li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0.62em;
+    width: 0.42em; height: 1px;
+    background: var(--rule-strong);
+  }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.8em; align-items: start; }
+  .cols.wide-left { grid-template-columns: 1.35fr 1fr; }
+  .cols.wide-right { grid-template-columns: 1fr 1.5fr; }
+  /* Sin acotar la fila, el grid la dimensiona por contenido y la columna mas alta
+     desborda la caja aunque el flex padre ya este limitado. */
+  .cols.fill { grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  .cols.fill > * { min-height: 0; }
+  .stack { display: grid; gap: 0.9em; align-content: start; }
+
+  /* ---- ecuaciones ---- */
+  .eq {
+    display: grid;
+    place-items: center;
+    padding: 0.85em 1em;
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-left: 2px solid var(--accent);
+    border-radius: 0.2em;
+    overflow-x: auto;
+  }
+  .eq svg { color: var(--text); flex: none; }
+  .eq.tight { padding: 0.6em 0.8em; }
+  .eq-row { display: grid; gap: 0.6em; }
+  .eq-note {
+    font-size: 0.78em;
+    color: var(--muted);
+    text-align: center;
+    margin: 0.4em 0 0;
+    max-width: none;
+  }
+
+  /* ---- fichas de dato ---- */
+  .tiles { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0.8em; }
+  .tile {
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-radius: 0.25em;
+    padding: 0.85em 0.95em;
+    display: grid;
+    gap: 0.15em;
+  }
+  .tile .val {
+    font-family: var(--font-display);
+    font-size: 1.85em;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .tile .lbl { font-size: 0.72em; color: var(--muted); line-height: 1.3; }
+  .tile.accent .val { color: var(--accent); }
+  .tile.ok .val { color: var(--ok); }
+  .tile.warn .val { color: var(--warn); }
+  .tile.crit .val { color: var(--crit); }
+
+  /* ---- chips de estado (semantica separada del acento) ---- */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: 0.7em;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0.22em 0.6em;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .chip::before { content: ""; width: 0.45em; height: 0.45em; border-radius: 50%; background: currentColor; }
+  .chip.ok { color: var(--ok); background: var(--ok-bg); }
+  .chip.warn { color: var(--warn); background: var(--warn-bg); }
+  .chip.crit { color: var(--crit); background: var(--crit-bg); }
+  .chip.info { color: var(--accent); background: var(--accent-bg); }
+
+  /* ---- tablas ---- */
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.8em; font-variant-numeric: tabular-nums; }
+  caption { caption-side: bottom; font-size: 0.85em; color: var(--faint); text-align: left; padding-top: 0.6em; }
+  th, td { text-align: left; padding: 0.42em 0.7em; border-bottom: 1px solid var(--rule); }
+  th {
+    font-size: 0.86em;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--rule-strong);
+  }
+  td.num { text-align: right; }
+  tr.hl td { background: var(--accent-bg); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  /* ---- figuras ---- */
+  /* La fila de la imagen puede encogerse por debajo de su contenido; el pie de
+     figura ocupa su propia fila y no se suma al 100 % de la imagen. */
+  figure { margin: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 0.5em; min-height: 0; }
+  figure img {
+    min-height: 0;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    justify-self: center;
+    align-self: center;
+    border-radius: 0.2em;
+    background: #fff;
+    border: 1px solid var(--rule);
+  }
+  figcaption { font-size: 0.72em; color: var(--faint); line-height: 1.35; }
+
+  /* ---- tarjetas de decision ---- */
+  .cards { display: grid; gap: 0.75em; }
+  .card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.9em;
+    align-items: start;
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-radius: 0.25em;
+    padding: 0.85em 1em;
+  }
+  .card .key {
+    font-family: var(--font-mono);
+    font-size: 0.78em;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-bg);
+    border-radius: 0.2em;
+    padding: 0.25em 0.5em;
+  }
+  .card p { margin: 0; font-size: 0.9em; }
+  .card p + p { margin-top: 0.35em; color: var(--muted); font-size: 0.84em; }
+
+  /* ---- graficos de mlflow ----
+     Los colores de serie NO son el acento del deck: ese petroleo tiene croma
+     demasiado bajo para codificar datos (el validador lo marca como "reads gray").
+     Azul y naranja, validados en ambos modos: peor ΔE adyacente ~97 bajo protanopia. */
+  .chart {
+    --viz-1: #2a78d6;
+    --viz-2: #eb6834;
+    --viz-surface: var(--surface-2);
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-radius: 0.25em;
+    padding: 0.9em 1.1em 0.6em;
+    min-height: 0;
+    display: grid;
+  }
+  :root[data-theme="dark"] .chart { --viz-1: #3987e5; --viz-2: #d95926; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .chart { --viz-1: #3987e5; --viz-2: #d95926; }
+  }
+
+  .chart svg.viz { width: 100%; height: 100%; min-height: 0; color: var(--text); overflow: visible; }
+  .viz text { font-family: var(--font-body); fill: currentColor; }
+  .viz-title { font-size: 17px; font-weight: 600; }
+  .viz-sub { font-size: 12.5px; opacity: 0.62; }
+  .viz-legend { font-size: 12.5px; opacity: 0.8; }
+  .viz-tick { font-size: 12px; opacity: 0.62; font-variant-numeric: tabular-nums; }
+  .viz-axlab { font-size: 12.5px; opacity: 0.72; }
+  .viz-val { font-size: 12px; font-weight: 600; opacity: 0.85; font-variant-numeric: tabular-nums; }
+  .viz-label { font-size: 12.5px; font-weight: 600; }
+  .viz-grid line { stroke: currentColor; stroke-opacity: 0.1; stroke-width: 1; }
+  .viz-axis line { stroke: currentColor; stroke-opacity: 0.28; stroke-width: 1; }
+  .viz-rule { stroke: currentColor; stroke-opacity: 0.45; stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .viz-rule-lab { font-size: 12px; opacity: 0.62; }
+
+  code { font-family: var(--font-mono); font-size: 0.88em; background: var(--surface-2); padding: 0.08em 0.32em; border-radius: 0.2em; }
+
+  .callout {
+    border-left: 2px solid var(--warn);
+    background: var(--warn-bg);
+    padding: 0.7em 1em;
+    border-radius: 0 0.2em 0.2em 0;
+    font-size: 0.88em;
+  }
+  .callout.crit { border-color: var(--crit); background: var(--crit-bg); }
+  .callout.info { border-color: var(--accent); background: var(--accent-bg); }
+  .callout p { margin: 0; max-width: none; }
+  .callout p + p { margin-top: 0.4em; }
+
+  /* ---- portada ---- */
+  .cover { align-content: center; text-align: left; }
+  .cover .kicker { font-size: 0.8em; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.2em; }
+  .cover h1 { font-size: 2.9em; max-width: 20ch; }
+  .cover .meta { display: grid; gap: 0.2em; margin-top: 1.8em; font-size: 0.92em; color: var(--muted); }
+  .cover .meta .name { color: var(--text); font-weight: 600; font-size: 1.08em; }
+  .cover .rule { width: 4em; height: 2px; background: var(--accent); margin: 1.4em 0; }
+
+  /* ---- pie ---- */
+  .foot {
+    display: flex;
+    align-items: center;
+    gap: 0.8em;
+    font-size: 0.68em;
+    color: var(--faint);
+    border-top: 1px solid var(--rule);
+    padding-top: 0.6em;
+    margin-top: 1.1em;
+    font-variant-numeric: tabular-nums;
+  }
+  .foot .spacer { flex: 1; }
+
+  /* ---- barra de progreso ---- */
+  #rail { position: absolute; top: 0; left: 0; height: 2px; background: var(--accent); transition: width 200ms ease-out; z-index: 5; }
+
+  /* ---- notas ---- */
+  .notes { display: none; }
+
+  #notes-panel {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: min(30rem, 34vw);
+    background: var(--surface);
+    border-left: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+    padding: 1.6rem 1.7rem;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform 200ms ease-out;
+    z-index: 40;
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+  body.notes-open #notes-panel { transform: none; }
+  @media (prefers-reduced-motion: reduce) { #notes-panel { transition: none; } }
+  #notes-panel h3 { margin-top: 0; }
+  #notes-panel .notes-body { display: block; }
+  #notes-panel p { max-width: none; }
+  #notes-panel .clock { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 1.5rem; font-weight: 600; }
+  #notes-panel .clock.over { color: var(--crit); }
+  #notes-panel .clock.near { color: var(--warn); }
+  #notes-panel .clock-row { display: flex; align-items: baseline; gap: 0.8rem; border-bottom: 1px solid var(--rule); padding-bottom: 0.9rem; margin-bottom: 1rem; }
+  #notes-panel .target { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* ---- indice ---- */
+  #index {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 50;
+    overflow-y: auto;
+    padding: 2.5rem clamp(1.5rem, 5vw, 5rem);
+    display: none;
+  }
+  body.index-open #index { display: block; }
+  #index h2 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+  .idx-block { margin-bottom: 1.6rem; }
+  .idx-block > h3 { display: flex; gap: 0.8rem; align-items: baseline; }
+  .idx-block > h3 .mins { color: var(--accent); letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+  .idx-list { display: grid; gap: 0.2rem; }
+  .idx-item {
+    display: grid;
+    grid-template-columns: 2.6rem 1fr auto;
+    gap: 0.8rem;
+    align-items: baseline;
+    padding: 0.45rem 0.6rem;
+    border: none;
+    border-radius: 0.2rem;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 0.92rem;
+    text-align: left;
+    cursor: pointer;
+    width: 100%;
+  }
+  .idx-item:hover, .idx-item:focus-visible { background: var(--surface); outline: none; }
+  .idx-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+  .idx-item .n { font-family: var(--font-mono); color: var(--faint); font-variant-numeric: tabular-nums; }
+  .idx-item .t { color: var(--faint); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+  .idx-item.current { background: var(--accent-bg); }
+  .idx-item.current .n { color: var(--accent); }
+
+  /* ---- ayuda ---- */
+  #help {
+    position: fixed;
+    inset: 0;
+    background: rgb(0 0 0 / 0.55);
+    display: none;
+    place-items: center;
+    z-index: 60;
+    padding: 2rem;
+  }
+  body.help-open #help { display: grid; }
+  #help .panel {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 0.4rem;
+    padding: 1.8rem 2rem;
+    max-width: 32rem;
+    box-shadow: var(--shadow);
+  }
+  #help dl { display: grid; grid-template-columns: auto 1fr; gap: 0.55rem 1.2rem; margin: 0; align-items: baseline; }
+  #help dt { justify-self: start; }
+  #help dd { margin: 0; color: var(--muted); font-size: 0.92rem; }
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    border: 1px solid var(--rule-strong);
+    border-bottom-width: 2px;
+    border-radius: 0.25rem;
+    padding: 0.15rem 0.45rem;
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+
+  #hint {
+    position: fixed;
+    bottom: 1rem; left: 1rem;
+    font-size: 0.75rem;
+    color: var(--faint);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: 0.3rem 0.8rem;
+    z-index: 10;
+  }
+
+  .backup-marker { color: var(--warn) !important; }
+
+  /* ---------------------------------------------------------------------
+     Impresion / exportacion a PDF: una diapositiva por pagina, con notas.
+     --------------------------------------------------------------------- */
+  @media print {
+    body { overflow: visible; background: #fff; }
+    #stage { position: static; padding: 0; display: block; }
+    #notes-panel, #index, #help, #hint, #rail { display: none !important; }
+    #deck {
+      width: 100%;
+      aspect-ratio: auto;
+      border: none;
+      box-shadow: none;
+      border-radius: 0;
+      font-size: 11px;
+      overflow: visible;
+    }
+    .slide {
+      position: static;
+      display: grid !important;
+      break-after: page;
+      page-break-after: always;
+      break-inside: avoid;
+      height: 100vh;
+      border-bottom: 1px solid #ccc;
+    }
+    .slide:last-child { break-after: auto; page-break-after: auto; }
+    .slide.active { animation: none; }
+    @page { size: landscape; margin: 12mm; }
+  }
+</style>
+
+<div id="stage">
+  <main id="deck" aria-label="Presentación de avance de tesis">
+    <div id="rail"></div>
+
+    <!-- ================= BLOQUE 0 · APERTURA ================= -->
+
+    <section class="slide cover" data-block="Apertura" data-min="0.5">
+      <div></div>
+      <div class="body">
+        <div class="kicker">Revisión de avance · Trabajo de titulación</div>
+        <h1>Diseño e implementación de una plataforma de control para péndulo invertido</h1>
+        <p class="lead" style="max-width:48ch">Actualización e integración tecnológica del Quanser QUBE Modelo&nbsp;1 sobre una arquitectura abierta ESP32.</p>
+        <div class="rule"></div>
+        <div class="meta">
+          <span class="name">Antonio José Badilla Torrealba</span>
+          <span>Profesor guía: Michael Miranda Sandoval</span>
+          <span>Departamento de Ingeniería Mecánica · Universidad de Santiago de Chile</span>
+          <span>Memoria para optar al título de Ingeniero de Ejecución en Mecánica · 2026</span>
+        </div>
+      </div>
+      <div></div>
+      <aside class="notes">
+        <p>Preséntate en una frase y aclara de entrada <strong>qué tipo de reunión es</strong>: no es un ensayo de defensa, es una revisión de trabajo. Quieres su criterio sobre tres decisiones concretas.</p>
+        <p>El documento ya está escrito y compila: 95 páginas, siete capítulos y un anexo de memoria de cálculo. Lo que falta no es redacción, son definiciones.</p>
+        <p><strong>Ritmo:</strong> esta diapositiva son 30 segundos. No te quedes en la portada.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Apertura" data-min="1.5">
+      <div class="body">
+        <h2>Qué necesito de esta reunión</h2>
+        <p class="lead">Tres decisiones abiertas. Las enuncio ahora para que el resto de la presentación se escuche con estas preguntas en mente; volvemos a ellas al cerrar.</p>
+        <div class="cards" style="margin-top:1.2em">
+          <div class="card">
+            <span class="key">D1</span>
+            <div>
+              <p><strong>El modo 4 no es un LQR canónico.</strong> Las ganancias se sintonizaron a mano sobre el hardware, no resolviendo Riccati sobre un modelo identificado.</p>
+              <p>¿Lo renombramos a «realimentación de estado con gain scheduling», o cerramos el ciclo con identificación de parámetros?</p>
+            </div>
+          </div>
+          <div class="card">
+            <span class="key">D2</span>
+            <div>
+              <p><strong>El 20 % de los intentos de swing-up aborta por brownout.</strong> La causa está identificada y la solución es un capacitor de 470–1000 µF.</p>
+              <p>¿Basta con instalarlo y re-medir una muestra, o se exige revalidar las 173 corridas completas?</p>
+            </div>
+          </div>
+          <div class="card">
+            <span class="key">D3</span>
+            <div>
+              <p><strong>El objetivo específico 3 está parcialmente cumplido.</strong> Hay integración con Python vía HTTP/REST y WebSocket; con MATLAB/Simulink no.</p>
+              <p>¿Se declara fuera de alcance, o se implementa la S-Function antes de la defensa?</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span>Revisión de avance</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Esta es la diapositiva más importante del deck. Poner las tres preguntas al principio cambia el rol del profesor: pasa de evaluador pasivo a co-decisor.</p>
+        <p><strong>D1 es la de fondo.</strong> Está admitida en tu propio texto (<code>Capitulo_04.tex:257</code>). Si no la levantas tú, la levanta la comisión. Levantarla tú demuestra criterio.</p>
+        <p>No entres en detalle aquí. Solo enuncia. Si el profesor quiere discutir ya, dile que el material para decidir viene en los próximos 40 minutos.</p>
+      </aside>
+    </section>
+
+    <!-- ================= BLOQUE 1 · PROBLEMA ================= -->
+
+    <section class="slide" data-block="Problema y objetivos" data-min="1">
+      <div class="body">
+        <h2>El QUBE Modelo 1 y su obsolescencia</h2>
+        <p class="lead">El laboratorio dispone de la mecánica del equipo original —estructura, motor DC y encoder— pero su electrónica de control quedó inutilizable.</p>
+        <ul style="margin-top:1.1em">
+          <li>La tarjeta de adquisición <strong>QuaRC/dSPACE fue descontinuada</strong> por el fabricante; no hay repuesto ni soporte.</li>
+          <li>El software <strong>QUARC exige versiones de MATLAB específicas</strong> y licencias que el departamento ya no mantiene.</li>
+          <li>El <strong>driver de potencia BJT original</strong> es ineficiente y limita la respuesta del motor.</li>
+          <li>No existe <strong>telemetría eléctrica</strong> ni <strong>supervisión remota</strong>: no se puede correlacionar el esfuerzo de control con el consumo real.</li>
+        </ul>
+        <div class="callout info" style="margin-top:1.2em">
+          <p>El diagnóstico define el trabajo: no se reemplaza el equipo, se reemplaza <strong>todo lo que hay entre el sensor y el actuador</strong>, conservando la planta física.</p>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 1 · §1.4</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Sé concreto con la obsolescencia: no es «el equipo es viejo», es que hay cuatro fallas distintas y cada una motiva un componente de la solución. La tarjeta descontinuada motiva el ESP32; el driver BJT motiva el BTS7960; la falta de telemetría motiva el INA219.</p>
+        <p>Ese mapeo uno-a-uno entre diagnóstico y diseño es lo que convierte un proyecto de «armar cosas» en ingeniería.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Problema y objetivos" data-min="1">
+      <div class="body">
+        <h2>La brecha de accesibilidad</h2>
+        <p class="lead">Un banco de péndulo invertido comercial cuesta lo que un laboratorio universitario chileno destina a varios cursos completos.</p>
+        <div class="tiles" style="margin-top:1.4em">
+          <div class="tile"><span class="val">$2.500–3.500</span><span class="lbl">USD · Quanser QUBE-Servo 2/3 comercial</span></div>
+          <div class="tile accent"><span class="val">$35–45</span><span class="lbl">USD · plataforma modernizada (BOM completo)</span></div>
+          <div class="tile ok"><span class="val">&gt;98 %</span><span class="lbl">reducción de costo, conservando la mecánica existente</span></div>
+        </div>
+        <p style="margin-top:1.5em">La cifra no es el aporte en sí. El aporte es demostrar que esa reducción <strong>no cuesta la funcionalidad docente</strong>: el control de posición y la telemetría quedan robustamente validados, y el péndulo invertido queda demostrado con limitaciones que se documentan explícitamente.</p>
+      </div>
+      <div class="foot"><span class="src">Capítulo 7 · Resumen de resultados</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Cuidado con vender la cifra de costo como el resultado. Un profesor guía experimentado desconfía del «98 % más barato» si no viene acompañado de qué se perdió.</p>
+        <p>Anticípate: lo que se pierde es la frecuencia de lazo (500 Hz contra 1 kHz), el determinismo de un RTOS dedicado, y la certificación industrial. Todo eso está en el capítulo de limitaciones y lo vas a mostrar.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Problema y objetivos" data-min="1">
+      <div class="body">
+        <h2>Objetivos</h2>
+        <div class="cols wide-left">
+          <div class="stack">
+            <div>
+              <h3>Objetivo general</h3>
+              <p>Diseñar e implementar una plataforma de control para péndulo rotatorio invertido mediante la modernización electrónica y de software del QUBE Servo original.</p>
+            </div>
+            <div class="callout info">
+              <p>El objetivo general no menciona el péndulo invertido <em class="term">estabilizado</em>, sino la <em class="term">plataforma de control</em>. Esa distinción, deliberada, es la que sostiene el cumplimiento.</p>
+            </div>
+          </div>
+          <div>
+            <h3>Objetivos específicos</h3>
+            <ul>
+              <li><strong>1.</strong> Evaluar el estado actual del sistema e identificar los requerimientos de actualización.</li>
+              <li><strong>2.</strong> Diseñar e implementar la modernización de hardware, software y alimentación.</li>
+              <li><strong>3.</strong> Integrar la plataforma con herramientas de programación actuales.</li>
+              <li><strong>4.</strong> Verificar y comparar el desempeño mediante campañas experimentales.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 1 · Capítulo 7 · §Cumplimiento de objetivos</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Lee el objetivo general literalmente y detente en la palabra «plataforma». Es la razón por la que el proyecto se cumple aunque el péndulo no se sostenga indefinidamente.</p>
+        <p>Si el profesor objeta que eso es una salida cómoda, la respuesta honesta es: el objetivo se redactó así desde el temario, y la siguiente diapositiva declara sin ambigüedad qué quedó consolidado y qué no.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Problema y objetivos" data-min="1">
+      <div class="body">
+        <h2>Estado de cumplimiento</h2>
+        <div class="table-wrap" style="margin-top:0.4em">
+          <table>
+            <thead>
+              <tr><th style="width:3.5em">OE</th><th>Objetivo específico</th><th style="width:11em">Estado</th><th style="width:20em">Evidencia</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td><td>Evaluar el estado actual</td>
+                <td><span class="chip ok">Cumplido</span></td>
+                <td>Diagnóstico de obsolescencia en cuatro ejes; requerimientos derivados.</td>
+              </tr>
+              <tr>
+                <td>2</td><td>Diseñar e implementar la modernización</td>
+                <td><span class="chip ok">Cumplido</span></td>
+                <td>Electrónica nueva, firmware de 7 modos a 500 Hz, acondicionamiento, telemetría, interfaz web.</td>
+              </tr>
+              <tr>
+                <td>3</td><td>Integrar con herramientas actuales</td>
+                <td><span class="chip warn">Parcial</span></td>
+                <td>Python vía HTTP/REST y WebSocket. MATLAB/Simulink no implementado. <strong>→ D3</strong></td>
+              </tr>
+              <tr>
+                <td>4</td><td>Verificar y comparar el desempeño</td>
+                <td><span class="chip ok">Cumplido</span></td>
+                <td>6 campañas, más de 173 ensayos, comparación cuantitativa L298N vs BTS7960.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout" style="margin-top:1.3em">
+          <p><strong>Madurez desigual dentro del OE 2.</strong> El control de posición del servo y la telemetría están robustamente validados. El control del péndulo invertido está demostrado, no consolidado. Lo desarrollo en el bloque de resultados.</p>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 7 · §Cumplimiento de objetivos</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Declarar tú mismo el «parcial» en el OE 3 compra credibilidad para los tres «cumplido». Es una inversión, no una concesión.</p>
+        <p>La caja de abajo es la que prepara el terreno del bloque 5. Dilo con estas palabras: <em>demostrado, no consolidado</em>. Repítelas después.</p>
+      </aside>
+    </section>
+
+    <!-- ================= BLOQUE 2 · FUNDAMENTOS ================= -->
+
+    <section class="slide" data-block="Fundamentos y modelo" data-min="1">
+      <div class="body">
+        <h2>Control en lazo cerrado</h2>
+        <p class="lead">Toda la plataforma existe para cerrar este lazo: medir con el encoder, calcular el error, actuar sobre el motor.</p>
+        <div class="eq" style="margin:1.3em 0">{{EQ:lazo_cerrado}}</div>
+        <div class="cols">
+          <ul>
+            <li><strong>G<sub>c</sub>(s)</strong> — el controlador, lo que corre en el ESP32.</li>
+            <li><strong>G<sub>p</sub>(s)</strong> — la planta: motor DC más brazo más péndulo.</li>
+            <li><strong>H(s)</strong> — el sensor: el encoder en cuadratura.</li>
+          </ul>
+          <div class="callout info">
+            <p>La retroalimentación reduce la sensibilidad a perturbaciones, compensa variaciones paramétricas de la planta y permite <strong>especificar</strong> la respuesta dinámica en vez de padecerla.</p>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 2 · §2.1 · Ogata; Franklin</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Este bloque es teoría conocida por el profesor. No la enseñes: <strong>úsala para justificar decisiones</strong>. Cada ecuación aparece porque algo del diseño depende de ella.</p>
+        <p>Aquí el punto es que <code>H(s)</code> —el encoder— resultó ser el eslabón débil, y por eso hay un capítulo entero de acondicionamiento de señal. Anticípalo en una frase.</p>
+        <p><strong>Ritmo:</strong> el bloque completo son 7 minutos para 6 diapositivas. No te detengas en despejar álgebra.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Fundamentos y modelo" data-min="1.25">
+      <div class="body">
+        <h2>Modelado del motor DC</h2>
+        <p class="lead">Dos ecuaciones acopladas: el circuito de armadura y la dinámica del rotor.</p>
+        <div class="cols" style="margin-top:1.1em; gap:1.2em">
+          <div class="eq-row">
+            <h3 style="margin-bottom:0.2em">Eléctrica · Kirchhoff</h3>
+            <div class="eq tight">{{EQ:motor_electrica}}</div>
+            <div class="eq tight">{{EQ:motor_backemf}}</div>
+          </div>
+          <div class="eq-row">
+            <h3 style="margin-bottom:0.2em">Mecánica · Newton rotacional</h3>
+            <div class="eq tight">{{EQ:motor_mecanica}}</div>
+            <div class="eq tight">{{EQ:motor_torque}}</div>
+          </div>
+        </div>
+        <p style="margin-top:1.2em; max-width:none">El acoplamiento es bidireccional: la corriente genera torque, y la velocidad genera <strong>fuerza contraelectromotriz</strong> que se opone al voltaje aplicado. En unidades SI y con flujo constante, la constante de torque y la de back-EMF coinciden numéricamente.</p>
+      </div>
+      <div class="foot"><span class="src">Capítulo 2 · §2.2.1</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>El detalle que vale la pena mencionar es <strong>K<sub>t</sub> = K<sub>e</sub></strong>: no es una coincidencia de notación, es conservación de energía. La potencia eléctrica que consume la back-EMF es exactamente la potencia mecánica que entrega el torque.</p>
+        <p>Ese hecho es el que permite estimar el torque midiendo corriente con el INA219, sin sensor de torque. Conecta este slide con la telemetría.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Fundamentos y modelo" data-min="1.25">
+      <div class="body">
+        <h2>Del espacio de estados al modelo de primer orden</h2>
+        <div class="cols wide-left" style="gap:1.4em">
+          <div class="eq-row">
+            <div class="eq tight">{{EQ:motor_ss}}</div>
+            <div class="eq tight">{{EQ:motor_matrices}}</div>
+          </div>
+          <div class="stack">
+            <div class="callout info">
+              <p>Con <code>L<sub>a</sub> ≈ 0,5 mH</code> y <code>R<sub>a</sub> ≈ 5 Ω</code>, la constante eléctrica es <strong>τ<sub>e</sub> ≈ 0,1 ms</strong>, frente a una constante mecánica <strong>τ<sub>m</sub> ≈ 50 ms</strong>.</p>
+              <p>Un factor 500. La dinámica eléctrica se extingue antes de que el rotor se entere: se desprecia.</p>
+            </div>
+            <div class="eq tight">{{EQ:motor_primer_orden}}</div>
+          </div>
+        </div>
+        <div class="eq" style="margin-top:1.1em">{{EQ:motor_gpos}}</div>
+        <p class="eq-note">El integrador libre en el origen explica por qué el servo no necesita acción integral para anular el error estacionario ante un escalón de posición.</p>
+      </div>
+      <div class="foot"><span class="src">Capítulo 2 · §2.2.2–2.2.3</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>La justificación de la simplificación es cuantitativa, no un gesto: el cociente de constantes de tiempo es 500. Dilo con el número.</p>
+        <p>El comentario del integrador libre es una buena semilla: si el profesor pregunta «¿por qué usas K<sub>i</sub> entonces?», la respuesta es <strong>fricción estática</strong> —una no linealidad que el modelo lineal no captura— y por eso además hay compensación explícita de fricción en el firmware.</p>
+        <p>Las expresiones de K<sub>m</sub> y τ<sub>m</sub> en función de los parámetros físicos están en respaldo si las pide.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Fundamentos y modelo" data-min="1.25">
+      <div class="body">
+        <h2>Encoder incremental en cuadratura</h2>
+        <p class="lead">La decodificación X4 usa los cuatro flancos de ambos canales y cuadruplica la resolución.</p>
+        <div class="eq-row" style="margin:1.1em 0">
+          <div class="eq tight">{{EQ:enc_resolucion}}</div>
+          <div class="eq tight">{{EQ:enc_fmax}}</div>
+        </div>
+        <div class="cols wide-right">
+          <div class="eq tight">{{EQ:enc_nyquist}}</div>
+          <div class="callout info">
+            <p>Muestrear a 109 kHz por software sería inviable. El <strong>contador PCNT por hardware del ESP32</strong> registra cada flanco de forma asíncrona: elimina la restricción de Nyquist sobre el conteo.</p>
+            <p>Los 500 Hz del lazo solo fijan la resolución temporal de la velocidad derivada, <strong>no la exactitud de la posición</strong>.</p>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 2 · §2.3</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Este es uno de los argumentos técnicos más fuertes del trabajo y suele pasar desapercibido. La objeción natural a un microcontrolador barato es «no alcanza a leer el encoder». La respuesta es que no lo lee por software.</p>
+        <p>Distingue con claridad: <strong>exactitud de posición</strong> (garantizada por el PCNT, independiente de la frecuencia del lazo) contra <strong>ruido de velocidad</strong> (sí depende de los 500 Hz, y por eso hay filtro EMA).</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Fundamentos y modelo" data-min="1.25">
+      <div class="body">
+        <h2>Péndulo rotatorio de Furuta</h2>
+        <p class="lead">Dos coordenadas generalizadas, un solo actuador. Formulación por Euler-Lagrange con <em class="term">ℒ = T − V</em>.</p>
+        <div class="cols" style="margin-top:1.2em; gap:1.2em">
+          <div>
+            <h3>Brazo servo · θ</h3>
+            <div class="eq tight">{{EQ:el_theta}}</div>
+          </div>
+          <div>
+            <h3>Péndulo · α</h3>
+            <div class="eq tight">{{EQ:el_alpha}}</div>
+          </div>
+        </div>
+        <div class="callout crit" style="margin-top:1.4em">
+          <p><strong>La ecuación de α tiene un cero al lado derecho.</strong> No hay entrada de control que actúe directamente sobre el péndulo: solo se lo puede mover a través del acoplamiento inercial con el brazo.</p>
+          <p>Eso define el sistema como <strong>subactuado</strong>, y es la razón de que el problema sea difícil y de que se necesiten dos controladores distintos —swing-up y estabilización— en vez de uno.</p>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 2 · §2.4.2 · Akhtaruzzaman &amp; Shafie (2010)</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>El cero al lado derecho de la segunda ecuación es el corazón conceptual de toda la tesis. Deténte ahí tres segundos y señálalo.</p>
+        <p>Si logras que el profesor vea que «subactuado» explica por qué hay swing-up <em>y</em> LQR, y por qué la transición entre ambos es el punto frágil, el resto del bloque de resultados se entiende solo.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Fundamentos y modelo" data-min="1">
+      <div class="body">
+        <h2>Linealización en el equilibrio superior</h2>
+        <p class="lead">Con <code>sin α ≈ α</code>, <code>cos α ≈ 1</code> y términos de segundo orden despreciados.</p>
+        <div class="eq tight" style="margin:1em 0">{{EQ:pend_ss}}</div>
+        <div class="cols wide-left" style="gap:1.4em; align-items:center">
+          <div class="eq tight">{{EQ:pend_A}}</div>
+          <div class="stack">
+            <div class="eq tight">{{EQ:pend_B}}</div>
+            <div class="callout crit">
+              <p><strong>A</strong> tiene un autovalor en el semiplano derecho. El equilibrio superior es inestable: sin realimentación activa, el péndulo cae. Siempre.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 2 · §2.4.3</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Señala el término de acoplamiento <code>m·l·d/(J<sub>t</sub>·J<sub>p</sub>)</code> en <strong>B</strong>: es el que hace que el torque del brazo alcance al péndulo. Si fuera cero, el sistema no sería controlable y no habría nada que hacer.</p>
+        <p><strong>Enlace con D1:</strong> esta es la matriz <strong>A</strong> que <em>debería</em> alimentar la ecuación de Riccati. No lo hace, porque no se identificaron los parámetros. Ese es exactamente el hueco que quieres discutir. Plántalo aquí sin desarrollarlo.</p>
+      </aside>
+    </section>
+
+    <!-- ================= BLOQUE 3 · ESTRATEGIAS DE CONTROL ================= -->
+
+    <section class="slide" data-block="Estrategias de control" data-min="1">
+      <div class="body">
+        <h2>Control PID</h2>
+        <p class="lead">Tres términos: el error instantáneo, su acumulación histórica y su tendencia de cambio.</p>
+        <div class="eq" style="margin:1.2em 0">{{EQ:pid_continuo}}</div>
+        <div class="eq tight">{{EQ:pid_transferencia}}</div>
+        <div class="cols" style="margin-top:1.2em">
+          <ul>
+            <li><strong>K<sub>p</sub></strong> — responde al presente. Reduce el error, pero solo con P siempre queda error estacionario ante carga.</li>
+            <li><strong>K<sub>i</sub></strong> — responde al pasado. Anula el error estacionario; introduce riesgo de <em class="term">windup</em>.</li>
+            <li><strong>K<sub>d</sub></strong> — responde al futuro. Amortigua; amplifica el ruido de medición.</li>
+          </ul>
+          <div class="callout info">
+            <p>El PID gobierna el <strong>modo 2</strong>: posicionamiento del brazo servo. Es la capacidad más madura del sistema y la que está lista para uso docente inmediato.</p>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 3 · §3.1.1</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Pasado / presente / futuro es una forma rápida de recorrer los tres términos sin sonar a clase de pregrado. Un profesor guía agradece la economía.</p>
+        <p>Cada término trae su patología —error estacionario, windup, amplificación de ruido— y las tres se atacan en la diapositiva siguiente y en la subsiguiente. Anúncialo así para dar continuidad.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Estrategias de control" data-min="1.25">
+      <div class="body">
+        <h2>Implementación discreta en el microcontrolador</h2>
+        <div class="cols wide-left" style="gap:1.5em; align-items:center">
+          <div class="eq">{{EQ:pid_discreto}}</div>
+          <div class="stack">
+            <ul>
+              <li>La integral se aproxima por <strong>suma de Riemann</strong>.</li>
+              <li>La derivada, por <strong>diferencias finitas hacia atrás</strong>.</li>
+              <li>Con <code>T<sub>s</sub> = 2 ms</code>, correspondiente a los 500 Hz del lazo.</li>
+            </ul>
+            <div class="callout info">
+              <p>El término derivativo se calcula sobre <strong>la salida y(k)</strong>, no sobre el error e(k).</p>
+              <p>Un cambio de referencia produce un escalón en el error; derivarlo daría un impulso —el <em class="term">kick</em> derivativo— que saturaría el actuador sin ninguna razón física.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 3 · §3.1.2</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>El signo negativo en D(k) es consecuencia de derivar la salida en vez del error: cuando el error se define como <code>e = r − y</code>, la derivada del error es menos la derivada de la salida si la referencia es constante.</p>
+        <p>Es un detalle de implementación que muchos trabajos de titulación copian sin entender. Que lo expliques bien te distingue.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Estrategias de control" data-min="1">
+      <div class="body">
+        <h2>Anti-windup y filtrado del ruido</h2>
+        <p class="lead">Las dos patologías del PID discreto, y cómo se atacan.</p>
+        <div class="stack" style="margin-top:1.1em">
+          <div>
+            <h3>Windup del integrador</h3>
+            <div class="eq tight">{{EQ:anti_windup}}</div>
+            <p class="eq-note">Con el actuador saturado el error no baja, pero la integral sigue creciendo. Al salir de saturación, esa carga acumulada produce un sobrepaso enorme. Se limita por <em class="term">clamping</em>, y además se anula la integral cuando <code>|e| &gt; 45°</code> o <code>|θ̇| &gt; 60°/s</code>.</p>
+          </div>
+          <div>
+            <h3>Ruido en la derivada</h3>
+            <div class="eq tight">{{EQ:ema}}</div>
+            <p class="eq-note">Filtro exponencial de primer orden sobre la velocidad. El valor de α es un compromiso: más filtrado atenúa mejor el ruido pero añade retraso de fase, que come margen de estabilidad.</p>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 3 · §3.1.3 · Capítulo 4 · §Protecciones</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Menciona que el retraso de fase del filtro es <strong>coste de estabilidad, no solo de rendimiento</strong>. Con α = 0,12 el filtro tiene constante de tiempo de unos 7,5 períodos de muestreo, es decir 15 ms: comparable a la constante mecánica del motor. Está en el límite de lo aceptable y lo sabes.</p>
+        <p>Si el profesor pregunta cómo elegiste 0,12: empíricamente, y está documentado en la campaña de sintonización.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Estrategias de control" data-min="1.25">
+      <div class="body">
+        <h2>Control óptimo LQR · el funcional de costo</h2>
+        <p class="lead">En vez de sintonizar ganancias, se declara qué es un buen comportamiento y se resuelve.</p>
+        <div class="eq" style="margin:1.3em 0">{{EQ:lqr_costo}}</div>
+        <div class="cols">
+          <ul>
+            <li><strong>Q ⪰ 0</strong> pondera la desviación de cada estado respecto al equilibrio.</li>
+            <li><strong>R ≻ 0</strong> penaliza el esfuerzo de control. Subirla produce controladores más conservadores.</li>
+            <li>El diseño consiste en elegir Q y R para fijar el compromiso entre <strong>velocidad de convergencia</strong> y <strong>esfuerzo del actuador</strong>.</li>
+          </ul>
+          <div class="callout info">
+            <p>La ventaja frente al PID es directa: Q y R tienen <strong>interpretación física</strong>. No se sintoniza a ciegas, se declara una preferencia y el óptimo se calcula.</p>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 3 · §3.2.1</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Ojo. Estás a punto de exponer la maquinaria completa del LQR, y en dos diapositivas vas a admitir que <strong>no la usaste</strong>. Prepara al profesor: di que esta es la teoría que el capítulo 3 desarrolla y que la implementación se desvió de ella, y que esa desviación es la decisión D1.</p>
+        <p>Si esperas al bloque 4 para admitirlo, parece que te descubrieron. Si lo anuncias aquí, parece que lo controlas.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Estrategias de control" data-min="1.5">
+      <div class="body">
+        <h2>De Riccati a la ley de control</h2>
+        <div class="eq" style="margin-bottom:0.9em">{{EQ:riccati}}</div>
+        <div class="eq tight" style="margin-bottom:0.9em">{{EQ:lqr_K}}</div>
+        <div class="eq tight">{{EQ:tau_lqr}}</div>
+        <div class="cols" style="margin-top:1.2em">
+          <ul>
+            <li>La ARE es <strong>no lineal en P</strong> aunque el sistema sea lineal. Se resuelve numéricamente —Schur, Newton, LDL— con <code>lqr()</code> o <code>scipy.linalg.solve_continuous_are()</code>.</li>
+            <li>Con una entrada y cuatro estados, <strong>K</strong> es un vector fila de 1×4.</li>
+          </ul>
+          <div class="callout info">
+            <p><strong>Garantía formal:</strong> el lazo cerrado es asintóticamente estable siempre que (A, B) sea controlable y (Q<sup>1/2</sup>, A) observable.</p>
+            <p>Ni las redes neuronales ni el control difuso ni el aprendizaje por refuerzo ofrecen esto.</p>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 3 · §3.2.2–3.2.3</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>La garantía de estabilidad es <strong>el</strong> argumento por el que se eligió LQR sobre métodos basados en datos. Pero esa garantía solo aplica si K sale de resolver Riccati sobre un modelo válido.</p>
+        <p>Como las ganancias del modo 4 se sintonizaron a mano, <strong>el sistema implementado no hereda esa garantía</strong>. Es la formulación precisa del problema D1, y conviene que la digas tú, con estas palabras, antes que la comisión.</p>
+        <p>Interpretación de P: es el «cost-to-go» óptimo. El costo mínimo desde el estado x es xᵀPx. Úsala si preguntan.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Estrategias de control" data-min="1.5">
+      <div class="body">
+        <h2>Swing-up por control de energía</h2>
+        <p class="lead">El LQR solo estabiliza cerca del equilibrio superior. Hay que llevar el péndulo hasta ahí primero, y no se puede empujar directamente: está subactuado.</p>
+        <div class="cols" style="margin:1.2em 0; gap:1.2em">
+          <div>
+            <h3>Energía del péndulo</h3>
+            <div class="eq tight">{{EQ:energia}}</div>
+          </div>
+          <div>
+            <h3>Energía objetivo</h3>
+            <div class="eq tight">{{EQ:energia_target}}</div>
+          </div>
+        </div>
+        <div class="eq">{{EQ:swingup_u}}</div>
+        <p class="eq-note">Åström &amp; Furuta (2000). En vez de controlar la posición, se controla <strong>una cantidad escalar conservada</strong>: la energía. El término <code>sign(α̇·cos α)</code> elige el sentido del torque para que el trabajo del motor siempre <em>aumente</em> la energía del péndulo.</p>
+      </div>
+      <div class="foot"><span class="src">Capítulo 3 · §3.3</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>La elegancia de Åström es que convierte un problema de control no lineal en dos dimensiones en un problema de regulación escalar. No controla dónde está el péndulo; controla cuánta energía tiene.</p>
+        <p>Cuando <code>E = E_target</code> y <code>α̇ = 0</code>, el péndulo está arriba, quieto. Ahí se transfiere al LQR.</p>
+        <p><strong>Aviso de consistencia:</strong> la α de esta fórmula se mide desde la posición colgante, mientras que la del bloque anterior se medía desde la vertical superior. El documento arrastra esa ambigüedad. Hay un slide de respaldo. Si el profesor lo detecta, agradécele y muéstraselo.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Estrategias de control" data-min="0.5">
+      <div class="body">
+        <h2>Por qué swing-up energético + LQR</h2>
+        <div class="cols wide-left" style="gap:1.5em">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Método</th><th>Robustez</th><th>No lineal</th><th>Costo comp.</th><th>Estabilidad</th></tr></thead>
+              <tbody>
+                <tr><td>PID</td><td>Baja</td><td>No</td><td>Muy bajo</td><td>Limitada</td></tr>
+                <tr class="hl"><td><strong>LQR</strong></td><td>Media</td><td>Local</td><td>Bajo</td><td>Sí (local)</td></tr>
+                <tr><td>LQG</td><td>Media</td><td>Local</td><td>Medio</td><td>Sí (local)</td></tr>
+                <tr><td>SMC</td><td>Alta</td><td>Sí</td><td>Bajo</td><td>Sí</td></tr>
+                <tr><td>Backstepping</td><td>Media</td><td>Sí</td><td>Medio</td><td>Sí (Lyapunov)</td></tr>
+                <tr><td>Fuzzy</td><td>Media</td><td>Sí</td><td>Medio</td><td>Limitada</td></tr>
+                <tr><td>ANN</td><td>Media</td><td>Sí</td><td>Variable</td><td>No</td></tr>
+                <tr><td>MPC</td><td>Media</td><td>Sí</td><td>Alto</td><td>Sí (terminal)</td></tr>
+                <tr><td>RL</td><td>Variable</td><td>Sí</td><td>Variable</td><td>No</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <h3>Criterios de selección</h3>
+            <ul>
+              <li><strong>Garantía de estabilidad</strong> formal para el sistema linealizado.</li>
+              <li><strong>Costo computacional:</strong> &lt;20 µs por ciclo, menos del 1 % del período a 500 Hz.</li>
+              <li><strong>Sintonización interpretable:</strong> Q y R tienen significado físico.</li>
+              <li><strong>Madurez:</strong> décadas de validación experimental.</li>
+              <li><strong>Bajo riesgo:</strong> sin el <em class="term">chattering</em> del SMC ni la transferencia sim-to-real del RL.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 3 · §3.7–3.8 · Hazem (2023); Huynh (2024)</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Diapositiva de tránsito, 30 segundos. No leas la tabla. Di solo: «revisamos nueve familias de métodos, y la combinación híbrida swing-up + LQR es la más documentada de la literatura reciente y la de menor riesgo de implementación embebida».</p>
+        <p>La tabla está para que el profesor la mire mientras hablas, y para que quede constancia de que el estado del arte se revisó.</p>
+      </aside>
+    </section>
+
+    <!-- ================= BLOQUE 4 · IMPLEMENTACIÓN ================= -->
+
+    <section class="slide" data-block="Diseño e implementación" data-min="1.25">
+      <div class="body">
+        <h2>Arquitectura de hardware</h2>
+        <div class="cols fill" style="gap:1.4em">
+          <figure style="min-height:0">
+            <img src="{{IMG:diagrama_bloques}}" alt="Diagrama de bloques del sistema modernizado">
+            <figcaption>Diagrama de bloques: sensado, cómputo, potencia y supervisión.</figcaption>
+          </figure>
+          <div class="stack">
+            <ul>
+              <li><strong>ESP32-WROOM-32</strong> — cómputo, PCNT por hardware, WiFi. Reemplaza la tarjeta QuaRC/dSPACE.</li>
+              <li><strong>BTS7960</strong> — driver de doble puente H. Reemplaza el driver BJT original.</li>
+              <li><strong>INA219</strong> — telemetría de voltaje, corriente y potencia por I²C. Capacidad nueva.</li>
+              <li><strong>LM2596</strong> — regulador buck para alimentación de señal separada de la de potencia.</li>
+            </ul>
+            <div class="callout info">
+              <p>Cada componente responde a un punto del diagnóstico de obsolescencia del capítulo 1. Ninguno se eligió por disponibilidad.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 4 · §Arquitectura · Anexo A</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Cierra el círculo con el diagnóstico de obsolescencia: cuatro fallas, cuatro componentes. Esa correspondencia es la que hace defendible la selección de hardware.</p>
+        <p>El Anexo A contiene la memoria de cálculo de la electrónica —dimensionamiento del buck, del shunt, del filtro— por si pregunta por criterios de diseño.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Diseño e implementación" data-min="1.25">
+      <div class="body">
+        <h2>Acondicionamiento de señal</h2>
+        <p class="lead">El PWM del driver a 20 kHz se acoplaba a las líneas del encoder y generaba conteos espurios. El algoritmo de control era irrelevante si la medición mentía.</p>
+        <div class="cols wide-right fill" style="gap:1.3em; margin-top:1em">
+          <div class="eq-row" style="align-content:start">
+            <div class="eq tight">{{EQ:fc_rc}}</div>
+            <div class="eq tight">{{EQ:histeresis}}</div>
+            <p class="eq-note" style="text-align:left">Filtro RC pasivo más trigger de Schmitt CD40106BE. La histéresis de 1,3 V da más de <strong>10× de margen</strong> frente a un ruido de conmutación de 20–100 mV pico.</p>
+          </div>
+          <figure>
+            <img src="{{IMG:senal_encoder}}" alt="Señal del encoder antes y después del acondicionamiento">
+            <figcaption>Señal real del encoder: los glitches desaparecen tras el Schmitt.</figcaption>
+          </figure>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 3 · §3.4 · Capítulo 4</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Explica la histéresis con el mecanismo, no con la definición: un comparador de umbral único a 1,65 V conmuta muchas veces cuando la señal cruza con ruido encima. El Schmitt sube a 2,2 V para pasar a alto y baja a 0,9 V para volver, así que una fluctuación de ±100 mV cae íntegra dentro de la zona muerta.</p>
+        <p>Este hallazgo —que el problema estaba en la señal, no en el control— es una de las lecciones de ingeniería más transferibles del trabajo. Dilo así.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Diseño e implementación" data-min="1">
+      <div class="body">
+        <h2>Firmware · FreeRTOS sobre dos núcleos</h2>
+        <div class="cols wide-left" style="gap:1.4em">
+          <div class="stack">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Tarea</th><th>Núcleo</th><th class="num">Frecuencia</th></tr></thead>
+                <tbody>
+                  <tr class="hl"><td><code>task_control</code></td><td>1</td><td class="num">500 Hz</td></tr>
+                  <tr><td><code>task_ina219</code></td><td>1</td><td class="num">100 Hz</td></tr>
+                  <tr><td><code>task_telemetry</code></td><td>0</td><td class="num">10 Hz</td></tr>
+                  <tr><td>Pila WiFi</td><td>0</td><td class="num">—</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="callout info">
+              <p>La pila WiFi vive en el núcleo 0. El lazo de control vive en el núcleo 1, <strong>aislado</strong>. Es lo que permite un jitter con desviación estándar menor a 50 µs sobre un período de 2 ms.</p>
+            </div>
+          </div>
+          <div class="stack">
+            <div>
+              <h3>Los siete modos</h3>
+              <ul style="font-size:0.9em">
+                <li><strong>0–1</strong> reposo y velocidad en lazo abierto</li>
+                <li><strong>2</strong> PID de posición del servo <span class="chip ok">validado</span></li>
+                <li><strong>3</strong> caracterización del motor</li>
+                <li><strong>4</strong> estabilización del péndulo <span class="chip warn">demostrado</span></li>
+                <li><strong>5</strong> swing-up energético <span class="chip warn">demostrado</span></li>
+                <li><strong>6–7</strong> política de RL, por HTTP y on-device <span class="chip info">I+D</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="callout" style="margin-top:1em">
+          <p>500 Hz frente a los 1 kHz del Quanser original. Suficiente para la dinámica del péndulo (1–3 Hz) y del motor (~30 Hz): la regla práctica pide entre 10 y 20 veces la banda de control.</p>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 3 · §3.5 · Capítulo 4 · §Firmware</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Anticipa la objeción de los 500 Hz antes de que la hagan. La respuesta correcta no es «es suficiente», sino «es suficiente <em>para esta banda</em>, y aquí está el criterio»: 10–20× la frecuencia de cierre de lazo, que es ~30 Hz.</p>
+        <p>La limitación real no es la frecuencia sino el determinismo: FreeRTOS no es un RTOS duro. Por eso mediste el jitter. Ten el número a mano: σ &lt; 50 µs.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Diseño e implementación" data-min="1.25">
+      <div class="body">
+        <h2>Ganancias realmente implementadas</h2>
+        <div class="cols wide-right" style="gap:1.4em">
+          <div class="stack">
+            <div>
+              <h3>Modo 2 · PID con gain scheduling</h3>
+              <p style="font-size:0.88em">Zona fina <code>|e| &lt; 10°</code>: K<sub>p</sub>=2,0 · K<sub>i</sub>=0,8 · K<sub>d</sub>=0,2<br>Zona gruesa <code>|e| ≥ 10°</code>: K<sub>p</sub>=4,0 · K<sub>i</sub>=0,2 · K<sub>d</sub>=0,1<br>Histéresis de 2° para evitar <em class="term">chattering</em> en el umbral.</p>
+            </div>
+            <div>
+              <h3>Modo 4 · realimentación de estado, 3 niveles</h3>
+              <div class="eq tight">{{EQ:lqr_impl}}</div>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Nivel</th><th>Condición</th><th class="num">K₂</th><th class="num">K₄</th></tr></thead>
+                <tbody>
+                  <tr><td>Base</td><td><code>|α| ≥ 25°</code></td><td class="num">22</td><td class="num">9</td></tr>
+                  <tr><td>Cercano</td><td><code>|α| &lt; 25°</code></td><td class="num">30</td><td class="num">15</td></tr>
+                  <tr class="hl"><td>Muy cercano</td><td><code>|α| &lt; 5°</code></td><td class="num">55</td><td class="num">20</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="eq tight">{{EQ:k4_boost}}</div>
+          </div>
+        </div>
+        <div class="callout crit" style="margin-top:1em">
+          <p><strong>D1 · Aquí está la brecha.</strong> Estas ganancias se obtuvieron por sintonización empírica iterativa sobre el hardware, no resolviendo la ecuación de Riccati sobre un modelo identificado. El controlador es una realimentación de estado con ganancias programadas, <strong>no un LQR canónico</strong>. Sin Riccati, no hereda la garantía formal de estabilidad.</p>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 4 · §Control LQR con gain scheduling — reconocido explícitamente en el texto</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p><strong>El momento de la verdad.</strong> Esta admisión ya está escrita en tu tesis; no estás confesando nada nuevo, estás poniéndola donde se pueda discutir.</p>
+        <p>Encuádrala como resultado, no como falla: el gain scheduling de tres niveles funciona <em>porque</em> el sistema es no lineal y un único K lineal no basta lejos del equilibrio. Un LQR canónico de una sola ganancia probablemente rendiría peor.</p>
+        <p>La pregunta a hacerle es concreta: <strong>¿identificamos los parámetros y recalculamos K, o renombramos el modo y lo justificamos como control por ganancias programadas?</strong> Lo primero es más trabajo y más riesgo; lo segundo es más honesto y defendible. Tú te inclinas por lo segundo, pero quieres su criterio.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Diseño e implementación" data-min="1">
+      <div class="body">
+        <h2>Mecanismos de protección</h2>
+        <p class="lead">Cinco capas. Ninguna es teórica: cada una nació de un incidente durante la experimentación.</p>
+        <div class="cols wide-right" style="gap:1.4em; margin-top:1em">
+          <div class="stack">
+            <div class="eq tight">{{EQ:soft_saturation}}</div>
+            <p class="eq-note" style="text-align:left">Saturación suave cerca de los límites mecánicos del servo. A 0°: 100 % del PWM disponible; a 60°: 80 %; a 90°: 64 %.</p>
+          </div>
+          <ul>
+            <li><strong>Anti-windup</strong> — integral acotada a ±250 y anulada ante error o velocidad grandes.</li>
+            <li><strong>Saturación suave</strong> — reducción progresiva del PWM cerca del tope mecánico.</li>
+            <li><strong>Hardstop</strong> — sobre <code>|θ| &gt; 70°</code> el PWM cae linealmente hasta cero en 85°.</li>
+            <li><strong>Anti-brownout</strong> — el INA219 vigila el bus: corte inmediato bajo 12,5 V, reducción proporcional entre 12,5 y 13,5 V.</li>
+            <li><strong>Anti-spin</strong> — detección de giro completo del péndulo y frenado a PWM máximo durante 1 s.</li>
+          </ul>
+        </div>
+        <div class="callout" style="margin-top:1em">
+          <p>La protección anti-brownout <strong>detecta</strong> la caída de tensión y aborta el ensayo, pero no la evita. De ahí el 20 % de intentos perdidos. <strong>→ D2</strong></p>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 4 · §Mecanismos de protección</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Que la telemetría del INA219 alimente una protección es un buen argumento: el sensor no está solo para graficar bonito, cierra un lazo de seguridad.</p>
+        <p>Pero sé preciso: el anti-brownout <em>protege el hardware</em> a costa de <em>abortar el experimento</em>. Es la causa directa del 20 %. La solución no es de software.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Diseño e implementación" data-min="1.25">
+      <div class="body">
+        <h2>Migración L298N → BTS7960</h2>
+        <p class="lead">Un caso de estudio documentado: se cambió un solo componente y el sistema pasó de no capturar nunca a capturar un tercio de las veces.</p>
+        <div class="table-wrap" style="margin-top:1em">
+          <table>
+            <thead><tr><th>Métrica</th><th class="num">L298N</th><th class="num">BTS7960</th><th class="num">Mejora</th></tr></thead>
+            <tbody>
+              <tr><td>Mejor <em class="term">hold</em> del péndulo</td><td class="num">55 s</td><td class="num">88 s</td><td class="num">1,6×</td></tr>
+              <tr class="hl"><td>Tasa de captura por el LQR</td><td class="num">~0 %</td><td class="num">36 %</td><td class="num">—</td></tr>
+              <tr><td>Ganancia de energía <code>k<sub>e</sub></code> óptima</td><td class="num">0,45–0,50</td><td class="num">0,65</td><td class="num">+30–45 %</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout info" style="margin-top:1.3em">
+          <p><strong>La conclusión que importa:</strong> con el L298N nunca se logró una captura. El algoritmo de swing-up era el mismo. La limitación estaba en la <strong>capacidad de respuesta del driver</strong>, no en la estrategia de control.</p>
+          <p>Que el <code>k<sub>e</sub></code> óptimo suba con el driver bueno es coherente: el nuevo puente H entrega el torque pedido, así que conviene pedir más energía por ciclo.</p>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 5 · §Comparación experimental · Capítulo 7 · §Aportes</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Este es el mejor resultado metodológico de la tesis y probablemente el más publicable. Es una <strong>variable controlada</strong>: mismo firmware, mismo algoritmo, mismo péndulo, distinto driver.</p>
+        <p>Explica por qué el L298N falla: es un puente en H con transistores bipolares, con caída de tensión de 2–3 V y limitación de corriente. En el swing-up el motor invierte el sentido muchas veces por segundo, y ahí el L298N no entrega.</p>
+      </aside>
+    </section>
+
+    <!-- ================= BLOQUE 5 · RESULTADOS ================= -->
+
+    <section class="slide" data-block="Resultados experimentales" data-min="1">
+      <div class="body">
+        <h2>Campañas experimentales</h2>
+        <div class="cols wide-left" style="gap:1.4em">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Fecha</th><th>Campaña</th><th>Hardware</th></tr></thead>
+              <tbody>
+                <tr><td>07-05</td><td>Sintonización PID</td><td>L298N</td></tr>
+                <tr><td>13-05</td><td>Validación del acondicionamiento</td><td>L298N</td></tr>
+                <tr><td>01-06</td><td>Primer swing-up</td><td>L298N</td></tr>
+                <tr><td>03/04-06</td><td>Iteración del LQR</td><td>L298N</td></tr>
+                <tr><td>04-06</td><td>Re-sintonización PID</td><td>BTS7960</td></tr>
+                <tr class="hl"><td>08-06</td><td>Barrido completo de swing-up</td><td>BTS7960</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="stack">
+            <div class="tiles" style="grid-auto-flow:row">
+              <div class="tile accent"><span class="val">173+</span><span class="lbl">ensayos registrados en CSV, con licencia CC BY 4.0</span></div>
+              <div class="tile"><span class="val">6</span><span class="lbl">campañas fechadas y trazables</span></div>
+            </div>
+            <div class="callout info">
+              <p>Las métricas —tiempo de subida 10–90 %, establecimiento ±2 %, sobrepaso, error estacionario y RMSE— las calculan <strong>scripts automatizados</strong> directamente desde los CSV, no a ojo sobre el gráfico.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 5 · §5.1 · Capítulo 6</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>El punto fuerte aquí es la reproducibilidad: datos crudos, scripts de análisis, licencia abierta. Cualquiera puede recalcular tus números.</p>
+        <p>Es también la respuesta a «¿cómo sé que el 3,25 % de sobrepaso es real?». Porque lo calcula un script sobre 173 archivos, no un ojo sobre una pantalla.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Resultados experimentales" data-min="1.25">
+      <div class="body">
+        <h2>Control PID del servo · resultado consolidado</h2>
+        <div class="cols fill" style="gap:1.4em">
+          <figure style="min-height:0">
+            <img src="{{IMG:fig_pid_tuning}}" alt="Progresión de la sintonización PID a lo largo de seis corridas">
+            <figcaption>Evolución del sobrepaso y del tiempo de subida a lo largo de seis corridas de sintonización.</figcaption>
+          </figure>
+          <div class="stack">
+            <div class="tiles" style="grid-auto-flow:row; gap:0.6em">
+              <div class="tile ok"><span class="val">0,67 s</span><span class="lbl">tiempo de establecimiento, criterio ±2 %</span></div>
+              <div class="tile ok"><span class="val">3,25 %</span><span class="lbl">sobrepaso promedio · subamortiguación mínima</span></div>
+              <div class="tile ok"><span class="val">0,2 %</span><span class="lbl">error estacionario</span></div>
+              <div class="tile ok"><span class="val">0,355°</span><span class="lbl">RMSE ante escalón de 45°</span></div>
+            </div>
+            <div class="callout info">
+              <p>Robustamente validado. <strong>Apto para uso docente inmediato.</strong></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 5 · §Métricas del PID optimizado</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Un RMSE de 0,355° con una resolución de encoder de 0,044° significa que el error de seguimiento es unas ocho cuentas. Está bien lejos del piso de cuantización: el límite lo pone la mecánica y la fricción, no la medición. Buen dato para tener a mano.</p>
+        <p>Un sobrepaso de 3,25 % es prácticamente el óptimo docente: suficiente para que el estudiante vea la subamortiguación, insuficiente para que sea un problema.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Resultados experimentales" data-min="1.25">
+      <div class="body">
+        <h2>Estabilización del péndulo · demostrada</h2>
+        <div class="cols wide-left" style="gap:1.4em">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Sesión</th><th>Hardware</th><th class="num">Mejor hold</th><th class="num">Captura</th></tr></thead>
+              <tbody>
+                <tr><td>01-06</td><td>L298N</td><td class="num">—</td><td class="num">~0 %</td></tr>
+                <tr><td>03-06</td><td>L298N</td><td class="num">18 s</td><td class="num">~0 %</td></tr>
+                <tr><td>04-06</td><td>L298N</td><td class="num">55 s</td><td class="num">~0 %</td></tr>
+                <tr class="hl"><td>08-06</td><td>BTS7960</td><td class="num">88 s</td><td class="num">36 %</td></tr>
+              </tbody>
+            </table>
+            <table style="margin-top:1em">
+              <thead><tr><th>Configuración</th><th class="num">Crashes</th><th class="num">Captura</th><th class="num">Hold prom.</th></tr></thead>
+              <tbody>
+                <tr><td><code>k<sub>e</sub></code> = 0,70</td><td class="num">5</td><td class="num">10 %</td><td class="num">76 s</td></tr>
+                <tr class="hl"><td><code>k<sub>e</sub></code> = 0,65</td><td class="num">3</td><td class="num">36 %</td><td class="num">82 s</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="stack">
+            <div class="tiles" style="grid-auto-flow:row; gap:0.6em">
+              <div class="tile warn"><span class="val">88 s</span><span class="lbl">mejor mantenimiento continuo del péndulo invertido</span></div>
+              <div class="tile crit"><span class="val">36 %</span><span class="lbl">tasa de captura: dos de cada tres intentos no transfieren al LQR</span></div>
+            </div>
+            <div class="callout">
+              <p>10 intentos de 90 s por lote, 3 lotes. Los <em class="term">crashes</em> son abortos por brownout, no por fallo del control.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 5 · §Resultados de estabilidad del LQR</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Los 88 s son el mejor resultado <strong>individual</strong>, no la media. Dilo explícitamente: la media con k<sub>e</sub>=0,65 es 82 s. Presentar el máximo como si fuera típico es la clase de imprecisión que un guía detecta.</p>
+        <p>Nota que el hold es bueno una vez capturado. El problema no es <em>sostener</em> el péndulo: es <em>atraparlo</em>. Eso reorienta el trabajo futuro hacia la transición, no hacia el estabilizador.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Resultados experimentales" data-min="1.25">
+      <div class="body">
+        <h2>Barrido de la ganancia de energía</h2>
+        <div class="cols fill" style="gap:1.4em">
+          <figure style="min-height:0">
+            <img src="{{IMG:fig_ke_sweep}}" alt="Altura máxima alcanzada por el péndulo en función de la ganancia de energía">
+            <figcaption>Diez valores de <code>k<sub>e</sub></code>, cinco intentos por valor, 45 s por intento.</figcaption>
+          </figure>
+          <div class="stack">
+            <p>La curva <strong>no es monótona</strong>, y eso es informativo: existe un único entorno de <code>k<sub>e</sub></code> en el que la energía inyectada basta para cruzar el umbral de captura sin provocar sobreelevación.</p>
+            <ul>
+              <li>Bajo <strong>0,50</strong> — no se inyecta energía suficiente; el péndulo nunca llega arriba.</li>
+              <li>En <strong>0,65</strong> — máxima altura promedio y máxima tasa de captura.</li>
+              <li>Sobre <strong>0,70</strong> — sobreelevación: el péndulo pasa de largo con demasiada velocidad y el LQR no lo atrapa.</li>
+            </ul>
+            <div class="callout info">
+              <p>El óptimo no maximiza la energía: maximiza la <strong>probabilidad de llegar arriba con velocidad casi nula</strong>, que es la condición que pide la ley de Åström.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 5 · §5.4 · Figura fig_ke_sweep</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>La no monotonicidad es el hallazgo. Un revisor podría preguntar por qué no subir k<sub>e</sub> indefinidamente; la respuesta física es que la condición de captura no es «llegar arriba» sino «llegar arriba con α̇ ≈ 0».</p>
+        <p>Ojo con la trazabilidad: este barrido es un sub-experimento con pocos intentos por valor, así que sus conteos de captura no coinciden con los de la campaña completa de 173. Está aclarado en el texto. Si lo notan, tienes la respuesta.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Resultados experimentales" data-min="1.25">
+      <div class="body">
+        <h2>Dónde se pierde la captura</h2>
+        <div class="cols fill" style="gap:1.4em">
+          <figure style="min-height:0">
+            <img src="{{IMG:fig_capture_distribution}}" alt="Distribución de los 173 intentos según altura máxima y tasa de captura">
+            <figcaption>Distribución de los 173 intentos por altura máxima (barras) y tasa de captura asociada (línea).</figcaption>
+          </figure>
+          <div class="stack">
+            <p><strong>La captura solo ocurre por encima de los 150°.</strong> Por debajo, la tasa es cero: no es que el LQR falle, es que nunca se le entrega el péndulo en una condición que pueda estabilizar.</p>
+            <div class="tiles" style="grid-auto-flow:row; gap:0.6em">
+              <div class="tile crit"><span class="val">20 %</span><span class="lbl">de los intentos abortan por brownout del bus de 5 V</span></div>
+              <div class="tile"><span class="val">4</span><span class="lbl">disparadores independientes de transición swing-up → LQR</span></div>
+            </div>
+            <div class="callout crit">
+              <p>El brownout no es un fallo de control: es un pico de corriente del motor durante el swing-up que hunde el rail. <strong>La solución es un capacitor de 470–1000 µF. → D2</strong></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 5 · §Distribución angular · Capítulo 7 · §Limitaciones</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Separa nítidamente las dos causas de fallo. Una es <strong>física y resuelta en el papel</strong> (brownout → capacitor). La otra es <strong>de control</strong> (la ventana de captura es estrecha).</p>
+        <p>Si el 20 % de brownout desaparece con el capacitor, la tasa de captura sube mecánicamente. Ese es el argumento de D2: quizá baste con instalar el capacitor y re-medir un lote para reportar una cifra corregida, sin repetir las 173 corridas.</p>
+        <p>Ten claro que <strong>no puedes prometer</strong> cuánto subirá. Dilo como hipótesis a verificar.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Resultados experimentales" data-min="1">
+      <div class="body">
+        <h2>Madurez diferenciada</h2>
+        <p class="lead">No todas las capacidades del sistema tienen el mismo grado de validación. Enunciarlo con precisión es lo que hace defendible el conjunto.</p>
+        <div class="cards" style="margin-top:1.2em">
+          <div class="card" style="border-left:2px solid var(--ok)">
+            <span class="chip ok" style="align-self:center">Validado</span>
+            <div>
+              <p><strong>Control PID de posición del servo y telemetría de potencia.</strong></p>
+              <p>Métricas reproducibles sobre múltiples campañas. Apto para uso docente inmediato, sin reservas.</p>
+            </div>
+          </div>
+          <div class="card" style="border-left:2px solid var(--warn)">
+            <span class="chip warn" style="align-self:center">Demostrado</span>
+            <div>
+              <p><strong>Swing-up energético y estabilización del péndulo invertido.</strong></p>
+              <p>Se alcanzan 88 s de mantenimiento continuo, pero con una tasa de captura del 36 % y un 20 % de abortos por brownout. Es una capacidad funcional en progreso, <strong>no un resultado consolidado</strong>.</p>
+            </div>
+          </div>
+          <div class="card" style="border-left:2px solid var(--accent)">
+            <span class="chip info" style="align-self:center">I+D</span>
+            <div>
+              <p><strong>Política de aprendizaje por refuerzo embebida.</strong></p>
+              <p>Infraestructura completa y modelos entrenados; ajuste fino sobre hardware real pendiente. No se reclama como resultado de la tesis.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 7 · §Alcance real de la validación</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Esta diapositiva es tu escudo y tu credencial a la vez. Un trabajo que declara sus tres niveles de madurez es más creíble que uno que declara éxito uniforme.</p>
+        <p>La frase exacta del capítulo 7 es «capacidad funcional en progreso y no un resultado consolidado». Úsala literalmente: ya está escrita y aprobada en el documento.</p>
+      </aside>
+    </section>
+
+    <!-- ================= BLOQUE 6 · DEEP RL ================= -->
+
+    <section class="slide" data-block="Aprendizaje por refuerzo · I+D" data-min="1">
+      <div class="body">
+        <h2>Una capacidad que el equipo comercial no trae</h2>
+        <div class="callout info" style="margin-bottom:1.2em">
+          <p><strong>Encuadre.</strong> Lo que sigue es investigación exploratoria, no un resultado validado de la tesis. El documento escrito se sostiene sobre PID, LQR y swing-up. Lo presento porque es el aporte más original del trabajo y porque define hacia dónde puede crecer la plataforma.</p>
+        </div>
+        <p>El péndulo invertido es el banco de pruebas canónico del control por refuerzo. Formulado como proceso de decisión de Markov, el objetivo es hallar la política que maximiza el retorno descontado esperado:</p>
+        <div class="eq" style="margin-top:1.1em">{{EQ:mdp}}</div>
+        <p class="eq-note">Estado <code>s</code>: las cuatro variables del sistema más su historia reciente. Acción <code>a</code>: el PWM del motor. Recompensa <code>r</code>: función del ángulo, la velocidad y el esfuerzo de control.</p>
+      </div>
+      <div class="foot"><span class="src">Capítulo 3 · §3.7 · REFERENCE.md</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Empieza por el encuadre, literalmente. Si el profesor cree que estás reclamando el RL como resultado de tesis, la conversación se descarrila y va a preguntar por qué no está en el resumen.</p>
+        <p>La frase que quieres que escuche: <strong>«esto no está en el documento como resultado, y creo que está bien que no lo esté»</strong>.</p>
+        <p><strong>Ritmo:</strong> tres minutos para tres diapositivas. Si vas atrasado, este es el bloque que se recorta.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Aprendizaje por refuerzo · I+D" data-min="1">
+      <div class="body">
+        <h2>SAC: 90 corridas registradas en MLflow</h2>
+        <div class="cols wide-right fill" style="gap:1.3em">
+          <div class="stack">
+            <ul style="font-size:0.9em">
+              <li><strong>Soft Actor-Critic</strong> sobre Stable-Baselines3, en un simulador del modelo dinámico.</li>
+              <li><strong>Domain randomization</strong> sobre masa, longitud, fricción e inercia, para no sobreajustar a un modelo que sabemos inexacto.</li>
+              <li>Red <code>[36 → 64 → 64 → 1]</code> exportada a <code>policy_weights.h</code>: la política corre <strong>dentro del ESP32</strong>.</li>
+            </ul>
+            <div class="callout info">
+              <p>La recompensa converge en las trece corridas. <strong>Todas aprenden a levantar el péndulo</strong> —<code>reach_rate = 1,0</code>— y ninguna curva delata cuáles fracasan.</p>
+            </div>
+          </div>
+          <div class="chart">{{CHART:rl_curvas}}</div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">mlflow.db · rollout/ep_rew_mean · solo reward = linear_alpha</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Advertencia metodológica que conviene decir en voz alta: <strong>solo se grafican corridas con la misma función de recompensa</strong>. Comparar <code>ep_rew_mean</code> entre recompensas distintas no significa nada, y en la base hay ocho recompensas diferentes.</p>
+        <p>El mensaje del gráfico es incómodo a propósito: mirando solo las curvas de entrenamiento, las trece corridas parecen exitosas. Las dos que de verdad equilibran no se distinguen. Eso es exactamente lo que hace peligroso al RL como método de control.</p>
+        <p>La conexión con D1: el domain randomization existe porque no se identificaron los parámetros del hardware. Realimentación sintonizada a mano y política robusta a parámetros inciertos <strong>eluden</strong> el mismo problema, una por pragmatismo y otra por diseño.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Aprendizaje por refuerzo · I+D" data-min="1">
+      <div class="body">
+        <h2>Dos de trece corridas equilibran</h2>
+        <div class="cols wide-left fill" style="gap:1.3em">
+          <div class="chart">{{CHART:rl_hold}}</div>
+          <div class="stack">
+            <div class="tiles" style="grid-auto-flow:row; gap:0.55em">
+              <div class="tile ok"><span class="val">1,00</span><span class="lbl">reach rate: la política siempre levanta el péndulo sobre 150°</span></div>
+              <div class="tile crit"><span class="val">4,43 s</span><span class="lbl">mejor hold continuo, de los 10 s que dura el episodio</span></div>
+            </div>
+            <div class="callout crit">
+              <p><strong>Sesgo conocido:</strong> las corridas con curriculum también entrenaron más pasos (500k contra 150–200k). El experimento no aísla curriculum de presupuesto de entrenamiento.</p>
+              <p>Pero la corrida con curriculum a 300k tampoco equilibra: <strong>el curriculum solo no basta</strong>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">mlflow.db · final/max_hold_s · 13 corridas comparables</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Los números en simulación no son comparables con los del hardware. <strong>No digas «4,43 s contra los 88 s del LQR»</strong> como si fuera la misma medida: una es un episodio simulado de 10 s, la otra es hardware real sin límite de tiempo.</p>
+        <p>Lo que sí es comparable en espíritu, y vale la pena señalar: el RL <em>captura</em> el péndulo el 100 % de las veces y lo sostiene poco; el clásico lo captura el 36 % y lo sostiene mucho. Son fallas complementarias.</p>
+        <p>Declara el sesgo del presupuesto de entrenamiento tú mismo. Si el profesor lo detecta primero, el gráfico pierde toda su autoridad.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Aprendizaje por refuerzo · I+D" data-min="1">
+      <div class="body">
+        <h2>Estado real de este track</h2>
+        <div class="cols wide-left" style="gap:1.4em">
+          <div class="stack">
+            <div class="tiles" style="grid-auto-flow:row; gap:0.6em">
+              <div class="tile ok"><span class="val">90</span><span class="lbl">corridas registradas · 11 experimentos · inferencia on-device verificada</span></div>
+              <div class="tile warn"><span class="val">45</span><span class="lbl">corridas con evaluación de equilibrio; las 30 más recientes (r6, r7) no la tienen</span></div>
+              <div class="tile crit"><span class="val">Pendiente</span><span class="lbl">ajuste fino sobre el hardware real</span></div>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="callout crit">
+              <p><strong>Lo que no se puede afirmar:</strong> que una política aprendida estabilice el péndulo físico mejor que el controlador clásico. Ni siquiera en simulación se sostiene el episodio completo, y el ciclo de ajuste fino sobre hardware no se cerró.</p>
+            </div>
+            <div class="callout info">
+              <p><strong>Lo que sí aporta al documento:</strong> el capítulo 3 descarta el RL por falta de garantías de estabilidad y por la fragilidad de la transferencia sim-to-real. Esa evaluación deja de ser una cita bibliográfica y pasa a estar respaldada por 90 corridas propias.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">mlflow.db · README · roadmap · Capítulo 3 · §Comparativa</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Cierra el bloque devolviéndolo a la tesis. La crítica que el capítulo 3 hace del RL tiene más peso porque tú lo implementaste y te topaste con esos problemas de primera mano.</p>
+        <p>Eso convierte 90 corridas de «distracción» en «evidencia», y es el mejor uso posible de este trabajo dentro del documento.</p>
+        <p>El dato de las 30 corridas sin evaluar (r6 y r7, las más recientes) es una deuda técnica real. Menciónalo: son las campañas de junio y solo registraron métricas de entrenamiento, nunca el protocolo de equilibrio.</p>
+      </aside>
+    </section>
+
+    <!-- ================= BLOQUE 7 · CIERRE ================= -->
+
+    <section class="slide" data-block="Cierre" data-min="1">
+      <div class="body">
+        <h2>Limitaciones</h2>
+        <div class="table-wrap" style="margin-top:0.5em">
+          <table>
+            <thead><tr><th style="width:14em">Limitación</th><th>Causa raíz</th><th style="width:9em">Severidad</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>Brownout</strong></td>
+                <td>El pico de corriente del motor durante el swing-up hunde el rail de 5 V. Aborta el 20 % de los intentos.</td>
+                <td><span class="chip crit">Bloqueante</span></td>
+              </tr>
+              <tr>
+                <td><strong>Medición del péndulo</strong></td>
+                <td>El modo 4 depende de un segundo encoder integrado durante la fase experimental; su calidad condiciona el rendimiento.</td>
+                <td><span class="chip warn">Alta</span></td>
+              </tr>
+              <tr>
+                <td><strong>Frecuencia de control</strong></td>
+                <td>500 Hz frente a 1 kHz del Quanser. Limita aplicaciones de alta dinámica.</td>
+                <td><span class="chip warn">Media</span></td>
+              </tr>
+              <tr>
+                <td><strong>Latencia WiFi</strong></td>
+                <td>10–100 ms. No afecta el lazo interno, sí la supervisión en tiempo real estricto.</td>
+                <td><span class="chip ok">Baja</span></td>
+              </tr>
+              <tr>
+                <td><strong>Certificación</strong></td>
+                <td>Sin certificación industrial formal; se aplican buenas prácticas de seguridad eléctrica para uso académico.</td>
+                <td><span class="chip ok">Baja</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 7 · §Limitaciones</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Ordenadas por severidad, no por orden de aparición en el texto. Solo la primera es bloqueante, y tiene solución conocida y barata.</p>
+        <p>Si el profesor pregunta cuál te preocupa de verdad: la <strong>segunda</strong>. El encoder del péndulo se integró durante la fase experimental y no recibió el mismo tratamiento de acondicionamiento que el del servo. Es una hipótesis razonable sobre por qué la ventana de captura es tan estrecha.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Cierre" data-min="1">
+      <div class="body">
+        <h2>Trabajos futuros, por relación impacto–esfuerzo</h2>
+        <div class="table-wrap" style="margin-top:0.5em">
+          <table>
+            <thead><tr><th style="width:2.6em"></th><th>Acción</th><th style="width:7em">Esfuerzo</th><th style="width:8em">Impacto</th></tr></thead>
+            <tbody>
+              <tr class="hl"><td>1</td><td>Capacitor de 470–1000 µF en el rail de 5 V</td><td>Horas</td><td><span class="chip crit">Alto</span></td></tr>
+              <tr><td>2</td><td>Observador de estados (Kalman o Luenberger) para estimar velocidades sin derivar posición → LQG</td><td>Semanas</td><td><span class="chip warn">Alto</span></td></tr>
+              <tr><td>3</td><td>Identificación de parámetros y recálculo de <strong>K</strong> por Riccati</td><td>Semanas</td><td><span class="chip warn">Alto</span></td></tr>
+              <tr><td>4</td><td>Integración con MATLAB/Simulink mediante bloque S-Function</td><td>Semanas</td><td><span class="chip info">Medio</span></td></tr>
+              <tr><td>5</td><td>PCB integrada Rev 2.0</td><td>Meses</td><td><span class="chip info">Medio</span></td></tr>
+              <tr><td>6</td><td>Control predictivo (MPC) aprovechando el margen de cómputo del ESP32</td><td>Meses</td><td><span class="chip info">Medio</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout info" style="margin-top:1.2em">
+          <p>Las tres primeras corresponden exactamente a las decisiones <strong>D2</strong>, <strong>D1</strong> y <strong>D3</strong>. La pregunta no es si vale la pena hacerlas, sino <strong>cuáles caben antes de la defensa</strong>.</p>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Capítulo 7 · §Trabajos futuros · Capítulo 3 · §Mejoras prioritarias</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>El orden por esfuerzo es deliberado. El capacitor son horas de trabajo y resuelve la limitación bloqueante: es la única que claramente debería hacerse antes de la defensa.</p>
+        <p>Las acciones 2 y 3 están acopladas: si identificas el modelo puedes recalcular K, y si tienes observador puedes alimentar el LQR con estimaciones limpias. Juntas convierten el modo 4 en un LQG legítimo. Es un trabajo de semanas, y ahí está la pregunta de calendario.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Cierre" data-min="1.5">
+      <div class="body">
+        <h2>Las tres decisiones</h2>
+        <div class="cards" style="margin-top:0.9em">
+          <div class="card">
+            <span class="key">D1</span>
+            <div>
+              <p><strong>¿Qué hacemos con el modo 4?</strong></p>
+              <p><strong>Opción A —</strong> renombrarlo «realimentación de estado con gain scheduling», ajustar el capítulo 3 para que la teoría del LQR se presente como marco de referencia y no como método aplicado, y dejar Riccati en trabajos futuros. Honesto, sin riesgo, cuesta días de reescritura.</p>
+              <p><strong>Opción B —</strong> identificar los parámetros del modelo, resolver la ARE offline, y validar experimentalmente el K resultante. Cuesta semanas y puede rendir peor que las ganancias sintonizadas a mano. <em>Mi inclinación es A.</em></p>
+            </div>
+          </div>
+          <div class="card">
+            <span class="key">D2</span>
+            <div>
+              <p><strong>¿Cuánto hay que revalidar tras instalar el capacitor?</strong></p>
+              <p>Instalarlo son horas. La pregunta es si basta con re-medir un lote de 30 intentos y reportar la tasa de captura corregida, o si la comisión va a exigir repetir las 173 corridas para que la comparación L298N vs BTS7960 siga siendo válida.</p>
+            </div>
+          </div>
+          <div class="card">
+            <span class="key">D3</span>
+            <div>
+              <p><strong>¿MATLAB/Simulink entra o sale del alcance?</strong></p>
+              <p>El objetivo específico 3 dice «herramientas de programación actuales». Python está cubierto. Se puede argumentar que el objetivo se cumple, o implementar la S-Function. Depende de cómo se lea el temario aprobado.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">Decisiones para el profesor guía</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p><strong>Guarda tiempo para esta diapositiva.</strong> Es el motivo de la reunión. Si vas atrasado, salta el bloque de RL, no este.</p>
+        <p>Trae una recomendación para cada una; un profesor guía prefiere corregir una propuesta que generar una desde cero. Ya la tienes para D1 (opción A). Para D2 propón el lote de 30. Para D3 propón declararlo fuera de alcance con justificación escrita.</p>
+        <p>Cierra pidiendo un compromiso concreto: <strong>qué se hace, quién lo revisa, y para cuándo</strong>. Anótalo delante de él.</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-block="Cierre" data-min="0.5">
+      <div class="body">
+        <h2>Calendario y próximos hitos</h2>
+        <div class="cols wide-left fill" style="gap:1.4em">
+          <figure style="min-height:0">
+            <img src="{{IMG:fig_gantt}}" alt="Carta Gantt del desarrollo del proyecto">
+            <figcaption>Carta Gantt del trabajo realizado.</figcaption>
+          </figure>
+          <div class="stack">
+            <div>
+              <h3>Estado del entregable</h3>
+              <ul style="font-size:0.92em">
+                <li>Documento de <strong>95 páginas</strong>, 7 capítulos y Anexo A, compilando.</li>
+                <li><strong>173+</strong> ensayos y scripts de análisis publicados bajo CC BY 4.0.</li>
+                <li>Firmware con <strong>63 versiones</strong> documentadas en el CHANGELOG.</li>
+              </ul>
+            </div>
+            <div class="callout info">
+              <p><strong>Lo que falta no es redacción, son definiciones.</strong> Con D1, D2 y D3 resueltas hoy, el cronograma hasta la defensa queda cerrado.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="src">tesis_usach/main.pdf · CHANGELOG.md</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Termina donde empezaste: no viniste a mostrar lo hecho, viniste a desatascar tres decisiones. Repite la frase «lo que falta no es redacción, son definiciones».</p>
+        <p>Si sobran minutos, ofrece las diapositivas de respaldo: la convención angular, las discrepancias de ganancias, el costo computacional por método, el presupuesto de ruido. Están listas.</p>
+      </aside>
+    </section>
+
+    <!-- ================= RESPALDO ================= -->
+
+    <section class="slide backup" data-block="Respaldo" data-min="0">
+      <div class="body">
+        <h2>Respaldo · la recompensa no predice el éxito</h2>
+        <div class="cols wide-left fill" style="gap:1.3em">
+          <div class="chart">{{CHART:rl_scatter}}</div>
+          <div class="stack">
+            <div class="callout crit">
+              <p>Las tres semillas de <code>curriculum04</code> comparten hiperparámetros, recompensa y presupuesto de entrenamiento. Convergen a recompensas de <strong>471, 474 y 480</strong>.</p>
+              <p>Sostienen el péndulo <strong>0,33 s, 3,44 s y 4,43 s</strong>. La semilla decide el resultado.</p>
+            </div>
+            <div>
+              <h3>Protocolo de evaluación</h3>
+              <p style="font-size:0.86em"><code>evaluate_balance()</code>, 10 episodios deterministas de 500 pasos a 50 Hz. <em class="term">Upright</em> si <code>|α| &lt; 12°</code>; <em class="term">reach</em> si supera 150°; <code>balance_rate</code> es la fracción de episodios que sostienen ≥ 1 s.</p>
+            </div>
+            <div class="callout info">
+              <p>Este gráfico es el argumento más fuerte del capítulo 3 contra el RL en control: <strong>sin garantías formales, la métrica que optimizas no te dice si funciona</strong>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="backup-marker">Respaldo</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Sácalo si preguntan «¿y no podrían simplemente entrenar más?». La respuesta es que la semilla 0 entrenó exactamente lo mismo que la 1 y llegó a la misma recompensa, con un resultado diez veces peor.</p>
+        <p>Es también la refutación empírica de usar <code>ep_rew_mean</code> como criterio de selección de modelos, que es lo que hacen los tutoriales de RL.</p>
+      </aside>
+    </section>
+
+    <section class="slide backup" data-block="Respaldo" data-min="0">
+      <div class="body">
+        <h2>Respaldo · la convención angular de α es ambigua</h2>
+        <div class="cols" style="gap:1.4em">
+          <div class="stack">
+            <div class="eq tight">{{EQ:energia}}</div>
+            <div class="eq tight">{{EQ:energia_target}}</div>
+          </div>
+          <div class="stack">
+            <div class="callout crit">
+              <p>La fórmula de la energía da <code>E = 0</code> en <code>α = 0</code> y <code>E = 2mgl = E_target</code> en <code>α = π</code>. Es decir, aquí <strong>α se mide desde la posición colgante</strong>.</p>
+              <p>Pero el capítulo 2 define α «medido desde la vertical superior» y lineariza en «α = 0, péndulo vertical superior».</p>
+              <p>Y el capítulo 3 afirma en el texto que <code>E = 0</code> en <code>α = π</code>, lo que <strong>su propia fórmula contradice</strong>.</p>
+            </div>
+            <div class="callout info">
+              <p>Los disparadores de transición (<code>|α| &gt; 150°</code>) y la distribución de capturas confirman que la implementación usa <strong>colgante = 0</strong>.</p>
+              <p><strong>Acción:</strong> fijar una única convención explícita en el capítulo 2 y propagarla. No cambia ningún resultado; corrige la exposición.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="backup-marker">Respaldo</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Si el profesor detecta esto, no lo defiendas: reconócelo y muestra que ya lo tenías identificado y acotado. No afecta ningún número experimental, solo la coherencia de la exposición teórica.</p>
+      </aside>
+    </section>
+
+    <section class="slide backup" data-block="Respaldo" data-min="0">
+      <div class="body">
+        <h2>Respaldo · discrepancias de ganancias entre capítulos</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Parámetro</th><th>Capítulo 4 (implementación)</th><th>Capítulo 5 (resultados)</th><th>Estado</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>PID por defecto</td>
+                <td><code>K<sub>p</sub>=3,0 · K<sub>i</sub>=0,5 · K<sub>d</sub>=0,15</code></td>
+                <td rowspan="3" style="vertical-align:middle">Configuración final declarada:<br><code>K<sub>p</sub>=4,0 · K<sub>i</sub>=0,8 · K<sub>d</sub>=0,6</code></td>
+                <td rowspan="3" style="vertical-align:middle"><span class="chip crit">No coincide con ningún conjunto del capítulo 4</span></td>
+              </tr>
+              <tr><td>PID zona fina</td><td><code>K<sub>p</sub>=2,0 · K<sub>i</sub>=0,8 · K<sub>d</sub>=0,2</code></td></tr>
+              <tr><td>PID zona gruesa</td><td><code>K<sub>p</sub>=4,0 · K<sub>i</sub>=0,2 · K<sub>d</sub>=0,1</code></td></tr>
+              <tr>
+                <td>Ganancia de energía <code>k<sub>e</sub></code></td>
+                <td>Base 0,75, con <em class="term">boost</em> a 1,5 por estancamiento</td>
+                <td>Óptimo experimental 0,65</td>
+                <td><span class="chip warn">Firmware y experimento sin reconciliar</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout" style="margin-top:1.2em">
+          <p><strong>Hipótesis:</strong> el capítulo 5 reporta las ganancias de la última corrida de sintonización sobre BTS7960, mientras que el capítulo 4 documenta los valores compilados por defecto en el firmware. Hay que verificarlo contra el CSV de la sesión y unificar la nomenclatura.</p>
+        </div>
+      </div>
+      <div class="foot"><span class="backup-marker">Respaldo</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Es una inconsistencia de documentación, no necesariamente de ingeniería. Pero un examinador que compare capítulos la va a encontrar, y no tener respuesta sería peor que la inconsistencia misma.</p>
+        <p>Acción concreta: abrir el CSV de la sesión del 04-06 con BTS7960 y confirmar qué ganancias estaban activas.</p>
+      </aside>
+    </section>
+
+    <section class="slide backup" data-block="Respaldo" data-min="0">
+      <div class="body">
+        <h2>Respaldo · costo computacional en el ESP32</h2>
+        <div class="cols wide-left" style="gap:1.4em">
+          <div class="table-wrap">
+            <table>
+              <caption>Estimación a 240 MHz con lazo a 200 Hz (período de 5000 µs).</caption>
+              <thead><tr><th>Método</th><th>Operaciones/ciclo</th><th class="num">Tiempo</th><th>Factible</th></tr></thead>
+              <tbody>
+                <tr><td>PID</td><td>~15 mul + 5 add</td><td class="num">&lt;10 µs</td><td><span class="chip ok">Sí</span></td></tr>
+                <tr class="hl"><td>LQR (4 estados)</td><td>~16 mul + 12 add</td><td class="num">&lt;20 µs</td><td><span class="chip ok">Sí</span></td></tr>
+                <tr><td>LQG (+ Kalman)</td><td>~60 mul + 40 add</td><td class="num">&lt;50 µs</td><td><span class="chip ok">Sí</span></td></tr>
+                <tr><td>SMC</td><td>~20 mul + 10 add</td><td class="num">&lt;30 µs</td><td><span class="chip ok">Sí</span></td></tr>
+                <tr><td>ANN (4-8-4)</td><td>~48 mul + 40 add</td><td class="num">&lt;50 µs</td><td><span class="chip ok">Sí</span></td></tr>
+                <tr><td>MPC (N=5, lineal)</td><td>~200 mul + 100 add</td><td class="num">&lt;500 µs</td><td><span class="chip warn">Límite</span></td></tr>
+                <tr><td>NMPC (N=5)</td><td>&gt;1000 mul</td><td class="num">&gt;2 ms</td><td><span class="chip crit">No</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="stack">
+            <h3>Restricciones del ESP32</h3>
+            <ul style="font-size:0.9em">
+              <li><strong>FPU de precisión simple.</strong> El <code>double</code> se emula por software: usar <code>float</code> en el lazo.</li>
+              <li><strong>WiFi en el núcleo 0.</strong> El lazo debe correr en el núcleo 1 para tener determinismo.</li>
+              <li><strong>PWM de 8 bits</strong> (LEDC). Afecta más a controladores de alta ganancia como el SMC que a los suaves.</li>
+              <li><strong>Ruido de conmutación</strong> del BTS7960 sobre el bus I²C.</li>
+            </ul>
+            <div class="callout info">
+              <p>El LQR consume menos del <strong>1 %</strong> del presupuesto de cómputo. El margen sobra; la limitación nunca fue computacional.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="backup-marker">Respaldo</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Útil si preguntan «¿por qué no MPC?». La respuesta es que a 500 Hz el período es de 2 ms y un MPC lineal de horizonte 5 consume hasta 500 µs — un cuarto del presupuesto, dejando poco margen para el resto. Y el NMPC directamente no cabe.</p>
+      </aside>
+    </section>
+
+    <section class="slide backup" data-block="Respaldo" data-min="0">
+      <div class="body">
+        <h2>Respaldo · presupuesto de ruido</h2>
+        <div class="cols wide-left" style="gap:1.4em">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Señal</th><th>Ruido estimado</th><th>Señal útil</th><th class="num">SNR</th></tr></thead>
+              <tbody>
+                <tr class="hl"><td>Encoder (post-Schmitt)</td><td>&lt;100 ns jitter</td><td>18 µs (mín)</td><td class="num">~45 dB</td></tr>
+                <tr><td>Corriente INA219</td><td>±1 mA (LSB)</td><td>0–500 mA</td><td class="num">~54 dB</td></tr>
+                <tr><td>Voltaje de bus (INA219)</td><td>±4 mV (LSB)</td><td>12–24 V</td><td class="num">~70 dB</td></tr>
+                <tr><td>ADC del ESP32 (futuro)</td><td>±5 mV</td><td>0–3,3 V</td><td class="num">~56 dB</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="stack">
+            <div class="eq tight">{{EQ:snr}}</div>
+            <div class="callout info">
+              <p>Sobre 40 dB se considera aceptable para aplicaciones de control. Todas las señales del sistema superan el umbral.</p>
+            </div>
+            <div>
+              <h3>Topología de tierra en estrella</h3>
+              <p style="font-size:0.88em">Retornos de potencia (motor, BTS7960) y de señal (encoder, INA219, ESP32) convergen en un único punto cerca del conector de alimentación, para que los amperios de conmutación del motor no circulen por las trazas de medición.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="backup-marker">Respaldo</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>La tierra en estrella y el presupuesto de ruido son el tipo de detalle que separa un proyecto de electrónica de un proyecto de ingeniería. Sácalos si la conversación deriva hacia la calidad de la implementación física.</p>
+      </aside>
+    </section>
+
+    <section class="slide backup" data-block="Respaldo" data-min="0">
+      <div class="body">
+        <h2>Respaldo · estimación de la velocidad del péndulo</h2>
+        <p class="lead">El encoder da posición. La velocidad hay que estimarla, y derivar numéricamente amplifica el ruido.</p>
+        <div class="eq" style="margin:1.2em 0">{{EQ:filtro_complementario}}</div>
+        <p>Filtro complementario: 70 % de la medición derivada, 30 % de una predicción física obtenida integrando el modelo de Newton-Euler del péndulo libre.</p>
+        <div class="eq" style="margin-top:1.1em">{{EQ:newton_euler}}</div>
+        <div class="callout info" style="margin-top:1.2em">
+          <p>Es un observador rudimentario. Sustituirlo por un <strong>filtro de Kalman</strong> convertiría el modo 4 en un LQG propiamente dicho, y es la mejora de mayor relación impacto–esfuerzo identificada en el capítulo 3.</p>
+        </div>
+      </div>
+      <div class="foot"><span class="backup-marker">Respaldo</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Si preguntan por qué no hay filtro de Kalman: hay un filtro complementario que cumple una función análoga con una fracción del costo. La diferencia es que el Kalman pondera de forma óptima según las covarianzas, mientras que el 0,7/0,3 es empírico.</p>
+      </aside>
+    </section>
+
+    <section class="slide backup" data-block="Respaldo" data-min="0">
+      <div class="body">
+        <h2>Respaldo · parámetros del motor y del péndulo</h2>
+        <div class="cols" style="gap:1.4em">
+          <div class="stack">
+            <h3>Ganancia y constante de tiempo del motor</h3>
+            <div class="eq tight">{{EQ:motor_km_taum}}</div>
+            <div class="eq tight">{{EQ:motor_gw}}</div>
+          </div>
+          <div class="stack">
+            <h3>Parámetros nominales del péndulo</h3>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Parámetro</th><th>Símbolo</th><th class="num">Valor</th><th>Unidad</th></tr></thead>
+                <tbody>
+                  <tr><td>Masa</td><td><code>m</code></td><td class="num">0,025</td><td>kg</td></tr>
+                  <tr><td>Longitud al CM</td><td><code>l</code></td><td class="num">0,065</td><td>m</td></tr>
+                  <tr><td>Inercia</td><td><code>J<sub>p</sub></code></td><td class="num">2×10⁻⁵</td><td>kg·m²</td></tr>
+                  <tr><td>Amortiguamiento</td><td><code>b<sub>p</sub></code></td><td class="num">0,02</td><td>N·m·s/rad</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="callout">
+              <p>Valores <strong>nominales</strong>: catálogo y medición directa de masa y longitud. No provienen de una identificación experimental del hardware. <strong>→ D1</strong></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="backup-marker">Respaldo</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Aquí está la raíz de D1 en una sola frase: los parámetros del modelo son nominales, no identificados. Sin parámetros confiables, resolver Riccati produce un K confiable solo en apariencia.</p>
+        <p>Ese es, en el fondo, el mejor argumento a favor de la opción A: sintonizar a mano sobre el hardware real es <em>más</em> defendible que calcular un óptimo sobre un modelo que no se validó.</p>
+      </aside>
+    </section>
+
+    <section class="slide backup" data-block="Respaldo" data-min="0">
+      <div class="body">
+        <h2>Respaldo · flujo de datos y supervisión</h2>
+        <div class="cols fill" style="gap:1.4em">
+          <figure style="min-height:0">
+            <img src="{{IMG:flujo_datos}}" alt="Flujo de datos del sistema">
+            <figcaption>Del encoder al navegador: adquisición, control, telemetría y supervisión.</figcaption>
+          </figure>
+          <div class="stack">
+            <ul>
+              <li><strong>API HTTP/REST</strong> — control de modos, ajuste de ganancias, lanzamiento de ensayos desde scripts de Python.</li>
+              <li><strong>WebSocket</strong> — telemetría a 10 Hz hacia la interfaz web embebida en el ESP32.</li>
+              <li><strong>Interfaz web</strong> — servida desde SPIFFS: cuatro gráficas en tiempo real, exportación a CSV, actualización de firmware por OTA.</li>
+            </ul>
+            <div class="callout info">
+              <p>Esta capa es la que satisface el objetivo específico 3 para el ecosistema Python. El bloque S-Function que faltaría para MATLAB/Simulink se conectaría en el mismo punto. <strong>→ D3</strong></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="backup-marker">Respaldo</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Argumento para D3: la S-Function no requiere rediseñar nada, solo un adaptador sobre la API HTTP que ya existe. El esfuerzo es de semanas y el riesgo es bajo. Eso hace que «declararlo fuera de alcance» sea una decisión de calendario, no técnica.</p>
+      </aside>
+    </section>
+
+    <section class="slide backup" data-block="Respaldo" data-min="0">
+      <div class="body">
+        <h2>Respaldo · cableado del sistema</h2>
+        <div class="cols wide-left fill" style="gap:1.4em">
+          <figure style="min-height:0">
+            <img src="{{IMG:system_wiring}}" alt="Diagrama de cableado del sistema completo">
+            <figcaption>Cableado completo: ESP32, BTS7960, INA219, LM2596, encoders y acondicionamiento.</figcaption>
+          </figure>
+          <div class="stack">
+            <figure style="min-height:0">
+              <img src="{{IMG:topologia_potencia}}" alt="Topología de la etapa de potencia">
+              <figcaption>Topología de la etapa de potencia y separación de tierras.</figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="backup-marker">Respaldo</span><span class="spacer"></span><span class="pg"></span></div>
+      <aside class="notes">
+        <p>Para preguntas de implementación física. El punto estrella de tierra está junto al conector de alimentación principal; es donde iría el capacitor de la decisión D2.</p>
+      </aside>
+    </section>
+
+  </main>
+</div>
+
+<aside id="notes-panel" aria-label="Notas del presentador">
+  <div class="clock-row">
+    <span class="clock" id="clock">00:00</span>
+    <span class="target" id="target"></span>
+  </div>
+  <h3 id="notes-title">Notas</h3>
+  <div class="notes-body" id="notes-body"></div>
+</aside>
+
+<div id="index" aria-label="Índice de diapositivas">
+  <h2>Índice · 39 diapositivas · 43 min + respaldo</h2>
+  <div id="index-body"></div>
+</div>
+
+<div id="help" role="dialog" aria-label="Atajos de teclado">
+  <div class="panel">
+    <h3>Atajos</h3>
+    <dl>
+      <dt><kbd>→</kbd> <kbd>espacio</kbd></dt><dd>Siguiente diapositiva</dd>
+      <dt><kbd>←</kbd></dt><dd>Diapositiva anterior</dd>
+      <dt><kbd>N</kbd></dt><dd>Notas del presentador y cronómetro</dd>
+      <dt><kbd>O</kbd></dt><dd>Índice · saltar a una diapositiva</dd>
+      <dt><kbd>T</kbd></dt><dd>Iniciar, pausar o reiniciar el cronómetro</dd>
+      <dt><kbd>F</kbd></dt><dd>Pantalla completa</dd>
+      <dt><kbd>Ctrl</kbd> + <kbd>P</kbd></dt><dd>Exportar a PDF, una diapositiva por página</dd>
+      <dt><kbd>?</kbd></dt><dd>Esta ayuda</dd>
+    </dl>
+  </div>
+</div>
+
+<div id="hint">Pulsa <kbd>?</kbd> para los atajos</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var deck = document.getElementById("deck");
+  var slides = Array.prototype.slice.call(deck.querySelectorAll(".slide"));
+  var rail = document.getElementById("rail");
+  var hint = document.getElementById("hint");
+  var body = document.body;
+
+  var mains = slides.filter(function (s) { return !s.classList.contains("backup"); });
+
+  // Tiempo objetivo acumulado al TERMINAR cada diapositiva principal, en segundos.
+  var cumSec = [];
+  (function () {
+    var acc = 0;
+    mains.forEach(function (s) {
+      acc += parseFloat(s.dataset.min) * 60;
+      cumSec.push(acc);
+    });
+  })();
+  var totalSec = cumSec.length ? cumSec[cumSec.length - 1] : 0;
+
+  var current = 0;
+
+  // ---- numeracion y pies ----
+  slides.forEach(function (slide, i) {
+    var isBackup = slide.classList.contains("backup");
+    var mainIdx = isBackup ? -1 : mains.indexOf(slide);
+
+    var eyebrow = document.createElement("div");
+    eyebrow.className = "eyebrow";
+    var label = isBackup
+      ? "<span class='block backup-marker'>Respaldo</span>"
+      : "<span class='block'>" + slide.dataset.block + "</span>";
+    eyebrow.innerHTML =
+      label +
+      "<span class='spacer'></span>" +
+      "<span>" + (isBackup ? "fuera de tiempo" : fmtMin(cumSec[mainIdx])) + "</span>";
+    slide.insertBefore(eyebrow, slide.firstElementChild);
+
+    var pg = slide.querySelector(".pg");
+    if (pg) pg.textContent = isBackup ? "R" + (i - mains.length + 1) : (mainIdx + 1) + " / " + mains.length;
+  });
+
+  function fmtMin(sec) {
+    var m = Math.floor(sec / 60), s = Math.round(sec % 60);
+    return s === 0 ? m + " min" : m + ":" + String(s).padStart(2, "0") + " min";
+  }
+
+  function fmtClock(sec) {
+    var sign = sec < 0 ? "-" : "";
+    sec = Math.abs(Math.round(sec));
+    return sign + String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
+  }
+
+  // ---- navegacion ----
+  function show(i) {
+    if (i < 0 || i >= slides.length) return;
+    slides[current].classList.remove("active");
+    current = i;
+    slides[current].classList.add("active");
+
+    var isBackup = slides[current].classList.contains("backup");
+    var frac = isBackup ? 1 : (mains.indexOf(slides[current]) + 1) / mains.length;
+    rail.style.width = (frac * 100) + "%";
+
+    syncNotes();
+    syncIndex();
+  }
+
+  function syncNotes() {
+    var note = slides[current].querySelector(".notes");
+    document.getElementById("notes-body").innerHTML = note ? note.innerHTML : "<p>Sin notas.</p>";
+    var isBackup = slides[current].classList.contains("backup");
+    var mainIdx = mains.indexOf(slides[current]);
+    document.getElementById("notes-title").textContent =
+      isBackup ? "Respaldo" : "Diapositiva " + (mainIdx + 1) + " · " + slides[current].dataset.block;
+    document.getElementById("target").textContent =
+      isBackup ? "fuera del presupuesto de tiempo" : "objetivo al terminar: " + fmtMin(cumSec[mainIdx]) + " de " + fmtMin(totalSec);
+    tickClock();
+  }
+
+  // ---- cronometro ----
+  var startedAt = null, pausedAt = null, elapsed = 0;
+
+  function tickClock() {
+    var clock = document.getElementById("clock");
+    if (startedAt !== null) elapsed = (Date.now() - startedAt) / 1000;
+    clock.textContent = fmtClock(elapsed);
+
+    clock.classList.remove("near", "over");
+    var isBackup = slides[current].classList.contains("backup");
+    if (!isBackup && startedAt !== null) {
+      // Se compara contra el objetivo de la diapositiva actual, no contra el total:
+      // asi el color avisa de un atraso mientras todavia se puede corregir.
+      var target = cumSec[mains.indexOf(slides[current])];
+      if (elapsed > target) clock.classList.add("over");
+      else if (elapsed > target * 0.9) clock.classList.add("near");
+    }
+  }
+  setInterval(tickClock, 1000);
+
+  function toggleTimer() {
+    if (startedAt === null) startedAt = Date.now() - elapsed * 1000;
+    else { elapsed = (Date.now() - startedAt) / 1000; startedAt = null; }
+    tickClock();
+  }
+
+  // ---- indice ----
+  (function buildIndex() {
+    var host = document.getElementById("index-body");
+    var groups = [];
+    slides.forEach(function (s, i) {
+      var name = s.classList.contains("backup") ? "Respaldo" : s.dataset.block;
+      if (!groups.length || groups[groups.length - 1].name !== name) groups.push({ name: name, items: [] });
+      groups[groups.length - 1].items.push({ slide: s, i: i });
+    });
+
+    groups.forEach(function (g) {
+      var mins = g.items.reduce(function (a, it) { return a + parseFloat(it.slide.dataset.min); }, 0);
+      var wrap = document.createElement("section");
+      wrap.className = "idx-block";
+      var h = document.createElement("h3");
+      h.innerHTML = g.name + (mins > 0 ? " <span class='mins'>" + mins + " min</span>" : "");
+      wrap.appendChild(h);
+
+      var list = document.createElement("div");
+      list.className = "idx-list";
+      g.items.forEach(function (it) {
+        var btn = document.createElement("button");
+        btn.className = "idx-item";
+        btn.dataset.target = it.i;
+        var isBackup = it.slide.classList.contains("backup");
+        var n = isBackup ? "R" + (it.i - mains.length + 1) : (mains.indexOf(it.slide) + 1);
+        var title = it.slide.querySelector("h1, h2");
+        btn.innerHTML =
+          "<span class='n'>" + n + "</span>" +
+          "<span>" + (title ? title.textContent : "—") + "</span>" +
+          "<span class='t'>" + (isBackup ? "—" : fmtMin(cumSec[mains.indexOf(it.slide)])) + "</span>";
+        btn.addEventListener("click", function () {
+          show(parseInt(btn.dataset.target, 10));
+          body.classList.remove("index-open");
+        });
+        list.appendChild(btn);
+      });
+      wrap.appendChild(list);
+      host.appendChild(wrap);
+    });
+  })();
+
+  function syncIndex() {
+    document.querySelectorAll(".idx-item").forEach(function (b) {
+      b.classList.toggle("current", parseInt(b.dataset.target, 10) === current);
+    });
+  }
+
+  // ---- teclado ----
+  document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var k = e.key;
+
+    if (k === "Escape") {
+      body.classList.remove("index-open", "help-open");
+      return;
+    }
+    if (k === "ArrowRight" || k === " " || k === "PageDown") { e.preventDefault(); show(current + 1); }
+    else if (k === "ArrowLeft" || k === "PageUp") { e.preventDefault(); show(current - 1); }
+    else if (k === "Home") { e.preventDefault(); show(0); }
+    else if (k === "End") { e.preventDefault(); show(slides.length - 1); }
+    else if (k === "n" || k === "N") body.classList.toggle("notes-open");
+    else if (k === "o" || k === "O") { body.classList.toggle("index-open"); syncIndex(); }
+    else if (k === "t" || k === "T") toggleTimer();
+    else if (k === "f" || k === "F") {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen().catch(function () {});
+    }
+    else if (k === "?" || k === "/") body.classList.toggle("help-open");
+
+    if (hint) { hint.remove(); hint = null; }
+  });
+
+  document.getElementById("help").addEventListener("click", function () {
+    body.classList.remove("help-open");
+  });
+
+  show(0);
+})();
+</script>

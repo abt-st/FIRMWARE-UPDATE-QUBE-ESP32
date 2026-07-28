@@ -35,7 +35,10 @@ logger = logging.getLogger(__name__)
 # "pv" field and reset() asserts it, so a firmware/Python mismatch fails loudly
 # instead of training on wrong-signed observations (the sim2real critical caveat).
 # BUMP BOTH SIDES TOGETHER whenever the /rl_state convention changes.
-EXPECTED_RL_PROTO = 2
+# v3 adds the combined GET /rl_step?a=X endpoint (set action + return state in one
+# round-trip); step() below requires it, so the assert in reset() makes an old
+# firmware (no /rl_step) fail loudly instead of 404'ing mid-episode.
+EXPECTED_RL_PROTO = 3
 
 
 class QubeRealEnv(gym.Env):
@@ -63,7 +66,10 @@ class QubeRealEnv(gym.Env):
         esp32_ip: str = "192.168.4.1",
         control_freq: int = 50,
         reward: str = "cos_alpha",
-        http_timeout: float = 5.0,
+        # Short timeout: at 50 Hz a lost packet must retry within a step, not freeze
+        # the loop. The old 5.0 s (x3 retries) could stall the controller ~15 s on a
+        # single dropped request — fatal for a real inverted-pendulum episode.
+        http_timeout: float = 0.4,
         reset_settle_time: float = 3.0,
         auto_set_mode: bool = True,
         invert_action: bool = True,
@@ -111,8 +117,13 @@ class QubeRealEnv(gym.Env):
         )
         self.action_space = Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
 
-        # HTTP session (connection pooling for 50Hz)
+        # HTTP session (connection pooling for 50Hz). A keep-alive adapter reuses one
+        # TCP connection across steps so we pay the handshake once, not per request —
+        # the ESP32's single-radio AsyncTCP stack is sensitive to connection churn.
         self._session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=1, pool_maxsize=4)
+        self._session.mount("http://", adapter)
+        self._session.headers.update({"Connection": "keep-alive"})
         self._base_url = f"http://{esp32_ip}"
 
         # Internal state
@@ -154,6 +165,28 @@ class QubeRealEnv(gym.Env):
                     return  # best-effort, don't crash training
                 time.sleep(0.05)
 
+    def _rl_step(self, action: float) -> dict[str, Any]:
+        """Set action AND read the resulting state in ONE round-trip via ``/rl_step``.
+
+        Halves the per-step WiFi latency vs the old ``/rl_cmd`` + ``/rl_state`` pair
+        (2 RTT ≈ 71 ms → ~1 RTT). Retries like ``_get_rl_state``; on total failure it
+        raises so ``step`` can fall back to the last known state.
+        """
+        for attempt in range(3):
+            try:
+                resp = self._session.get(
+                    f"{self._base_url}/rl_step",
+                    params={"a": f"{action:.4f}"},
+                    timeout=self.http_timeout,
+                )
+                resp.raise_for_status()
+                return resp.json()
+            except requests.RequestException:
+                if attempt == 2:
+                    raise
+                time.sleep(0.05)
+        raise RuntimeError("unreachable")  # pragma: no cover
+
     def _send_rl_reset(self) -> None:
         """Reset encoders and state via ``/rl_cmd?r=1``."""
         self._session.get(
@@ -175,26 +208,25 @@ class QubeRealEnv(gym.Env):
     # ------------------------------------------------------------------
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
-        # Send action (sign-corrected for the mirrored real motor), then a small
-        # delay for the ESP32 to apply PWM.
-        self._send_rl_action(self._action_sign * float(action[0]))
-        time.sleep(0.01)  # 10ms — give ESP32 time to apply PWM
-
-        # Read state with fallback to last known.
-        # NOTE: ``/rl_state`` returns the SIM-CONVENTION observation in radians /
+        # Set the action (sign-corrected for the mirrored real motor) AND read the
+        # resulting state in a SINGLE round-trip (/rl_step), instead of a separate
+        # /rl_cmd write + /rl_state read. The firmware's 500 Hz loop applies the new
+        # PWM within ~2 ms, so no client-side settle sleep is needed here.
+        # NOTE: ``/rl_step`` returns the SIM-CONVENTION observation in radians /
         # rad·s⁻¹ already (firmware ``updateRlObservation``: theta as-is; alpha
         # flipped + wrapped to [-π, π]; positive-finite-difference velocities at
         # 50 Hz).  Read PASS-THROUGH — do NOT call ``np.radians`` (that double
         # conversion was the r4_real root cause), re-flip alpha, or negate the
         # velocities (the old /rl_state exported the inverted LQR-EMA sign).
+        # On a failed round-trip, keep the last known state (best-effort).
         try:
-            data = self._get_rl_state()
+            data = self._rl_step(self._action_sign * float(action[0]))
             self._state[THETA] = float(data["th"])
             self._state[ALPHA] = float(data["al"])
             self._state[THETA_DOT] = float(data["thd"])
             self._state[ALPHA_DOT] = float(data["ald"])
         except requests.RequestException:
-            logger.warning("rl_state read failed, using last known state")
+            logger.warning("rl_step failed, using last known state")
 
         # Build observation
         obs = self._get_obs()

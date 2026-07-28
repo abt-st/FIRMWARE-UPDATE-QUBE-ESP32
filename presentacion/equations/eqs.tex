@@ -1,0 +1,130 @@
+% Ecuaciones de la presentación de avance QUBE/ESP32.
+% Una ecuación por página; el orden DEBE coincidir con EQ_IDS en build_assets.py.
+% Todas transcritas literalmente desde tesis_usach/capitulos/Capitulo_0{2,3,4}.tex.
+\documentclass[12pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage[active,tightpage,displaymath]{preview}
+\begin{document}
+
+% ---- 01 lazo_cerrado (Cap 2, eq:transferencia_lazo_cerrado)
+\[ T(s) = \frac{G_c(s) \cdot G_p(s)}{1 + G_c(s) \cdot G_p(s) \cdot H(s)} \]
+
+% ---- 02 motor_electrica (eq:ec_electrica)
+\[ V_a(t) = R_a \, i_a(t) + L_a \, \frac{di_a(t)}{dt} + e_b(t) \]
+
+% ---- 03 motor_backemf (eq:back_emf)
+\[ e_b(t) = K_e \, \omega(t) \]
+
+% ---- 04 motor_mecanica (eq:ec_mecanica)
+\[ J \, \frac{d\omega(t)}{dt} = \tau_m(t) - b \, \omega(t) - \tau_{ext}(t) \]
+
+% ---- 05 motor_torque (eq:torque)
+\[ \tau_m(t) = K_t \, i_a(t) \qquad\text{con}\qquad K_t = K_e \;\;\text{(SI)} \]
+
+% ---- 06 motor_ss (eq:ss_motor + eq:ss_motor_salida)
+\[ \dot{\mathbf{x}} = \mathbf{A} \, \mathbf{x} + \mathbf{B} \, u, \qquad y = \mathbf{C} \, \mathbf{x}, \qquad \mathbf{x} = \begin{bmatrix} i_a & \omega \end{bmatrix}^T \]
+
+% ---- 07 motor_matrices (eq:matrices_motor)
+\[ \mathbf{A} = \begin{bmatrix} -\dfrac{R_a}{L_a} & -\dfrac{K_e}{L_a} \\[8pt] \dfrac{K_t}{J} & -\dfrac{b}{J} \end{bmatrix}, \quad \mathbf{B} = \begin{bmatrix} \dfrac{1}{L_a} \\[8pt] 0 \end{bmatrix}, \quad \mathbf{C} = \begin{bmatrix} 0 & 1 \end{bmatrix} \]
+
+% ---- 08 motor_primer_orden (eq:modelo_simplificado)
+\[ \tau_m \, \dot{\omega}(t) + \omega(t) = K_m \, V_a(t) \]
+
+% ---- 09 motor_km_taum (eq:Km, eq:taum)
+\[ K_m = \frac{K_t}{R_a \, b + K_t \, K_e} \qquad\qquad \tau_m = \frac{R_a \, J}{R_a \, b + K_t \, K_e} \]
+
+% ---- 10 motor_gw (eq:ftf_velocidad)
+\[ G_{\omega}(s) = \frac{\Omega(s)}{V_a(s)} = \frac{K_m}{\tau_m \, s + 1} \]
+
+% ---- 11 motor_gpos (eq:ftf_posicion)
+\[ G_{pos}(s) = \frac{\Theta(s)}{V_a(s)} = \frac{K_m}{s \, (\tau_m \, s + 1)} \]
+
+% ---- 12 enc_resolucion (eq:resolucion_encoder + eq:resolucion_premotec)
+\[ \Delta\theta = \frac{360^{\circ}}{N_{CPR} \times 4} = \frac{360^{\circ}}{8192} \approx 0{,}044^{\circ} \]
+
+% ---- 13 enc_fmax (eq:f_encoder_max + eq:f_encoder_ejemplo)
+\[ f_{enc,max} = \frac{N_{CPR} \times 4 \times \omega_{max}}{2\pi} = \frac{2048 \times 4 \times 41{,}9}{2\pi} \approx 54\,613 \;\text{flancos/s} \]
+
+% ---- 14 enc_nyquist (eq:nyquist_encoder)
+\[ f_{muestreo} > 2 \times f_{enc,max} \;\;\Longrightarrow\;\; f_{muestreo} > 109\,226\;\text{Hz} \]
+
+% ---- 15 el_theta (eq:euler_lagrange_theta)
+\[ \frac{d}{dt}\left(\frac{\partial \mathcal{L}}{\partial \dot{\theta}}\right) - \frac{\partial \mathcal{L}}{\partial \theta} = \tau \]
+
+% ---- 16 el_alpha (eq:euler_lagrange_alpha)
+\[ \frac{d}{dt}\left(\frac{\partial \mathcal{L}}{\partial \dot{\alpha}}\right) - \frac{\partial \mathcal{L}}{\partial \alpha} = 0 \]
+
+% ---- 17 pend_ss (eq:ss_pendulo)
+\[ \dot{\mathbf{x}} = \mathbf{A} \, \mathbf{x} + \mathbf{B} \, \tau, \qquad \mathbf{x} = \begin{bmatrix} \theta & \alpha & \dot{\theta} & \dot{\alpha} \end{bmatrix}^T \]
+
+% ---- 18 pend_A (eq:A_pendulo)
+\[ \mathbf{A} = \begin{bmatrix} 0 & 0 & 1 & 0 \\ 0 & 0 & 0 & 1 \\[4pt] 0 & -\dfrac{m \, g \, d}{J_t} & 0 & 0 \\[10pt] 0 & \dfrac{m \, g \, (J_t + m \, l \, d)}{J_t \cdot J_p} & 0 & 0 \end{bmatrix} \]
+
+% ---- 19 pend_B (eq:B_pendulo)
+\[ \mathbf{B} = \begin{bmatrix} 0 \\[4pt] 0 \\[4pt] \dfrac{1}{J_t} \\[10pt] -\dfrac{m \, l \, d}{J_t \cdot J_p} \end{bmatrix} \]
+
+% ---- 20 pid_continuo (eq:pid_continuo)
+\[ u(t) = K_p \, e(t) + K_i \int_0^t e(\tau) \, d\tau + K_d \, \frac{de(t)}{dt} \]
+
+% ---- 21 pid_transferencia (eq:pid_transferencia)
+\[ G_c(s) = K_p + \frac{K_i}{s} + K_d \, s = \frac{K_d \, s^2 + K_p \, s + K_i}{s} \]
+
+% ---- 22 pid_discreto (eq:pid_p, pid_i, pid_d, pid_discreto)
+\[ \begin{aligned} P(k) &= K_p \cdot e(k) \\[4pt] I(k) &= I(k-1) + K_i \cdot e(k) \cdot T_s \\[4pt] D(k) &= K_d \cdot \frac{-(y(k) - y(k-1))}{T_s} \\[4pt] u(k) &= P(k) + I(k) + D(k) \end{aligned} \]
+
+% ---- 23 anti_windup (eq:anti_windup)
+\[ I(k) = \mathrm{constrain}\!\left(I(k),\; -I_{max},\; I_{max}\right) \]
+
+% ---- 24 ema (eq:ema_filter)
+\[ \hat{\omega}(k) = \alpha \cdot \omega_{raw}(k) + (1 - \alpha) \cdot \hat{\omega}(k-1), \qquad \alpha = 0{,}12 \;\Rightarrow\; \tau_f \approx 7{,}5 \cdot T_s \]
+
+% ---- 25 lqr_costo (eq:lqr_costo)
+\[ J = \int_0^{\infty} \left( \mathbf{x}^T(t) \, \mathbf{Q} \, \mathbf{x}(t) + u^T(t) \, \mathbf{R} \, u(t) \right) dt, \qquad \mathbf{Q} \succeq 0, \;\; \mathbf{R} \succ 0 \]
+
+% ---- 26 riccati (eq:riccati)
+\[ \mathbf{A}^T \mathbf{P} + \mathbf{P} \mathbf{A} - \mathbf{P} \mathbf{B} \mathbf{R}^{-1} \mathbf{B}^T \mathbf{P} + \mathbf{Q} = \mathbf{0} \]
+
+% ---- 27 lqr_K (eq:lqr_control + eq:lqr_K)
+\[ \mathbf{K} = \mathbf{R}^{-1} \mathbf{B}^T \mathbf{P} \qquad\Longrightarrow\qquad u(t) = -\mathbf{K} \, \mathbf{x}(t) \]
+
+% ---- 28 tau_lqr (eq:tau_lqr)
+\[ \tau = -(k_1 \, \theta + k_2 \, \alpha + k_3 \, \dot{\theta} + k_4 \, \dot{\alpha}) \]
+
+% ---- 29 energia (eq:energia_pendulo)
+\[ E = \frac{1}{2} \, J_p \, \dot{\alpha}^2 + m \, g \, l \, (1 - \cos\alpha) \]
+
+% ---- 30 energia_target (eq:energia_target)
+\[ E_{target} = 2 \, m \, g \, l \]
+
+% ---- 31 swingup_u (eq:swing_up_control)
+\[ u = k_e \, (E - E_{target}) \, \mathrm{sign}(\dot{\alpha} \cdot \cos\alpha) \]
+
+% ---- 32 lqr_impl (eq:lqr_control_impl)
+\[ u = -(K_1 \, \theta + K_2 \, \alpha + K_3 \, \dot{\theta} + K_4 \, \dot{\alpha}) \]
+
+% ---- 33 k4_boost (eq:k4_boost)
+\[ K_{4,eff} = K_4 \times \left(1 + \frac{|\dot{\alpha}| - 200}{300}\right), \qquad \text{limitado a } [1{,}0;\; 2{,}0] \]
+
+% ---- 34 filtro_complementario (eq:filtro_complementario)
+\[ \hat{\dot{\alpha}}(k) = 0{,}7 \times \dot{\alpha}_{raw}(k) + 0{,}3 \times \hat{\dot{\alpha}}_{pred}(k) \]
+
+% ---- 35 newton_euler (Cap 4, predicción del filtro complementario)
+\[ \ddot{\alpha} = -\frac{g}{l}\sin\alpha - \frac{b_p}{J_p}\dot{\alpha} \]
+
+% ---- 36 soft_saturation (eq:soft_saturation)
+\[ f(\theta) = \frac{1}{1 + (|\theta| / 120)^2} \]
+
+% ---- 37 fc_rc (eq:fc_rc)
+\[ f_c = \frac{1}{2\pi \, R \, C} = \frac{1}{2\pi \times 2{,}2 \times 10^3 \times 10^{-7}} \approx 724\;\text{Hz} \]
+
+% ---- 38 histeresis (Cap 3, Schmitt CD40106BE)
+\[ \Delta V = V_{T+} - V_{T-} = 2{,}2\;\text{V} - 0{,}9\;\text{V} = 1{,}3\;\text{V} \]
+
+% ---- 39 snr (Cap 3, presupuesto de ruido)
+\[ \mathrm{SNR} = 20 \log_{10}\!\left( \frac{V_{se\tilde{n}al}}{V_{ruido}} \right) \]
+
+% ---- 40 mdp (Cap 6 / REFERENCE.md, formulación RL)
+\[ \pi^{*} = \arg\max_{\pi} \; \mathbb{E}_{\pi}\!\left[ \sum_{t=0}^{\infty} \gamma^{t} \, r(s_t, a_t) \right] \]
+
+\end{document}

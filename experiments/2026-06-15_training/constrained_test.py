@@ -28,6 +28,7 @@ PAUSE_BETWEEN = 5
 TOTAL_TIME = 600  # 10 min
 HTTP_TIMEOUT = 3
 MAX_RETRIES = 5
+MAX_ERRORS = 50  # fallos de lectura consecutivos antes de abortar
 PEND_LIMIT = 90.0  # grados
 
 OUT_DIR = Path(__file__).parent / "data" / f"constrained_{datetime.now().strftime('%Y%m%dT%H%M%S')}"
@@ -39,7 +40,7 @@ def _http_get(url: str) -> dict:
             r = requests.get(url, timeout=HTTP_TIMEOUT)
             r.raise_for_status()
             return r.json()
-        except requests.RequestException, ValueError:
+        except (requests.RequestException, ValueError):
             if attempt < MAX_RETRIES - 1:
                 time.sleep(0.05)
             else:

@@ -4,6 +4,8 @@
 **Alcance:** Inventario de todos los datos CSV capturados del hardware, con procedencia de driver, esquema de columnas, tasa de muestreo y utilidad para identificación de sistema (Fase 1 del plan de gemelo digital).
 **Total:** ≈ 412 archivos CSV, ≈ 12 MB en 12 sesiones experimentales.
 
+> ⚠️ **Desactualizado (nota agregada 2026-07-28):** este catálogo cubre solo las sesiones hasta `2026-06-18_r2_balance` / `2026-06-18_r3_adaptive` / `2026-06-18_r3_curriculum`. `experiments/` ya tiene sesiones posteriores sin catalogar: `2026-06-19_r4_curriculum`, `2026-06-22_r4_finetune_s1`, `2026-06-22_r4_real`, `2026-06-22_r5_pbrs_curriculum`, `2026-06-22_r6_real_aligned`, `2026-06-23_r7_curriculum_sweep` (esta última sola pesa 58 MB). Falta una pasada de re-catalogación que inspeccione esas sesiones nuevas; no se hizo en esta tarea de higiene porque requiere revisar cada CSV, trabajo aparte de la limpieza estructural.
+
 > Generado en la **Fase 0** del `docs/research/ai_research/plan_gemelo_digital_drl.md`. Su propósito es que la identificación de parámetros (Fase 1) sepa **qué datos existen, bajo qué hardware se tomaron, y para qué sirven**.
 
 ---

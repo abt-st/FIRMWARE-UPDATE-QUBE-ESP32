@@ -1,22 +1,26 @@
 // ============================================================
 // QUBE Servo - Firmware base oficial
-// Arquitectura: ESP32 + BTS7960 (IBT-2) + INA219 + LM2596 + CD40106BE Schmitt Trigger
-// Fecha: 2026-05-28 (driver migrado de L298N a BTS7960 el 2026-06-08, commit 78b4e7e)
+// Arquitectura: ESP32 + L298N + INA219 + 2x LM2596 + 2x CD40106BE Schmitt Trigger
+// Fecha: 2026-05-28 (migrado L298N->BTS7960 el 2026-06-08, commit 78b4e7e;
+//        revertido BTS7960->L298N el 2026-07-28 por errores de esa migracion,
+//        ver CHANGELOG.md v1.52.0. El GPIO26/27 dual-PWM no cambio: solo el
+//        recableado fisico de RPWM/LPWM a IN1/IN2)
 // ============================================================
 // Topologia de potencia y logica:
-// 1) Fuente principal (12V-15V) -> INA219 (serie) -> BTS7960 B+ (VS motor)
-// 2) Fuente principal -> LM2596 -> 5V para logica auxiliar
-// 3) Encoder servo (open-drain 5V) -> pull-up 4.7kΩ a 3.3V
+// 1) Transformador 15V-2A -> INA219 (serie) -> L298N VS (motor, directo)
+// 2) Transformador -> LM2596 #1 -> 5V riel "logica" (L298N VSS + encoders + Schmitt)
+//    Transformador -> LM2596 #2 -> 5V riel dedicado (solo ESP32 VIN, anti-brownout)
+// 3) Encoder servo (open-drain 5V) -> pull-up 2.2kΩ a 3.3V
 //    -> Schmitt Trigger CD40106BE (doble inversion, Vcc=3.3V)
 //    -> salida limpia ~3.3V -> ESP32 GPIO34/GPIO35
 // 4) INA219 en I2C para telemetria de voltaje, corriente y potencia
 // 5) GND comun entre potencia y logica (topologia estrella)
 //
-// Pines recomendados (BTS7960 / IBT-2):
-// BTS7960 R_EN + L_EN -> GPIO25  (habilitacion; puentear R_EN->L_EN en el modulo)
-// BTS7960 RPWM        -> GPIO26  (IN1: PWM sentido horario)
-// BTS7960 LPWM        -> GPIO27  (IN2: PWM sentido antihorario)
-// BTS7960 VCC (logica)-> 5V      | B+/B- -> potencia motor 12-15V (via INA219)
+// Pines recomendados (L298N):
+// L298N ENA           -> jumper puesto, GPIO25 sin conectar (ver nota PIN_ENA abajo)
+// L298N IN1           -> GPIO26  (PWM sentido horario)
+// L298N IN2           -> GPIO27  (PWM sentido antihorario)
+// L298N VSS (logica)  -> 5V (LM2596 #1) | VS (motor) -> 15V directo (via INA219)
 // Encoder servo A -> Schmitt INV_A (pin 1) -> GPIO34
 // Encoder servo B -> Schmitt INV_C (pin 5) -> GPIO35
 // INA219 SDA -> GPIO21
@@ -59,6 +63,7 @@
 #include <Update.h>
 #include <Preferences.h>
 #include "driver/pcnt.h"
+#include "esp_wifi.h"   // esp_wifi_set_ps: forzar WIFI_PS_NONE (sin modem-sleep)
 #include "policy_weights.h"
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -103,7 +108,11 @@ volatile float rl_obs_thd = 0.0f, rl_obs_ald = 0.0f;  // rad/s
 // qube_rl/envs/qube_real.py asserts it on connect so a firmware/Python mismatch
 // fails LOUDLY instead of silently feeding the policy wrong-signed observations.
 //   v2 = sim convention: theta as-is; alpha flipped+wrapped; +finite-diff vels @50Hz.
-#define RL_PROTO_VERSION 2
+//   v3 = adds GET /rl_step?a=X (set action + return the compact state in ONE round-trip)
+//        to halve per-step WiFi latency. Observation convention UNCHANGED from v2.
+//        qube_real.py's step() requires /rl_step, so the bump makes an old firmware
+//        (no /rl_step) fail loudly at reset() instead of 404'ing mid-episode.
+#define RL_PROTO_VERSION 3
 
 // Update the sim-convention RL observation (rl_obs_*) from the raw encoders.
 // MUST be called at the 50 Hz training rate (the filter coefficients assume
@@ -232,8 +241,9 @@ static const int PIN_ENA = 25;
 static const int PIN_IN1 = 26;
 static const int PIN_IN2 = 27;
 
-// BTS7960: R_EN/L_EN habilitados por GPIO25 (opción B del README).
-// Conectar GPIO25 → R_EN + puente R_EN→L_EN en el módulo IBT-2.
+// GPIO25 (PIN_ENA) no está conectado en el hardware actual (L298N con jumper ENA
+// puesto). setup() lo deja en HIGH de todos modos por herencia del wiring BTS7960
+// (R_EN/L_EN); es una salida sin efecto físico, no un requisito del L298N.
 static const bool USE_ENA_PWM = false;
 
 static const int PIN_I2C_SDA = 21;
@@ -523,7 +533,9 @@ const float PEND_LENGTH = 0.065f;    // Distancia pivot-centro de masa (m) - aju
 const float PEND_INERTIA = 0.00002f; // Momento de inercia (kg*m^2) - ajustar
 const float PEND_LIMIT_DEG = 90.0f;    // Limite fisico del pendulo (±90° desde reposo)
 const float GRAVITY = 9.81f;         // Gravedad (m/s^2)
-float ke_gain = 0.65f;  // Ganancia BTS7960: 25% catch rate, hold 86s
+float ke_gain = 0.65f;  // Ganancia calibrada en BTS7960: 25% catch rate, hold 86s.
+                         // Sin re-validar tras revertir a L298N (v1.52.0) — la caída
+                         // de tensión y el par disponible pueden diferir.
 // Adaptive ke_gain: increase energy gain when pendulum stalls
 float swing_maxAngleAchieved = 0.0f;    // Max absolute angle achieved since last reset
 unsigned long swing_lastImprovementMs = 0;  // Timestamp of last angle improvement
@@ -540,8 +552,16 @@ const float SWING_RECOVERY_THRESHOLD = 30.0f;  // |pendPos| < esto para salir de
 const unsigned long CONTROL_PERIOD_US = 2000;             // 500 Hz (era 5000 = 200 Hz)
 int swingupPwmMax = 50;  // PWM limit para swing-up (configurable por HTTP: sp<val>)
 unsigned long telemetryPeriodMs = 100;          // Ajustable por HTTP: tp<ms>
+// Periodo del broadcast WS en modo 6 (RL por HTTP). El lazo es latencia-critico y
+// comparte la unica radio, asi que la GUI se refresca decimada (~2 Hz) en vez de a
+// telemetryPeriodMs. Suficiente para vigilar angulos, modo y watchdog de comandos.
+const unsigned long RL_MODE_TELEMETRY_MS = 500;
 float prev_alpha_dot_peak = 0.0f;  // Peak detection para transicion LQR
 const unsigned long COMMAND_TIMEOUT_MS = 10000;
+// Mode 1 has no reset-settle constraint, so it gets a much tighter deadman: a lost
+// HTTP request there leaves the motor driving with nobody to stop it. 2.5 s clears
+// capture.py's 2.0 s default --settle per PWM step.
+const unsigned long MANUAL_COMMAND_TIMEOUT_MS = 2500;
 // Failsafe enabled for unattended operation. It ONLY guards command-driven modes
 // (1 manual PWM, 6 RL-over-HTTP): if their command stream dies, the motor stops.
 // Autonomous modes (2 PID, 4 LQR, 5 swing-up, 7 on-device RL) run without external
@@ -549,6 +569,13 @@ const unsigned long COMMAND_TIMEOUT_MS = 10000;
 // env's ~3 s reset settle, so it won't trip mid-episode; a true client disconnect
 // is also bounded meanwhile by the mode-6 centering clamp.
 const bool ENABLE_COMMAND_TIMEOUT = true;
+// Tope duro de fin de carrera, comun a TODOS los modos. El limite mecanico del brazo
+// es +-100 deg. Los modos 5/6/7 ya se auto-limitan (85/110/90 deg), pero el modo 2
+// (PID) solo tiene la soft saturation de setMotor(), que atenua y nunca corta.
+// Ultimo recurso: se corta el motor (setMode(0)) para no seguir empujando contra el
+// tope. Se deja coastear en vez de frenar activamente: garantiza par nulo hacia el
+// fin de carrera, que es lo unico que importa aqui.
+const float SERVO_HARD_LIMIT_DEG = 95.0f;
 // ── Umbrales LQR ─────────────────────────────────────────────────────────────
 const unsigned long LQR_FALLBACK_TIME_MS = 500;          // Tiempo fuera de vertical antes de fallback (era 1000)
 const float LQR_FALLBACK_ALPHA_DEG = 45.0f;              // |α| mínimo para iniciar fallback (subido de 30 para dar más tiempo al LQR)
@@ -598,6 +625,11 @@ const bool ENABLE_STA = true;  // true: conecta tambien a tu router LAN
 char staSsid[33] = "";         // Max 32 chars + null
 char staPass[65] = "";         // Max 64 chars + null
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000;
+// Guardián de reconexión STA no bloqueante (loop()). El ESP32 tiene UNA radio y
+// en AP+STA el enlace STA se cae con más facilidad; si el router nos suelta,
+// reintentamos periódicamente sin frenar el lazo de control de 500 Hz.
+unsigned long lastStaReconnectMs = 0;
+const unsigned long STA_RECONNECT_PERIOD_MS = 5000;
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 INA219_WE ina219(&Wire, 0x40);
@@ -607,6 +639,25 @@ float busVoltageV = 0.0f;
 float shuntVoltagemV = 0.0f;
 float currentmA = 0.0f;
 float powermW = 0.0f;
+
+// Recuperación del bus I2C: si un esclavo (p.ej. un INA219 marginal/browned-out)
+// quedó sosteniendo SDA en bajo, el maestro no puede generar un START válido y las
+// transacciones se cuelgan (incluso con setTimeOut). Se pulsa SCL hasta 9 veces por
+// bit-bang para que el esclavo suelte la línea y luego se emite un STOP. Debe llamarse
+// ANTES de Wire.begin().
+void i2cBusRecover(int sdaPin, int sclPin) {
+  pinMode(sclPin, OUTPUT);
+  pinMode(sdaPin, INPUT_PULLUP);
+  for (int i = 0; i < 9 && digitalRead(sdaPin) == LOW; i++) {
+    digitalWrite(sclPin, LOW);  delayMicroseconds(5);
+    digitalWrite(sclPin, HIGH); delayMicroseconds(5);
+  }
+  // Condición de STOP: SDA de bajo a alto con SCL alto.
+  pinMode(sdaPin, OUTPUT);
+  digitalWrite(sdaPin, LOW);  delayMicroseconds(5);
+  digitalWrite(sclPin, HIGH); delayMicroseconds(5);
+  digitalWrite(sdaPin, HIGH); delayMicroseconds(5);
+}
 
 void scanI2CBus() {
   Serial.println("I2C scan: inicio");
@@ -772,7 +823,7 @@ void resetPid() {
 }
 void setMotor(int pwmValue) {
   // Soft saturation: reducir PWM gradualmente cerca de los límites mecánicos del servo.
-  // Factor = 1 / (1 + (|pos|/k)^y), con k=120° (umbral BTS7960) y y=2 (agresividad).
+  // Factor = 1 / (1 + (|pos|/k)^y), con k=120° (umbral angular) y y=2 (agresividad).
   // En pos=0: factor=1.0. En pos=60°: factor=0.80. En pos=90°: factor=0.64.
   float pos_factor = 1.0f / (1.0f + powf(fabsf(lastServoPos) / 200.0f, 2.0f));
   pwmValue = (int)(pwmValue * pos_factor);
@@ -907,6 +958,7 @@ void safeStop() {
 // sigue respondiendo en I2C. Si falla, marcamos inaOk=false y reintentamos
 // la inicialización con la lista de direcciones candidatas.
 static unsigned long lastInaWatchdogMs = 0;
+static unsigned long lastInaRetryMs = 0;
 void updateIna219() {
   const unsigned long nowMs = millis();
   if (inaOk && (nowMs - lastInaWatchdogMs) >= INA_WATCHDOG_PERIOD_MS) {
@@ -915,12 +967,18 @@ void updateIna219() {
     Wire.beginTransmission(inaAddr);
     if (Wire.endTransmission() != 0) {
       inaOk = false;
+      lastInaRetryMs = nowMs;  // arrancar el temporizador de reintento
       Serial.println("[INA219] Watchdog: sensor no responde, reintentando…");
     }
   }
   if (!inaOk) {
-    // Reintentar inicialización cada WATCHDOG_PERIOD_MS
-    if (nowMs - lastInaWatchdogMs == 0 || (nowMs - lastInaWatchdogMs) >= INA_WATCHDOG_PERIOD_MS) {
+    // Reintentar init con throttle a INA_INIT_RETRY_MS. Antes se re-escaneaba el bus
+    // I2C (bloqueante, 4 direcciones) en CADA tick de telemetria cuando el sensor
+    // estaba ausente —lastInaWatchdogMs no se actualizaba en esta rama, así que la
+    // condición siempre daba true—, metiendo jitter en el lazo. Ahora usa su propio
+    // temporizador y respeta INA_INIT_RETRY_MS (5 s).
+    if ((nowMs - lastInaRetryMs) >= INA_INIT_RETRY_MS) {
+      lastInaRetryMs = nowMs;
       inaOk = initIna219();
       if (inaOk) Serial.println("[INA219] Re-inicializado OK");
     }
@@ -967,6 +1025,10 @@ String getStateJson() {
   json += "\"error_deg\":" + String(err, 3) + ",";
   // Pendulum
   json += "\"pend_count\":" + String(pc) + ",";
+  // Estado crudo de los canales A/B del encoder péndulo (diagnóstico de cuadratura:
+  // un canal que queda fijo mientras el péndulo se mueve = canal muerto/suelto).
+  json += "\"pend_a\":" + String(digitalRead(PIN_PEND_A)) + ",";
+  json += "\"pend_b\":" + String(digitalRead(PIN_PEND_B)) + ",";
   json += "\"pend_raw_position_deg\":" + String(rawPendPos, 3) + ",";
   json += "\"pend_position_deg\":" + String(pendPos, 3) + ",";
   json += "\"pend_offset_deg\":" + String(pendulumOffsetDeg, 3) + ",";
@@ -1020,14 +1082,13 @@ void handleState(AsyncWebServerRequest *request) {
 }
 
 // ── RL Endpoints (modo 6) ─────────────────────────────────────────────────
-void handleRlState(AsyncWebServerRequest *request) {
-  // JSON compacto de baja latencia para el agente RL (modo 6).
-  // Reports the sim-convention observation computed by the control loop
-  // (updateRlObservation). Same convention the on-device path (mode 7) feeds the
-  // net, so a policy served over HTTP sees identical inputs. qube_real.py reads
-  // these PASS-THROUGH (no alpha re-flip, no velocity negation). Reading cached
-  // globals here (no encoder/I2C access from the async context) also avoids
-  // racing the 500 Hz control loop.
+// JSON compacto de baja latencia para el agente RL (modo 6). Reporta la observación
+// en convención SIM calculada por el lazo de control (updateRlObservation). Misma
+// convención que alimenta la red on-device (modo 7), así una política servida por
+// HTTP ve entradas idénticas. qube_real.py lo lee PASS-THROUGH (sin re-flip de alpha
+// ni negación de velocidad). Leer globales cacheados aquí (sin acceso a encoder/I2C
+// desde el contexto async) evita además carreras con el lazo de 500 Hz.
+String getRlStateJson() {
   String json = "{";
   json += "\"th\":" + String(rl_obs_th, 4) + ",";
   json += "\"al\":" + String(rl_obs_al, 4) + ",";
@@ -1035,7 +1096,23 @@ void handleRlState(AsyncWebServerRequest *request) {
   json += "\"ald\":" + String(rl_obs_ald, 4) + ",";
   json += "\"pv\":" + String(RL_PROTO_VERSION);  // protocol version handshake
   json += "}";
-  request->send(200, "application/json", json);
+  return json;
+}
+
+void handleRlState(AsyncWebServerRequest *request) {
+  request->send(200, "application/json", getRlStateJson());
+}
+
+// Endpoint combinado (proto v3): fija la acción RL Y devuelve el estado compacto en
+// UN solo round-trip, en vez de /rl_cmd?a= seguido de /rl_state (2 RTT ≈ 71 ms). Con
+// esto el lazo PC-en-el-lazo por WiFi baja a ~1 RTT/paso. Sin 'a', se comporta como
+// /rl_state (solo lectura).
+void handleRlStep(AsyncWebServerRequest *request) {
+  if (request->hasParam("a")) {
+    rlAction = constrain(request->getParam("a")->value().toFloat(), -1.0f, 1.0f);
+    lastCommandMs = millis();
+  }
+  request->send(200, "application/json", getRlStateJson());
 }
 
 void handleRlCmd(AsyncWebServerRequest *request) {
@@ -1302,6 +1379,26 @@ void connectStaIfConfigured() {
   WiFi.begin(staSsid, staPass);
 }
 
+// Eventos de red WiFi. Solo registran/informan: la reconexión activa la maneja
+// setAutoReconnect(true) + el guardián no bloqueante de loop(). Llamar WiFi.begin()
+// desde el contexto del evento es propenso a carreras, por eso aquí solo se loguea.
+void onWifiEvent(WiFiEvent_t event) {
+  switch (event) {
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      Serial.println("[WiFi] STA desconectado; el guardian reintentara");
+      break;
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      // Re-afirmar sin power-save en cada (re)conexión: el stack puede reactivar el
+      // modem-sleep al asociarse, devolviendo los picos de latencia de ~100 ms.
+      esp_wifi_set_ps(WIFI_PS_NONE);
+      Serial.print("[WiFi] STA (re)conectado, IP: ");
+      Serial.println(WiFi.localIP());
+      break;
+    default:
+      break;
+  }
+}
+
 // ── WiFi credential management (NVS/Preferences) ────────────────────────────
 
 void loadWifiCredentials() {
@@ -1337,7 +1434,7 @@ void saveWifiCredentials(const char* ssid, const char* pass) {
   
   Serial.print("WiFi: Credenciales guardadas. SSID=");
   Serial.println(staSsid);
-  Serial.println("WiFi: Reiniciar para conectar con nuevas credenciales");
+  Serial.println("WiFi: Reiniciar para conectar (envia 'reboot' por serial o pulsa RST)");
 }
 
 void printWifiInfo() {
@@ -1386,6 +1483,7 @@ void printHelp() {
   Serial.println("Motor: p-255..255 (modo 1), x(stop), r(reset)");
   Serial.println("Info: ?(estado), i(IP), n(ina scan)");
   Serial.println("WiFi: wifi_ssid<TuRed>, wifi_pass<TuClave>, wifi_info");
+  Serial.println("Sistema: reboot (reinicia el ESP32)");
 }
 
 void processSerialCommand() {
@@ -1415,6 +1513,14 @@ void processSerialCommand() {
   String cmd(buf);
   cmd.trim();
   if (cmd.length() == 0) return;
+  // Reinicio por serial (palabra completa: no cabe en el switch por primer
+  // carácter porque 'r' ya es reset de encoders). Gemelo serial de /restart.
+  if (cmd == "reboot") {
+    Serial.println("[REBOOT] Reiniciando...");
+    Serial.flush();
+    delay(100);
+    ESP.restart();
+  }
   const char c = cmd.charAt(0);
   switch (c) {
     case 'm':
@@ -1693,8 +1799,21 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
   }
 }
 
+static unsigned long lastRlBroadcastMs = 0;
 void broadcastTelemetry() {
   if (ws.count() == 0) return;
+  // Durante RL por HTTP (modo 6) el tráfico /rl_step es latencia-crítico y comparte la
+  // única radio del ESP32; un broadcast de /state cada telemetryPeriodMs le roba tiempo
+  // de aire. Se decima a RL_MODE_TELEMETRY_MS en vez de omitirlo: el modo 6 es
+  // justamente donde el operador necesita ver el watchdog de comandos (auto-STOP a los
+  // 10 s) y el ángulo del péndulo. Omitirlo dejaba la GUI congelada sin aviso, y como
+  // el campo "mode" viaja en esta misma telemetría, tampoco podía saber por qué.
+  // (El modo 7 corre on-device y no usa HTTP para el control, así que va a full rate.)
+  if (mode == 6) {
+    const unsigned long nowMs = millis();
+    if (nowMs - lastRlBroadcastMs < RL_MODE_TELEMETRY_MS) return;
+    lastRlBroadcastMs = nowMs;
+  }
   ws.textAll(getStateJson());
 }
 
@@ -1709,7 +1828,8 @@ void setup() {
   } else {
     pwmAttachCompat(PIN_IN1, PWM_CH_IN1);
     pwmAttachCompat(PIN_IN2, PWM_CH_IN2);
-    // BTS7960 enable: R_EN/L_EN habilitados via GPIO25
+    // GPIO25 sin conexión física en el hardware L298N actual (jumper ENA puesto).
+    // Se deja en HIGH por herencia del wiring BTS7960 (R_EN/L_EN); no-op eléctrico.
     pinMode(PIN_ENA, OUTPUT);
     digitalWrite(PIN_ENA, HIGH);
   }
@@ -1721,11 +1841,23 @@ void setup() {
 
   // Encoder péndulo: PCNT en hardware (X4 cuadratura)
   initPcntUnit(pcnt_pendulum_unit, PIN_PEND_A, PIN_PEND_B);
+  // Los pull-ups INTERNOS de GPIO32/33 quedaron obsoletos con la placa de la v1.51: el
+  // péndulo ya no va directo al GPIO, llega acondicionado desde U2 (CD40106, salida
+  // push-pull) y el pull-up de 2,2 kΩ a 3V3 vive en la línea open-drain del encoder,
+  // antes del Schmitt. El pull-up interno (~30-80 kΩ) queda del lado del GPIO, después
+  // del RC serie de 10 kΩ, formando un divisor: con el Schmitt en bajo el pin no llega
+  // a 0 V sino a 3,3·10k/(10k+Rpu) ≈ 0,6 V típico y ~0,83 V en el peor caso, contra un
+  // V_IL de 0,825 V. Se desactiva: el nivel lo fija el driver push-pull de U2.
+  gpio_pullup_dis((gpio_num_t)PIN_PEND_A);
+  gpio_pullup_dis((gpio_num_t)PIN_PEND_B);
+  gpio_pulldown_dis((gpio_num_t)PIN_PEND_A);
+  gpio_pulldown_dis((gpio_num_t)PIN_PEND_B);
 
-  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-  delay(50);
-  scanI2CBus();
-  inaOk = initIna219();
+  // NOTA: la inicialización I2C (INA219) se movió a DESPUÉS de server.begin() —
+  // ver más abajo. Un bus I2C trabado colgaba setup() ANTES de arrancar WiFi/servidor
+  // y mataba toda la comunicación; arrancando el servidor primero, un fallo del sensor
+  // ya no puede tumbar el HTTP (el AsyncWebServer corre en su propia task).
+
   // Initialize SPIFFS for web GUI
   if (!SPIFFS.begin(true)) {
     Serial.println("[SPIFFS] Error al montar");
@@ -1738,6 +1870,7 @@ void setup() {
   loadWifiCredentials();
 
   WiFi.mode(ENABLE_STA ? WIFI_AP_STA : WIFI_AP);
+  WiFi.onEvent(onWifiEvent);
   // Coexistencia AP+STA: el ESP32 tiene UNA sola radio, por lo que el SoftAP
   // debe operar en el MISMO canal que el router STA. Si se fuerza un canal
   // distinto al del router, el STA no logra autenticar (Reason 2 AUTH_EXPIRE).
@@ -1751,7 +1884,28 @@ void setup() {
     WiFi.scanDelete();
   }
   WiFi.softAP(AP_SSID, AP_PASS, apChannel, false, 4);  // canal = STA, SSID visible, max 4
+  // Aliviar la coexistencia AP+STA (radio única): el beacon del AP cada ~100 ms
+  // (default) compite con el tráfico STA y produce picos de latencia de ~100 ms en
+  // el lazo RL por HTTP (medido). Subir el intervalo de beacon a 300 ms le da más
+  // tiempo de aire contiguo al STA sin apagar el AP (que sigue disponible como
+  // fallback/GUI). Rango válido 100–60000 ms.
+  {
+    wifi_config_t apcfg;
+    if (esp_wifi_get_config(WIFI_IF_AP, &apcfg) == ESP_OK) {
+      apcfg.ap.beacon_interval = 300;
+      esp_wifi_set_config(WIFI_IF_AP, &apcfg);
+    }
+  }
   connectStaIfConfigured();
+  // Estabilidad WiFi: desactivar el modem-sleep (activo por defecto) que introduce
+  // picos de latencia de ~100 ms y pérdida de paquetes en tráfico latencia-crítico
+  // como el lazo RL por HTTP; y habilitar la reconexión STA a nivel de stack.
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
+  // Forzar explícitamente WIFI_PS_NONE a nivel de driver: WiFi.setSleep(false) no
+  // siempre desactiva el modem-sleep en modo AP+STA, dejando picos periódicos de
+  // ~100 ms (medidos). esp_wifi_set_ps lo garantiza; se re-afirma en cada GOT_IP.
+  esp_wifi_set_ps(WIFI_PS_NONE);
 
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);
@@ -1764,8 +1918,10 @@ void setup() {
   server.on("/cmd", HTTP_OPTIONS, handleOptions);
   server.on("/rl_state", HTTP_GET, handleRlState);
   server.on("/rl_cmd", HTTP_GET, handleRlCmd);
+  server.on("/rl_step", HTTP_GET, handleRlStep);
   server.on("/rl_state", HTTP_OPTIONS, handleOptions);
   server.on("/rl_cmd", HTTP_OPTIONS, handleOptions);
+  server.on("/rl_step", HTTP_OPTIONS, handleOptions);
   server.on("/update", HTTP_POST, handleUpdate,
     [](AsyncWebServerRequest *request, const String& filename, size_t index,
        uint8_t *data, size_t len, bool final) {
@@ -1838,11 +1994,23 @@ void setup() {
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
   server.begin();
 
+  // ── Init I2C (INA219) DESPUÉS del servidor ────────────────────────────────
+  // Con WiFi + web server ya corriendo, un bus I2C trabado no puede matar la
+  // comunicación. Aun así lo hacemos robusto: recuperar el bus (soltar SDA) antes de
+  // Wire.begin y acotar cada transacción con setTimeOut para que un INA219 marginal
+  // (que a veces sostiene SDA en bajo) no cuelgue scanI2CBus()/initIna219().
+  i2cBusRecover(PIN_I2C_SDA, PIN_I2C_SCL);
+  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+  Wire.setTimeOut(50);
+  delay(50);
+  scanI2CBus();
+  inaOk = initIna219();
+
   lastControlUs = micros();
   lastTelemetryMs = millis();
   lastCommandMs = millis();
 
-  Serial.println("=== QUBE ESP32 + BTS7960 + INA219 ===");
+  Serial.println("=== QUBE ESP32 + L298N + INA219 ===");
   Serial.print("AP: ");
   Serial.println(AP_SSID);
   Serial.print("IP: ");
@@ -1888,6 +2056,17 @@ void loop() {
   ws.cleanupClients();
   yield();  // Alimentar watchdog timer para evitar crash por loop largo
 
+  // Guardián STA no bloqueante: si el router nos soltó, reintentar cada
+  // STA_RECONNECT_PERIOD_MS. connectStaIfConfigured() es no bloqueante (solo
+  // config + begin), así que no frena el lazo de control de 500 Hz.
+  if (ENABLE_STA && staSsid[0] != '\0' && WiFi.status() != WL_CONNECTED) {
+    const unsigned long nowWifiMs = millis();
+    if (nowWifiMs - lastStaReconnectMs >= STA_RECONNECT_PERIOD_MS) {
+      lastStaReconnectMs = nowWifiMs;
+      connectStaIfConfigured();
+    }
+  }
+
   if (Serial.available()) {
     processSerialCommand();
   }
@@ -1900,6 +2079,13 @@ void loop() {
     const float pendPosRaw = getPendulumPositionDeg();  // Sin wrap (para velocidad)
     const float pendPos = fmod(pendPosRaw + 180.0f, 360.0f) - 180.0f;  // Wrap a [-180, 180]
     const float dt = CONTROL_PERIOD_US / 1000000.0f;
+
+    // ── Fin de carrera duro, comun a todos los modos ──────────────────────────
+    // Corre ANTES del despacho de modo: safeStop() pone mode=0, con lo que ninguno
+    // de los if (mode == N) de abajo se ejecuta en este tick y no se aplica par.
+    if (mode != 0 && fabsf(pos) > SERVO_HARD_LIMIT_DEG) {
+      safeStop();
+    }
 
     // ══════════════════════════════════════════════════════════════════════════
     // MODO 2: PID Posición Servo
@@ -2553,8 +2739,11 @@ void loop() {
   // Failsafe: si no hay comandos recientes en modos activos, detener.
   // Only guard the command-driven modes (1 manual PWM, 6 RL-over-HTTP); autonomous
   // modes must keep running without external commands (see ENABLE_COMMAND_TIMEOUT).
-  if (ENABLE_COMMAND_TIMEOUT && (mode == 1 || mode == 6) && (nowMs - lastCommandMs > COMMAND_TIMEOUT_MS)) {
-    safeStop();
+  if (ENABLE_COMMAND_TIMEOUT && (mode == 1 || mode == 6)) {
+    const unsigned long cmdLimitMs = (mode == 1) ? MANUAL_COMMAND_TIMEOUT_MS : COMMAND_TIMEOUT_MS;
+    if (nowMs - lastCommandMs > cmdLimitMs) {
+      safeStop();
+    }
   }
 
   if (nowMs - lastTelemetryMs >= telemetryPeriodMs) {

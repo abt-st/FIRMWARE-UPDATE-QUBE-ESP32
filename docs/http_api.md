@@ -64,7 +64,7 @@ Retorna JSON con el estado completo del sistema (servo + péndulo + INA219 + Kal
 Estado compacto de baja latencia para el agente RL (ángulos en radianes):
 
 ```json
-{"th": 0.2654, "al": 3.0912, "thd": 0.0087, "ald": -0.0214}
+{"th": 0.2654, "al": 3.0912, "thd": 0.0087, "ald": -0.0214, "pv": 3}
 ```
 
 | Campo  | Tipo   | Descripción                        |
@@ -73,6 +73,24 @@ Estado compacto de baja latencia para el agente RL (ángulos en radianes):
 | `al`  | float  | α del péndulo (radianes)          |
 | `thd` | float  | θ' (velocidad angular, rad/s)     |
 | `ald` | float  | α' (velocidad angular, rad/s)     |
+| `pv`  | int    | Versión de protocolo `/rl_state` (handshake). `qube_real.py` la valida en `reset()`; firmware y Python deben desplegarse juntos. |
+
+## GET /rl_step
+
+Endpoint combinado (proto v3): **fija la acción RL y devuelve el estado compacto en un
+solo round-trip**, en vez de `/rl_cmd?a=` seguido de `/rl_state` (2 RTT ≈ 71 ms). Es la
+ruta que usa `QubeRealEnv.step()` para reducir la latencia del lazo PC-en-el-lazo por
+WiFi a ~1 RTT/paso. Sin el parámetro `a`, se comporta como `/rl_state` (solo lectura).
+
+```bash
+curl "http://192.168.4.1/rl_step?a=0.5"
+```
+
+Respuesta: el mismo JSON de `/rl_state` (`{th, al, thd, ald, pv}`).
+
+| Parámetro | Tipo  | Descripción                    |
+| --------- | ----- | ------------------------------ |
+| `a`     | float | Acción RL [−1.0, 1.0] → PWM (opcional) |
 
 ## GET /cmd
 

@@ -38,7 +38,7 @@ def _http_get(url: str, retries: int = MAX_RETRIES) -> dict:
             r = requests.get(url, timeout=HTTP_TIMEOUT)
             r.raise_for_status()
             return r.json()
-        except requests.RequestException, ValueError:
+        except (requests.RequestException, ValueError):
             if attempt < retries - 1:
                 time.sleep(0.2)
             else:

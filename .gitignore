@@ -88,3 +88,5 @@ backup_l298n/
 tesis_usach/
 # ── Estudios de literatura (generados por AI) ──────────────────────────────
 docs/literature_studies/
+# ── Agente de estilo de escritura (personal, no compartir) ──────────────────
+.claude/agents/escritor-antonio.md

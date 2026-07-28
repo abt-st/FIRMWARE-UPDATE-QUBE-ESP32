@@ -37,6 +37,8 @@ tracking = [
 [tool.ruff]
 line-length = 120
 target-version = "py313"
+# experiments/ holds throwaway bench/run scripts; CI lints only src+tests.
+extend-exclude = ["experiments"]
 
 [tool.ruff.lint]
 select = [
@@ -66,6 +68,8 @@ ignore = [
 # System-ID uses standard physics symbols (Mp, Lp, Dp, J) for the pendulum params.
 "src/qube_analysis/sysid.py" = ["N803", "N806"]
 "tests/test_sysid.py" = ["N806"]
+# MCP tool docstrings/strings intentionally use Greek θ/α for pendulum angles.
+"mcp/*.py" = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.format]
 quote-style = "double"

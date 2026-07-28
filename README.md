@@ -6,7 +6,9 @@
 [![Python: 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB.svg)](https://www.python.org/)
 [![RL: SAC + SB3](https://img.shields.io/badge/RL-SAC%20+%20SB3-ff6f00.svg)](src/qube_rl/)
 
-Plataforma de control educativo de péndulo rotatorio invertido basada en **ESP32 + BTS7960 + INA219 + LM2596 + CD40106BE**. Alternativa open-source al Quanser QUBE-Servo por **~$70 USD** (frente a $2,500–$3,500 USD del original).
+Plataforma de control educativo de péndulo rotatorio invertido basada en **ESP32 + L298N + INA219 + 2× LM2596 + 2× CD40106BE**. Alternativa open-source al Quanser QUBE-Servo por **~$70 USD** (frente a $2,500–$3,500 USD del original).
+
+> **Nota de hardware (2026-07-28):** el driver de potencia vigente es **L298N**. Entre el 2026-06-08 y el 2026-07-27 se intentó migrar a BTS7960; la migración se revirtió por errores de implementación del usuario y el sistema volvió a L298N (detalle en [`CHANGELOG.md`](CHANGELOG.md)). El firmware activo (`src/firmware/esp32_qube/esp32_qube.ino`) ya fue actualizado a L298N; se conservan solo referencias históricas a BTS7960 en comentarios de contexto (ver v1.52.0 del CHANGELOG). La lógica de control no cambió: ambos drivers comparten el mismo esquema de PWM dual en GPIO26/27 (antes `RPWM/LPWM`, ahora `IN1/IN2`).
 
 Control PID, LQR con gain scheduling, swing-up por energía, filtro de Kalman (LQG), Deep Reinforcement Learning (SAC) con inferencia on-device, y servidor MCP para integración con agentes AI.
 
@@ -46,27 +48,32 @@ Control PID, LQR con gain scheduling, swing-up por energía, filtro de Kalman (L
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                    QUBE SERVO MODERNIZADO                     │
-│                    ESP32 + BTS7960 + INA219 + LM2596          │
+│              ESP32 + L298N + INA219 + 2×LM2596 + CD40106BE    │
 └──────────────────────────────────────────────────────────────┘
 
-ENTRADA: 15V (LiPo 4S o PSU de laboratorio)
+ENTRADA: Transformador 15V-2A
     │
-    ├── [LM2596] ──→ 5V rail
-    │       ├── ESP32 VIN
-    │       ├── BTS7960 VCC
-    │       └── Encoder VCC
+    ├── [INA219] ── High-side sensing (I2C: GPIO21/22), en serie con el motor
+    │       └──→ L298N VS (potencia motor, 15V directo — sin regular)
     │
-    ├── [INA219] ── High-side sensing (I2C: GPIO21/22)
+    ├── [LM2596 #1] ──→ 5V rail "lógica"
+    │       ├── L298N VSS (lógica)
+    │       ├── Encoder VCC (servo + péndulo)
+    │       └── Pull-ups + filtro RC de los 2× CD40106BE
     │
-    ├── [ESP32] ── Núcleo de control
-    │       ├── Core 1: Control @ 500 Hz
-    │       ├── Core 0: Telemetría + WiFi
-    │       ├── GPIO26/27 → BTS7960 RPWM/LPWM
-    │       ├── GPIO34/35 → Encoder Servo → Schmitt + RC
-    │       └── GPIO32/33 → Encoder Péndulo → Schmitt + RC
+    ├── [LM2596 #2] ──→ 5V rail dedicado
+    │       └── ESP32 VIN (aislado del riel de lógica/encoders)
     │
-    └── [BTS7960] ── Motor DC
+    └── [ESP32] ── Núcleo de control
+            ├── Core 1: Control @ 500 Hz
+            ├── Core 0: Telemetría + WiFi
+            ├── 3V3 (regulador interno) → Vcc de los 2× CD40106BE
+            ├── GPIO26/27 → L298N IN1/IN2 (PWM directo, jumper ENA puesto)
+            ├── GPIO34/35 → Encoder Servo → Schmitt U1 + RC
+            └── GPIO32/33 → Encoder Péndulo → Schmitt U2 + RC
 ```
+
+> Los dos LM2596 comparten la entrada de 15 V pero regulan rieles de 5 V independientes: uno alimenta la lógica del L298N, los Schmitt trigger y los encoders (carga variable y ruidosa por conmutación); el otro alimenta únicamente la ESP32, aislándola de ese ruido para reducir el riesgo de brownout.
 
 ### Flujo de datos
 
@@ -74,7 +81,7 @@ ENTRADA: 15V (LiPo 4S o PSU de laboratorio)
                           ESP32 (FreeRTOS)
                          ┌──────────────────┐
 Encoder Servo ─────►     │                  │
-(GPIO34/35 + Schmitt)    │  task_control    │──► BTS7960 (PWM → Motor)
+(GPIO34/35 + Schmitt)    │  task_control    │──► L298N (PWM → Motor)
                          │  500 Hz          │
 Encoder Péndulo ────►    │                  │
 (GPIO32/33 + Schmitt)    └────────┬─────────┘
@@ -95,16 +102,16 @@ Encoder Péndulo ────►    │                  │
 | Componente                    | Cantidad | Precio aprox.  |
 | ----------------------------- | -------- | -------------- |
 | ESP32-WROOM-32                | 1        | $6–10 USD     |
-| BTS7960 (IBT-2)              | 1        | $2–5 USD      |
+| L298N                         | 1        | $1.5–3 USD    |
 | INA219                        | 1        | $2–4 USD      |
-| LM2596 (buck converter)      | 1        | $1–3 USD      |
-| CD40106BE (Schmitt Trigger)  | 1        | ~$0.50 USD    |
+| LM2596 (buck converter)      | 2        | $2–6 USD      |
+| CD40106BE (Schmitt Trigger)  | 2        | ~$1.00 USD    |
 | Motor DC + encoder            | 1        | $15–30 USD    |
 | Encoder péndulo               | 1        | $5–15 USD     |
-| Pasivos (R, C)                | 14       | < $0.50 USD   |
+| Pasivos (R, C)                | ~22      | < $1 USD      |
 | **Total (sin fuente)** |          | **$35–70 USD** |
 
-> BOM completa con especificaciones: [`docs/bom.md`](docs/bom.md)
+> BOM completa con especificaciones: [`docs/hardware/bom.md`](docs/hardware/bom.md)
 
 ---
 
@@ -135,7 +142,7 @@ pio run --target upload
 ```bash
 pio device monitor --baud 115200
 # Salida esperada:
-# === QUBE ESP32 + BTS7960 + INA219 ===
+# === QUBE ESP32 + L298N + INA219 ===
 # [ENC] Servo   CNT=0   POS=0.00°
 # [ENC] Pendulo CNT=0   POS=0.00°
 # [WIFI] Conectado a: QUBE-ESP32  IP: 192.168.4.1
@@ -253,6 +260,22 @@ curl -s http://192.168.4.1/rl_state        # Leer estado (rad)
 curl "http://192.168.4.1/rl_cmd?a=0.5"    # Enviar acción
 curl "http://192.168.4.1/rl_cmd?r=1"      # Reset episodio
 ```
+
+> **Nota de diseño — por qué la telemetría se mantiene inalámbrica.** El lazo RL del
+> modo 6 corre a 50 Hz (período 20 ms), pero el ida-y-vuelta HTTP por WiFi mide ~35 ms
+> (ya optimizado a 1 RTT con `/rl_step`), con picos de ~100 ms por la coexistencia
+> AP+STA de radio única. Se evaluó migrar a un enlace **punto a punto** de menor latencia:
+>
+> - **USB serial cableado** (~2–6 ms): reintroduce el amarre físico PC↔equipo que la
+>   modernización buscaba eliminar (el Quanser original ya exigía conexión USB/paralela
+>   directa), así que se descartó pese a su menor latencia.
+> - **ESP-NOW** (~1–3 ms, inalámbrico): el WiFi del PC no implementa ESP-NOW (tramas de
+>   acción 802.11 propias de Espressif), por lo que requeriría una **2ª ESP32 como puente
+>   USB** + firmware de puente. El costo de hardware/complejidad lo dejó como trabajo futuro.
+>
+> Se conserva WiFi: la latencia **no afecta** los modos autónomos (PID/LQR/swing-up y RL
+> on-device modo 7, cerrados en el ESP32 a 500 Hz); solo limita el entrenamiento RL con el
+> PC en el lazo (modo 6), para el cual el modo 7 on-device ya ofrece una ruta sin red.
 
 ### Modo 7: RL on-device (inferencia en ESP32)
 
@@ -394,7 +417,7 @@ $$K_p = 0.6 \cdot K_u \qquad K_i = \frac{2 K_p}{T_u} \qquad K_d = \frac{K_p \cdo
 
 | Síntoma                           | Causa probable                     | Solución                                         |
 | ---------------------------------- | ---------------------------------- | ------------------------------------------------- |
-| `CNT` no cambia al girar encoder | Falta pull-up o Schmitt trigger    | Verificar circuito de acondicionamiento ([docs](docs/signal_conditioning.md)) |
+| `CNT` no cambia al girar encoder | Falta pull-up o Schmitt trigger    | Verificar circuito de acondicionamiento ([docs](docs/hardware/signal_conditioning.md)) |
 | Error de boot GPIO34/35           | `INPUT_PULLUP` en pin input-only  | Usar solo `INPUT` + pull-up externo             |
 | PID diverge inmediatamente         | Motor invertido                    | Cambiar `MOTOR_DIR = -1` en firmware            |
 | Derivativo oscila con ruido        | `Kd` demasiado alto              | Aumentar `alpha` del filtro EMA (0.12–0.20)    |
@@ -438,8 +461,12 @@ experiments/
 - [x] Paquete `qube_rl` (entrenamiento, inferencia, export)
 - [x] Servidor MCP (flash, control, RL, análisis)
 - [x] Encoder de péndulo integrado (usado por LQR, swing-up y RL; el modo PID de péndulo fue descartado por subactuación)
+- [x] Segundo LM2596: riel de ESP32 aislado del riel de lógica/encoders (anti-brownout)
+- [x] Reversión de hardware BTS7960 → L298N (2026-07-28) — ver `CHANGELOG.md`
+- [x] Actualizar comentarios y string de boot en `esp32_qube.ino` de BTS7960 a L298N
 - [ ] LQR péndulo invertido (modo 4) — validación
 - [ ] SAC sim-to-real — fine-tuning completo en hardware
+- [ ] Migración del lazo RL (modo 6) a enlace de baja latencia ESP-NOW con puente USB — trabajo futuro (ver nota de diseño en Deep RL)
 - [ ] Dashboard web en tiempo real (WebSocket)
 - [ ] PCB Rev2.0 con acondicionamiento integrado
 
@@ -450,9 +477,9 @@ experiments/
 | Documento | Descripción |
 | --- | --- |
 | [`CHANGELOG.md`](CHANGELOG.md) | Historial de versiones del firmware |
-| [`docs/bom.md`](docs/bom.md) | Bill of Materials completo |
-| [`docs/pinout.md`](docs/pinout.md) | Conexiones pin por pin |
-| [`docs/signal_conditioning.md`](docs/signal_conditioning.md) | Circuito CD40106BE Schmitt + RC |
+| [`docs/hardware/bom.md`](docs/hardware/bom.md) | Bill of Materials completo |
+| [`docs/hardware/pinout.md`](docs/hardware/pinout.md) | Conexiones pin por pin |
+| [`docs/hardware/signal_conditioning.md`](docs/hardware/signal_conditioning.md) | Circuito CD40106BE Schmitt + RC |
 | [`docs/http_api.md`](docs/http_api.md) | API HTTP completa (endpoints, parámetros) |
 | [`docs/research/DRL_IMPLEMENTATION_PLAN.md`](docs/research/DRL_IMPLEMENTATION_PLAN.md) | Pipeline SAC sim-to-real |
 | [`docs/MODELO_FISICO_SISTEMA_QUBE.md`](docs/MODELO_FISICO_SISTEMA_QUBE.md) | Ecuaciones del motor, encoder, péndulo |
@@ -486,10 +513,11 @@ experiments/
 
 ### Datasheets
 
-- [BTS7960 — Infineon](https://www.infineon.com/dgdl/Infineon-BTS7960-DS-v01_00-en.pdf?fileId=5546d462518a448701518a525e3d3786)
+- [L298 — STMicroelectronics](https://www.st.com/resource/en/datasheet/l298.pdf)
 - [LM2596 — TI](https://www.ti.com/product/LM2596)
 - [INA219 — TI](https://www.ti.com/product/INA219)
 - [CD40106B — TI](https://www.ti.com/lit/ds/symlink/cd40106b.pdf)
+- [BTS7960 — Infineon](https://www.infineon.com/dgdl/Infineon-BTS7960-DS-v01_00-en.pdf?fileId=5546d462518a448701518a525e3d3786) _(histórico — driver de la migración revertida, ver `CHANGELOG.md`)_
 
 > Lista completa de papers académicos: [`docs/research/`](docs/research/)
 

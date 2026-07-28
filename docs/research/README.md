@@ -4,14 +4,19 @@ Esta carpeta contiene la investigación académica y técnica consolidada del pr
 
 ## Documentos
 
-| Archivo | Propósito | Fuente |
-|---------|-----------|--------|
-| `INVESTIGACION.md` | Investigación unificada completa: estado del arte, arquitectura, metodología experimental, métricas | Consolidado de `old resources/` |
-| `RESUMEN_HALLAZGOS.md` | Síntesis ejecutiva de hallazgos de investigación en GitHub | `old resources/RESUMEN_HALLAZGOS.md` |
-| `SIGNAL_STABILIZATION.md` | Análisis detallado de estabilización de señales, ruido y filtrado | `old resources/SIGNAL_STABILIZATION_INVESTIGATION.md` |
-| `PENDULO_ENCODER.md` | Investigación sobre integración del encoder del péndulo | `old resources/INVESTIGACION_INTEGRACION_ENCODER_PENDULO.md` |
-| `../../Referencias/` | PDFs, datasheets y papers de referencia | Directorio raíz |
+| Archivo | Propósito |
+|---------|-----------|
+| `Investigación Modernización del QUBE Servo.md` | Investigación unificada completa: estado del arte, arquitectura, metodología experimental, métricas |
+| `DRL_IMPLEMENTATION_PLAN.md` | Plan de implementación del control por aprendizaje por refuerzo profundo (DRL) |
+| `METODOS_ALTERNATIVOS_RL_BALANCE.md` | Métodos alternativos de RL evaluados para la fase de balance |
+| `METODOS_ESTABILIZACION_PENDULOS_INVERTIDOS.md` | Estado del arte de métodos de estabilización de péndulos invertidos |
+| `estabilizacion_senales.md` | Análisis de estabilización de señales, ruido y filtrado |
+| `frecuencias_control_pendulos_quanser.md` | Frecuencias de control usadas en péndulos Quanser de referencia |
+| `integracion_encoder_pendulo.md` | Investigación sobre integración del encoder del péndulo |
+| `ai_research/` | Sub-investigaciones puntuales: modelado LQR, viabilidad de RL, acondicionamiento de señal del encoder, CD40106BE, plan del gemelo digital DRL |
+| `../../ref/` | PDFs, datasheets y papers de referencia |
 
 ## Historial de cambios
 
-- 2026-05-26: Creación de estructura organizada de documentación
+- 2026-05-26: Creación de estructura organizada de documentación (consolidado de `old resources/`, ver `~TESIS/recursos antiguos/` — pendiente de archivar).
+- 2026-07-28: Tabla de documentos actualizada para reflejar los nombres/archivos reales (habían sido renombrados desde la creación de esta carpeta).

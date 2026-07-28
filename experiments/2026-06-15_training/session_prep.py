@@ -75,7 +75,7 @@ def _http_get(url: str) -> dict:
             r = requests.get(url, timeout=HTTP_TIMEOUT)
             r.raise_for_status()
             return r.json()
-        except requests.RequestException, json.JSONDecodeError:
+        except (requests.RequestException, json.JSONDecodeError):
             if attempt == MAX_RETRIES - 1:
                 raise
             time.sleep(0.2 * (attempt + 1))

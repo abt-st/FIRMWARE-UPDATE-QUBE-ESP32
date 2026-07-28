@@ -439,7 +439,7 @@ actuador** (el motor mueve el brazo, no el péndulo directamente). No puedes "em
 hacia arriba; solo puedes mover el brazo y dejar que la dinámica acoplada transfiera energía al
 péndulo. Esto es lo que hace al problema un *benchmark* clásico y no trivial de control.
 
-**El hardware** (resumen; detalles en `docs/bom.md`, `docs/pinout.md`):
+**El hardware** (resumen; detalles en `docs/hardware/bom.md`, `docs/hardware/pinout.md`):
 ESP32-WROOM-32 (microcontrolador, 240 MHz, WiFi) + driver de motor **BTS7960** (puente H) +
 sensor de corriente/voltaje **INA219** + encoders incrementales en cuadratura para medir $\theta$
 y $\alpha$. Coste total ~45 USD frente a ~2.500–3.500 USD del Quanser QUBE original. El lazo de
@@ -868,7 +868,7 @@ los puntos de arriba son los que lo separan de conclusiones sólidas.
 - `README.md` — visión general y los 7 modos de control.
 - `CHANGELOG.md` — historia iteración a iteración (v1.0 → v1.42).
 - `docs/handoffs/` — bitácoras de entrenamiento con los resultados numéricos citados aquí.
-- `docs/bom.md`, `docs/pinout.md`, `docs/http_api.md`, `docs/signal_conditioning.md` — hardware.
+- `docs/hardware/bom.md`, `docs/hardware/pinout.md`, `docs/http_api.md`, `docs/hardware/signal_conditioning.md` — hardware.
 - `src/qube_rl/` — código de RL (`config.py`, `envs/qube_sim.py`, `envs/qube_dynamics.py`,
   `rewards.py`, `train.py`, `distill.py`, `finetune.py`).
 - `tesis_usach/` — documento de tesis (objetivos, estado del arte, resultados).
