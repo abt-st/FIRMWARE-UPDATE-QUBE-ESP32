@@ -33,6 +33,7 @@ import serial.tools.list_ports
 try:
     from serial_cmd import find_esp32_port
 except ImportError:  # ejecutado fuera de la carpeta firmware
+
     def find_esp32_port() -> str:
         for p in serial.tools.list_ports.comports():
             desc = p.description.lower()
@@ -43,8 +44,8 @@ except ImportError:  # ejecutado fuera de la carpeta firmware
 
 
 BAUD = 115200
-RESPONSE_WAIT = 1.2   # s a esperar tras cada comando antes de leer la respuesta
-REBOOT_WAIT = 9.0     # s a esperar tras 'reboot' (re-enumeración USB + reconexión STA)
+RESPONSE_WAIT = 1.2  # s a esperar tras cada comando antes de leer la respuesta
+REBOOT_WAIT = 9.0  # s a esperar tras 'reboot' (re-enumeración USB + reconexión STA)
 IP_RE = re.compile(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})")
 
 
@@ -53,7 +54,7 @@ class QubeSerialTool:
         self.root = root
         self.ser: serial.Serial | None = None
         self.lan_ip: str | None = None
-        self.log_q: "queue.Queue[str]" = queue.Queue()
+        self.log_q: queue.Queue[str] = queue.Queue()
         self.busy = False
 
         root.title("QUBE Serial Tool — IP y credenciales WiFi")
@@ -63,55 +64,57 @@ class QubeSerialTool:
         pad = {"padx": 8, "pady": 4}
 
         # ── Puerto ────────────────────────────────────────────────────────
-        fPort = ttk.LabelFrame(root, text="1. Puerto serial")
-        fPort.pack(fill="x", **pad)
+        f_port = ttk.LabelFrame(root, text="1. Puerto serial")
+        f_port.pack(fill="x", **pad)
         self.portVar = tk.StringVar()
-        self.portCombo = ttk.Combobox(fPort, textvariable=self.portVar, width=28, state="readonly")
+        self.portCombo = ttk.Combobox(f_port, textvariable=self.portVar, width=28, state="readonly")
         self.portCombo.grid(row=0, column=0, padx=6, pady=6, sticky="w")
-        ttk.Button(fPort, text="Refrescar", command=self.refresh_ports).grid(row=0, column=1, padx=4)
-        self.connBtn = ttk.Button(fPort, text="Conectar", command=self.toggle_connection)
+        ttk.Button(f_port, text="Refrescar", command=self.refresh_ports).grid(row=0, column=1, padx=4)
+        self.connBtn = ttk.Button(f_port, text="Conectar", command=self.toggle_connection)
         self.connBtn.grid(row=0, column=2, padx=4)
-        self.connLbl = ttk.Label(fPort, text="Desconectado", foreground="#b00")
+        self.connLbl = ttk.Label(f_port, text="Desconectado", foreground="#b00")
         self.connLbl.grid(row=1, column=0, columnspan=3, padx=6, sticky="w")
 
         # ── IP / Red ──────────────────────────────────────────────────────
-        fNet = ttk.LabelFrame(root, text="2. Red / IP")
-        fNet.pack(fill="x", **pad)
-        self.detectBtn = ttk.Button(fNet, text="Detectar IP", command=self.detect_ip, state="disabled")
+        f_net = ttk.LabelFrame(root, text="2. Red / IP")
+        f_net.pack(fill="x", **pad)
+        self.detectBtn = ttk.Button(f_net, text="Detectar IP", command=self.detect_ip, state="disabled")
         self.detectBtn.grid(row=0, column=0, padx=6, pady=6)
-        self.openBtn = ttk.Button(fNet, text="Abrir GUI web", command=self.open_web, state="disabled")
+        self.openBtn = ttk.Button(f_net, text="Abrir GUI web", command=self.open_web, state="disabled")
         self.openBtn.grid(row=0, column=1, padx=4)
         self.ipVar = tk.StringVar(value="LAN IP: --")
-        ttk.Label(fNet, textvariable=self.ipVar, font=("Consolas", 11, "bold")).grid(
-            row=1, column=0, columnspan=3, padx=6, sticky="w")
+        ttk.Label(f_net, textvariable=self.ipVar, font=("Consolas", 11, "bold")).grid(
+            row=1, column=0, columnspan=3, padx=6, sticky="w"
+        )
         self.netVar = tk.StringVar(value="")
-        ttk.Label(fNet, textvariable=self.netVar, foreground="#666").grid(
-            row=2, column=0, columnspan=3, padx=6, pady=(0, 6), sticky="w")
+        ttk.Label(f_net, textvariable=self.netVar, foreground="#666").grid(
+            row=2, column=0, columnspan=3, padx=6, pady=(0, 6), sticky="w"
+        )
 
         # ── Credenciales ──────────────────────────────────────────────────
-        fWifi = ttk.LabelFrame(root, text="3. Credenciales WiFi (STA)")
-        fWifi.pack(fill="x", **pad)
-        ttk.Label(fWifi, text="SSID:").grid(row=0, column=0, padx=6, pady=4, sticky="e")
+        f_wifi = ttk.LabelFrame(root, text="3. Credenciales WiFi (STA)")
+        f_wifi.pack(fill="x", **pad)
+        ttk.Label(f_wifi, text="SSID:").grid(row=0, column=0, padx=6, pady=4, sticky="e")
         self.ssidVar = tk.StringVar()
-        ttk.Entry(fWifi, textvariable=self.ssidVar, width=32).grid(row=0, column=1, padx=4, sticky="w")
-        ttk.Label(fWifi, text="Clave:").grid(row=1, column=0, padx=6, pady=4, sticky="e")
+        ttk.Entry(f_wifi, textvariable=self.ssidVar, width=32).grid(row=0, column=1, padx=4, sticky="w")
+        ttk.Label(f_wifi, text="Clave:").grid(row=1, column=0, padx=6, pady=4, sticky="e")
         self.passVar = tk.StringVar()
-        self.passEntry = ttk.Entry(fWifi, textvariable=self.passVar, width=32, show="•")
+        self.passEntry = ttk.Entry(f_wifi, textvariable=self.passVar, width=32, show="•")
         self.passEntry.grid(row=1, column=1, padx=4, sticky="w")
         self.showPass = tk.BooleanVar(value=False)
-        ttk.Checkbutton(fWifi, text="Ver", variable=self.showPass,
-                        command=self._toggle_pass).grid(row=1, column=2, padx=4, sticky="w")
-        self.saveBtn = ttk.Button(fWifi, text="Guardar y reiniciar",
-                                  command=self.save_wifi, state="disabled")
+        ttk.Checkbutton(f_wifi, text="Ver", variable=self.showPass, command=self._toggle_pass).grid(
+            row=1, column=2, padx=4, sticky="w"
+        )
+        self.saveBtn = ttk.Button(f_wifi, text="Guardar y reiniciar", command=self.save_wifi, state="disabled")
         self.saveBtn.grid(row=2, column=1, padx=4, pady=6, sticky="w")
-        ttk.Label(fWifi, text="La clave debe tener ≥ 8 caracteres.",
-                  foreground="#666").grid(row=3, column=0, columnspan=3, padx=6, sticky="w")
+        ttk.Label(f_wifi, text="La clave debe tener ≥ 8 caracteres.", foreground="#666").grid(
+            row=3, column=0, columnspan=3, padx=6, sticky="w"
+        )
 
         # ── Log ───────────────────────────────────────────────────────────
-        fLog = ttk.LabelFrame(root, text="Registro serial")
-        fLog.pack(fill="both", expand=True, **pad)
-        self.log = scrolledtext.ScrolledText(fLog, height=10, font=("Consolas", 9),
-                                             state="disabled", wrap="word")
+        f_log = ttk.LabelFrame(root, text="Registro serial")
+        f_log.pack(fill="both", expand=True, **pad)
+        self.log = scrolledtext.ScrolledText(f_log, height=10, font=("Consolas", 9), state="disabled", wrap="word")
         self.log.pack(fill="both", expand=True, padx=4, pady=4)
 
         self.refresh_ports()
@@ -199,8 +202,7 @@ class QubeSerialTool:
         self.ser.write((cmd.strip() + "\r\n").encode())
         time.sleep(wait)
         raw = self.ser.read(self.ser.in_waiting or 4096).decode(errors="replace")
-        lines = [ln.strip() for ln in raw.splitlines()
-                 if ln.strip() and not ln.strip().startswith("POS:")]
+        lines = [ln.strip() for ln in raw.splitlines() if ln.strip() and not ln.strip().startswith("POS:")]
         return "\n".join(lines)
 
     def _run_bg(self, target) -> None:
@@ -216,7 +218,7 @@ class QubeSerialTool:
                 target()
             except serial.SerialException as e:
                 self._log(f"[ERROR] Serial: {e}")
-            except Exception as e:  # noqa: BLE001 — mostrar cualquier fallo en el log
+            except Exception as e:
                 self._log(f"[ERROR] {e}")
             finally:
                 self.busy = False
@@ -300,21 +302,22 @@ class QubeSerialTool:
         try:
             self.ser = serial.Serial(port, BAUD, timeout=2)
             time.sleep(0.4)
-            self.root.after(0, lambda: (
-                self.connLbl.configure(text=f"Conectado: {port}", foreground="#080"),
-                self.connBtn.configure(text="Desconectar"),
-            ))
+            self.root.after(
+                0,
+                lambda: (
+                    self.connLbl.configure(text=f"Conectado: {port}", foreground="#080"),
+                    self.connBtn.configure(text="Desconectar"),
+                ),
+            )
             self._log("[OK] Reconectado. Leyendo IP nueva...")
             resp = self._send("i")
             self._log(resp or "(sin respuesta)")
             self._parse_net(resp)
             if not self.lan_ip:
-                self._log("[..] Aún sin IP LAN: puede tardar unos segundos más. "
-                          "Reintentá 'Detectar IP'.")
+                self._log("[..] Aún sin IP LAN: puede tardar unos segundos más. Reintentá 'Detectar IP'.")
         except serial.SerialException as e:
             self._log(f"[ERROR] No se pudo reabrir {port} tras el reinicio: {e}")
-            self.root.after(0, lambda: self.connLbl.configure(
-                text="Desconectado", foreground="#b00"))
+            self.root.after(0, lambda: self.connLbl.configure(text="Desconectado", foreground="#b00"))
 
     def on_close(self) -> None:
         self._disconnect()
