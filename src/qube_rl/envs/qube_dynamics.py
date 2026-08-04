@@ -50,8 +50,19 @@ class QubeDynamics:
     Mp_std: float = 0.003
     Lp: float = 0.129  # length [m]
     Lp_std: float = 0.010
-    Dp: float = 1e-6  # viscous friction [N*m*s/rad]
-    Dp_std: float = 5e-7
+    # MEDIDO en banco 2026-08-04 por spin-down con el brazo sujeto, n=2:
+    # lambda = 0,0283 1/s => Dp = 2*Jp*lambda = 7,52e-6. Las dos capturas coinciden
+    # al 0,4% con amplitudes de suelta de 64 deg y 43 deg — la independencia de la
+    # amplitud es lo que confirma que el amortiguamiento es VISCOSO (Dp*ald) y no
+    # seco, que es el modelo que usa esta clase.
+    # Antes: 1e-6 con std 5e-7, o sea que la aleatorizacion muestreaba en [0, 2e-6]
+    # y el valor real NUNCA cayo dentro. El barrido de junio (20x-130x sobre el
+    # nominal viejo) estuvo entre 2,7x y 17,3x la friccion real.
+    # Ver experiments/2026-08-04_friction_spindown/.
+    Dp: float = 7.52e-6  # viscous friction [N*m*s/rad]
+    # 20% del valor. La medicion repite al 0,4%, asi que este ancho ya no representa
+    # ignorancia sino variabilidad real (temperatura, desgaste) mas robustez sim2real.
+    Dp_std: float = 1.5e-6
 
     # --- Precomputed constants (populated by _init_const) ---
     _c: np.ndarray = field(default_factory=lambda: np.zeros(5), repr=False)

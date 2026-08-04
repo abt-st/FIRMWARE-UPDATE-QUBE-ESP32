@@ -14,11 +14,13 @@ from pathlib import Path
 
 import gymnasium as gym
 
+from qube_rl.config import DEFAULT_ESP32_IP
+
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def make_real_env(esp32_ip: str = "192.168.4.1", control_freq: int = 50, http_timeout: float = 1.0) -> gym.Env:
+def make_real_env(esp32_ip: str = DEFAULT_ESP32_IP, control_freq: int = 50, http_timeout: float = 1.0) -> gym.Env:
     """Build the real-hardware fine-tuning environment (delegates to the factory)."""
     from qube_rl.config import WrapperConfig
     from qube_rl.envs.factory import make_real_env as _make_real_env
@@ -38,7 +40,7 @@ def main(argv: list[str] | None = None) -> None:
 
     parser = argparse.ArgumentParser(description="Fine-tune SAC on real QUBE Servo")
     parser.add_argument("--model", default="models/qube_sac_sim.zip", help="Pre-trained model path (.zip)")
-    parser.add_argument("--ip", default="192.168.4.1", help="ESP32 IP address")
+    parser.add_argument("--ip", default=DEFAULT_ESP32_IP, help=f"ESP32 IP address (default {DEFAULT_ESP32_IP})")
     parser.add_argument("--timesteps", type=int, default=100_000, help="Fine-tuning timesteps")
     parser.add_argument("--lr", type=float, default=1e-4, help="New learning rate")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Random seed (omit for non-deterministic)")

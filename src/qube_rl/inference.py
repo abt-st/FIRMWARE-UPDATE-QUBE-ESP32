@@ -15,11 +15,13 @@ from pathlib import Path
 
 import gymnasium as gym
 
+from qube_rl.config import DEFAULT_ESP32_IP
+
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def make_real_env(esp32_ip: str = "192.168.4.1", control_freq: int = 50) -> gym.Env:
+def make_real_env(esp32_ip: str = DEFAULT_ESP32_IP, control_freq: int = 50) -> gym.Env:
     """Build the real-hardware environment (delegates to the env factory)."""
     from qube_rl.envs.factory import make_real_env as _make_real_env
 
@@ -29,7 +31,7 @@ def make_real_env(esp32_ip: str = "192.168.4.1", control_freq: int = 50) -> gym.
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run trained SAC on real QUBE Servo")
     parser.add_argument("--model", default="models/qube_sac_sim.zip", help="Path to trained model (.zip)")
-    parser.add_argument("--ip", default="192.168.4.1", help="ESP32 IP address")
+    parser.add_argument("--ip", default=DEFAULT_ESP32_IP, help=f"ESP32 IP address (default {DEFAULT_ESP32_IP})")
     parser.add_argument("--episodes", type=int, default=10, help="Number of episodes to run")
     parser.add_argument("--freq", type=int, default=50, help="Control frequency (Hz)")
     args = parser.parse_args(argv)

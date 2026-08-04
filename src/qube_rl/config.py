@@ -10,7 +10,16 @@ that were previously magic numbers.
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
+
+# Address of the physical QUBE.  The firmware now boots as a PURE SoftAP (see
+# ``ENABLE_STA`` in ``src/firmware/esp32_qube/esp32_qube.ino``), so the board is
+# always reachable at the SoftAP address — no DHCP, no router, no lab credentials.
+# ``QUBE_IP`` overrides it without editing code, which is what lets the same script
+# measure an AP+STA build (192.168.100.50) and a SoftAP-only build back to back:
+#     QUBE_IP=192.168.100.50 uv run python ...
+DEFAULT_ESP32_IP: str = os.environ.get("QUBE_IP", "192.168.4.1")
 
 # Maximum angular velocity [rad/s].  Used BOTH as the simulator's integration
 # clamp and as the observation-space velocity bound, so the declared

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import gymnasium as gym
 
-from qube_rl.config import EnvConfig, WrapperConfig
+from qube_rl.config import DEFAULT_ESP32_IP, EnvConfig, WrapperConfig
 
 
 def make_sim_env(
@@ -102,7 +102,7 @@ def make_sim_env(
 
 
 def make_real_env(
-    esp32_ip: str = "192.168.4.1",
+    esp32_ip: str = DEFAULT_ESP32_IP,
     control_freq: int | None = None,
     reward: str = "cos_alpha",
     http_timeout: float = 5.0,

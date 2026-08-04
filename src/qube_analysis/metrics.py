@@ -26,6 +26,41 @@ def compute_overshoot(
     return float(((peak - setpoint) / setpoint) * 100.0)
 
 
+def compute_overshoot_step(
+    response: np.ndarray,
+    setpoint: float,
+    y0: float | None = None,
+) -> float:
+    """Sobrepaso porcentual normalizado por el TAMAÑO DEL ESCALÓN.
+
+    :func:`compute_overshoot` divide por ``|setpoint|``, que sólo coincide con el
+    sobrepaso real cuando el escalón parte de cero. En un escalón que cruza el cero
+    (+17° -> -20°, los que se usan en este banco) esa normalización llega a **duplicar**
+    la cifra: sobre las mismas trazas del 2026-07-30 daba 68-77 % contra un 39-42 % real.
+
+    Se conserva la función vieja intacta para poder empalmar con las campañas
+    anteriores; ésta es la que hay que usar de aquí en adelante.
+
+    Args:
+        response: valores de salida del segmento de escalón.
+        setpoint: referencia a la que se le pidió llegar.
+        y0: valor de partida. Si es ``None`` se toma la primera muestra.
+
+    Returns:
+        Sobrepaso en porcentaje del salto pedido; 0 si no lo hubo.
+    """
+    if len(response) == 0:
+        return 0.0
+    start = float(response[0]) if y0 is None else float(y0)
+    amplitude = setpoint - start
+    if amplitude == 0:
+        return 0.0
+    # El pico que importa es el que se pasa EN EL SENTIDO del escalón.
+    peak = float(np.max(response)) if amplitude > 0 else float(np.min(response))
+    excess = (peak - setpoint) / amplitude
+    return float(max(0.0, excess) * 100.0)
+
+
 def compute_settling_time(
     response: np.ndarray,
     setpoint: float = 1.0,

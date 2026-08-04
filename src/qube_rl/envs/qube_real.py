@@ -24,7 +24,7 @@ import numpy as np
 import requests
 from gymnasium.spaces import Box
 
-from qube_rl.config import MAX_VELOCITY
+from qube_rl.config import DEFAULT_ESP32_IP, MAX_VELOCITY
 from qube_rl.rewards import REWARDS
 from qube_rl.utils import ALPHA, ALPHA_DOT, THETA, THETA_DOT, Timing, observation_from_state
 
@@ -57,13 +57,27 @@ class QubeRealEnv(gym.Env):
         - ``GET /rl_cmd?a=X`` -> apply action
         - ``GET /rl_cmd?r=1`` -> reset encoders + state
         - ``GET /cmd?m=6`` -> switch to RL mode
+        - ``GET /cmd?m=3`` -> homing (see below); ``GET /state`` -> its telemetry
+        - ``GET /cmd?m=2`` -> position PID, used to centre the arm after homing
+
+    Homing:
+        The arm encoder is incremental and loses its zero on every ESP32 reset. Mode
+        3 recovers it by touching both mechanical end-stops and taking the midpoint.
+        It is **opt-in** (``homing_every``, ``homing_on_start``) because it drives
+        the arm into both stops, and it takes ~10 s.
+
+        A run REDEFINES theta=0. ``reset()`` reports ``info["zero_epoch"]`` on every
+        reset so trajectories recorded either side of a homing are never pooled as
+        one reference frame, and ``info["homing"]`` with the measured geometry on the
+        resets that ran one. A failed homing RAISES rather than continuing against an
+        unknown zero.
     """
 
     metadata: ClassVar[dict[str, Any]] = {"render_modes": [], "render_fps": 50}
 
     def __init__(
         self,
-        esp32_ip: str = "192.168.4.1",
+        esp32_ip: str = DEFAULT_ESP32_IP,
         control_freq: int = 50,
         reward: str = "cos_alpha",
         # Short timeout: at 50 Hz a lost packet must retry within a step, not freeze
@@ -75,6 +89,16 @@ class QubeRealEnv(gym.Env):
         invert_action: bool = True,
         invert_alpha: bool = True,
         angle_limits: list[float] | None = None,
+        # ── Homing (firmware mode 3) ──────────────────────────────────────────
+        # OPT-IN a proposito. El homing mueve el brazo contra AMBOS topes
+        # mecanicos; no es algo que deba pasar por sorpresa en un banco
+        # desatendido que el usuario creia en reposo.
+        homing_every: int | None = None,
+        homing_on_limit: bool = True,
+        homing_on_start: bool = False,
+        homing_timeout: float = 30.0,
+        homing_settle_time: float = 0.0,
+        center_after_homing: bool = True,
     ) -> None:
         super().__init__()
         self.esp32_ip = esp32_ip
@@ -128,6 +152,27 @@ class QubeRealEnv(gym.Env):
 
         # Internal state
         self._state = np.zeros(4, dtype=np.float32)
+
+        # Homing config + bookkeeping
+        self.homing_every = homing_every
+        self.homing_on_limit = homing_on_limit
+        self.homing_on_start = homing_on_start
+        self.homing_timeout = homing_timeout
+        # 0 por defecto: el firmware ya espera quietud internamente (fase WAIT_QUIET,
+        # hasta 20 s, y falla con código 5 si no se aquieta). Se probó que esperar
+        # desde el cliente NO cambia la tasa de fallo — la causa era mecánica, no de
+        # inercia residual. Se conserva el parámetro por si un montaje distinto lo
+        # necesita, pero pagar la espera por defecto sería costo sin beneficio.
+        self.homing_settle_time = homing_settle_time
+        self.center_after_homing = center_after_homing
+        self._reset_count = 0
+        self._needs_homing = bool(homing_on_start)
+        # Every homing REDEFINES theta=0. Episodes recorded before and after one are
+        # expressed in DIFFERENT reference frames and must never be pooled as if they
+        # were the same. ``zero_epoch`` goes out in the reset ``info`` on EVERY reset
+        # (not only the homing ones) so a downstream logger can always tag which
+        # frame a trajectory belongs to.
+        self._zero_epoch = 0
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -204,6 +249,144 @@ class QubeRealEnv(gym.Env):
         )
 
     # ------------------------------------------------------------------
+    # Homing (firmware mode 3) — recover the arm's zero reference
+    # ------------------------------------------------------------------
+
+    def _get_full_state(self) -> dict[str, Any]:
+        """Read the full ``/state`` endpoint (homing telemetry lives here, not ``/rl_state``).
+
+        Uses a longer timeout than the 50 Hz control path: ``/state`` is a much
+        bigger JSON and this is never called inside a control loop.
+        """
+        for attempt in range(3):
+            try:
+                resp = self._session.get(f"{self._base_url}/state", timeout=1.5)
+                resp.raise_for_status()
+                return resp.json()
+            except requests.RequestException:
+                if attempt == 2:
+                    raise
+                time.sleep(0.1)
+        raise RuntimeError("unreachable")  # pragma: no cover
+
+    def _start_homing(self) -> None:
+        """Trigger the homing routine (``/cmd?m=3``).
+
+        Returns as soon as the ESP32 acknowledges. The routine is asynchronous by
+        necessity: the firmware runs a 500 Hz control loop and blocking an
+        ESPAsyncWebServer callback for the ~10 s the routine takes would trip the
+        watchdog. Poll with :meth:`_wait_homing`.
+
+        No start/poll race to worry about: the firmware's ``setMode(3)`` clears
+        ``homing_ok`` and moves the phase off ``IDLE`` synchronously inside the HTTP
+        callback, so by the time this returns a stale ``DONE`` from a previous run is
+        already gone.
+        """
+        self._set_mode(3)
+
+    def _wait_homing(self, timeout: float) -> dict[str, Any]:
+        """Poll ``/state`` until the homing routine reaches a terminal phase.
+
+        Returns the homing telemetry on success. Raises on failure or timeout —
+        deliberately: a failed homing means the arm's zero is UNKNOWN, and training
+        against an unknown reference silently corrupts every theta in the dataset.
+        Crashing is the cheaper outcome.
+        """
+        fail_reasons = {
+            1: "recorrido medido fuera de tolerancia (acople suelto o encoder que no cuenta)",
+            2: "timeout buscando el tope positivo",
+            3: "timeout buscando el tope negativo",
+            4: "timeout centrando el brazo",
+            5: "el mecanismo no se aquietó: hay inercia residual del episodio anterior",
+        }
+        deadline = time.monotonic() + timeout
+        phase = "?"
+        while time.monotonic() < deadline:
+            data = self._get_full_state()
+            phase = str(data.get("homing_phase", "?"))
+            if phase == "DONE":
+                telemetry = {
+                    "range_deg": float(data.get("homing_range", 0.0)),
+                    "center_raw_deg": float(data.get("homing_center", 0.0)),
+                    "stop_pos_deg": float(data.get("homing_stop_pos", 0.0)),
+                    "stop_neg_deg": float(data.get("homing_stop_neg", 0.0)),
+                }
+                logger.info(
+                    "Homing OK: recorrido=%.2f deg, centro=%.2f deg (topes %.2f / %.2f)",
+                    telemetry["range_deg"],
+                    telemetry["center_raw_deg"],
+                    telemetry["stop_pos_deg"],
+                    telemetry["stop_neg_deg"],
+                )
+                return telemetry
+            if phase == "FAIL":
+                code = int(data.get("homing_fail", 0))
+                raise RuntimeError(
+                    f"Homing FALLO (code={code}): {fail_reasons.get(code, 'desconocido')}. "
+                    f"Recorrido medido {float(data.get('homing_range', 0.0)):.2f} deg. "
+                    "El cero del brazo NO es confiable; revisar el mecanismo antes de entrenar."
+                )
+            time.sleep(0.2)
+        raise RuntimeError(
+            f"Homing no termino en {timeout:.1f} s (ultima fase: {phase}). "
+            "El brazo puede haber quedado contra un tope; revisar antes de reintentar."
+        )
+
+    def _center_arm(self, timeout: float = 6.0, tol_deg: float = 2.0) -> float:
+        """Drive the arm to theta=0 with the firmware position PID (mode 2).
+
+        Homing guarantees the ZERO but not where the arm ends up parked: the L298N
+        is left coasting (not braking) when the routine finishes, and the pendulum's
+        residual swing back-drives the arm — it is direct-drive. One bench run
+        parked 19.5 deg off centre. This does not affect calibration (the offset is
+        the measured geometric centre regardless), but an episode should not start
+        with a large theta offset, so chain the position PID, which is only
+        legitimate now that the zero exists.
+
+        Best-effort: returns the final |theta| in degrees and does NOT raise. An
+        off-centre arm is a worse starting state, not a corrupt reference.
+        """
+        self._set_mode(2)
+        deadline = time.monotonic() + timeout
+        pos = float("nan")
+        while time.monotonic() < deadline:
+            pos = float(self._get_full_state().get("position_deg", 0.0))
+            if abs(pos) <= tol_deg:
+                break
+            time.sleep(0.2)
+        self._set_mode(0)
+        if abs(pos) > tol_deg:
+            logger.warning("Centrado incompleto: theta=%.2f deg (tolerancia %.1f)", pos, tol_deg)
+        return abs(pos)
+
+    def run_homing(self) -> dict[str, Any]:
+        """Run the full homing sequence and re-establish the arm's zero.
+
+        Public so it can be driven manually from a notebook or a recovery script,
+        not just from :meth:`reset`. Raises if the routine fails.
+        """
+        # Espera de asentamiento ANTES de disparar. El homing detecta los topes por
+        # calado del encoder, así que inercia residual del episodio anterior —brazo o
+        # péndulo todavía en movimiento— se lee como tope y produce un cero corrido.
+        # Medido: lanzándolo enseguida tras un swing-up, 3 de 24 corridas detectaron
+        # el tope 19° antes del real. El firmware ahora falla con código 5 en vez de
+        # arrancar a ciegas, así que sin esta espera el homing simplemente no corre.
+        if self.homing_settle_time > 0:
+            logger.info("Homing: esperando %.1fs a que se asiente el mecanismo...", self.homing_settle_time)
+            self._send_rl_action(0.0)
+            time.sleep(self.homing_settle_time)
+
+        logger.info("Homing: buscando los topes mecanicos para recuperar el cero...")
+        self._start_homing()
+        telemetry = self._wait_homing(self.homing_timeout)
+        if self.center_after_homing:
+            telemetry["park_error_deg"] = self._center_arm()
+        self._zero_epoch += 1
+        self._needs_homing = False
+        telemetry["zero_epoch"] = self._zero_epoch
+        return telemetry
+
+    # ------------------------------------------------------------------
     # Core API
     # ------------------------------------------------------------------
 
@@ -244,11 +427,39 @@ class QubeRealEnv(gym.Env):
         terminated = bool(abs(self._state[THETA]) > np.radians(100.0))
         if terminated:
             logger.info("Episode terminated: servo limit, theta=%.1f", np.degrees(self._state[THETA]))
+            # Reaching the servo limit is the signature of a drifted or lost zero:
+            # either the arm really walked to its end-stop, or theta=0 is no longer
+            # where we think it is. Both are fixed by re-homing, and both poison the
+            # episodes that follow if left alone. Queue it for the next reset — never
+            # here, since the arm is at its limit and the caller still owns the loop.
+            if self.homing_on_limit:
+                self._needs_homing = True
 
         return obs, rwd, terminated, False, {}
 
+    def _should_home(self, options: dict | None) -> bool:
+        """Decide whether this reset should re-establish the arm's zero.
+
+        ``options={"homing": True/False}`` overrides everything, so a caller can force
+        or suppress a run for one episode without reconfiguring the env.
+        """
+        if options is not None and "homing" in options:
+            return bool(options["homing"])
+        if self._needs_homing:
+            return True
+        return bool(self.homing_every) and self._reset_count % self.homing_every == 0
+
     def reset(self, *, seed: int | None = None, options: dict | None = None) -> tuple[np.ndarray, dict]:
         super().reset(seed=seed, options=options)
+
+        info: dict[str, Any] = {}
+        # Homing FIRST: it redefines theta=0, so it has to happen before the state
+        # read below, and before mode 6 takes over (the routine drives the arm into
+        # both stops and would fight an active RL policy).
+        if self._should_home(options):
+            info["homing"] = self.run_homing()
+        self._reset_count += 1
+        info["zero_epoch"] = self._zero_epoch
 
         # Switch to RL mode if requested
         if self.auto_set_mode:
@@ -268,7 +479,7 @@ class QubeRealEnv(gym.Env):
         self._state[THETA_DOT] = float(data["thd"])
         self._state[ALPHA_DOT] = float(data["ald"])
 
-        return self._get_obs(), {}
+        return self._get_obs(), info
 
     def close(self) -> None:
         """Kill motor and close HTTP session."""
