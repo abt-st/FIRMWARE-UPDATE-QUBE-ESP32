@@ -97,6 +97,14 @@ float rl_last_action = 0.0f;
 // Runtime torque scale for mode 7 (sim2real dynamics gap tuning). Set via
 // /rl_cmd?scale=X (0..1). 1.0 = full PWM; lower tames over-pumping on the real rig.
 float rl_pwm_scale = 1.0f;
+// Espejo del wrapper DeadZone con el que se ENTRENA la politica (qube_rl/config.py,
+// WrapperConfig). Tienen que moverse juntos: si cambian alla y no aca, el modo 7
+// aplica una transformacion distinta de la del entrenamiento y la politica entrega un
+// torque que no es el que aprendio. Solo lo usa el modo 7 — ver el comentario en su
+// rama de politica.
+const float RL_DEADZONE        = 0.20f;
+const float RL_DEADZONE_CENTER = 0.01f;
+const float RL_DEADZONE_MAX_ACT = 0.75f;
 // RL velocity filter state — replicates the sim's discrete derivative filter
 // H(s)=50s/(s+50) @ dt=0.02 (qube_rl/utils.py VelocityFilter). Reset on mode entry.
 // Shared by mode 6 (HTTP) and mode 7 (on-device): both tick it at 50 Hz.
@@ -2055,6 +2063,10 @@ String getStateJson() {
   json += "\"rl_w0_sum\":" + String(rl_w0_sum, 6) + ",";
   json += "\"rl_w1_sum\":" + String(rl_w1_sum, 6) + ",";
   json += "\"rl_last_action\":" + String(rl_last_action, 6) + ",";
+  // `rl_pwm_scale` es un global que persiste hasta reiniciar y multiplica el torque de
+  // la politica. diagnose_real_vs_sim.py lo pone en 0,85 y no se veia por ningun lado:
+  // exactamente la clase de variable oculta que ya costo cara con MOTOR_DIR.
+  json += "\"rl_pwm_scale\":" + String(rl_pwm_scale, 3) + ",";
   // Salud del lazo de control: periodo real peor caso y re-sincronizaciones desde
   // el ultimo reset (/cmd?rj=1). Con esto los "500 Hz" son un dato medido y no una
   // constante del codigo — y cada traza capturada lleva su propia evidencia de
@@ -4113,7 +4125,30 @@ void loop() {
         rl_pwm = constrain((int)(MOTOR_DIR * u), -hybrid_lqr_pwm, hybrid_lqr_pwm);
       } else {
         // ── RL policy action ────────────────────────────────────────────
-        float action_norm = constrain(-action, -1.0f, 1.0f);
+        // La politica se ENTRENA detras del wrapper DeadZone (qube_rl/wrappers,
+        // WrapperConfig: deadzone=0.2, center=0.01, max_act=0.75), asi que su salida es
+        // la accion PREVIA a esa transformacion:
+        //
+        //     a_efectiva = signo(a) * (|a| * (max_act - deadzone) + deadzone)   si |a| > center
+        //                = 0                                                    si no
+        //
+        // Hasta el 2026-08-04 este camino hacia un mapeo LINEAL y el firmware no tenia
+        // deadzone en ninguna parte. La diferencia es sistematica y peor justo donde el
+        // bombeo del swing-up vive (acciones moderadas):
+        //     |a|=0.10 -> esperado 0.255, entregado 0.100  (39%)
+        //     |a|=0.30 -> esperado 0.365, entregado 0.300  (82%)
+        //     |a|=1.00 -> esperado 0.750, entregado 1.000  (133%)
+        // Medido: el pendulo se quedaba en 60-117 deg donde necesita 180, con el lazo
+        // sano y la politica verificada identica a la del .zip.
+        //
+        // El modo 6 NO lleva esto: ahi la accion llega por /rl_cmd desde el env de
+        // Python, que ya aplico el wrapper. Aplicarlo aca lo duplicaria.
+        float a = constrain(-action, -1.0f, 1.0f);
+        float action_norm = 0.0f;
+        if (fabsf(a) > RL_DEADZONE_CENTER) {
+          action_norm = (a > 0 ? 1.0f : -1.0f) *
+                        (fabsf(a) * (RL_DEADZONE_MAX_ACT - RL_DEADZONE) + RL_DEADZONE);
+        }
         rl_pwm = (int)(action_norm * PWM_MAX * rl_pwm_scale);
         rl_pwm = constrain(rl_pwm, -PWM_MAX, PWM_MAX);
       }
