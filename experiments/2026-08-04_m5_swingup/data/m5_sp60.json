@@ -1,0 +1,93 @@
+[
+  {
+    "rep": 1,
+    "sp": 60,
+    "homing_range": 270.53,
+    "samples": 9791,
+    "rate_hz": 499.4,
+    "t_in_m5_s": 1.27,
+    "t_in_m4_s": 0.61,
+    "alpha_peak_m5_deg": 179.6,
+    "theta_max_m5_deg": 54.6,
+    "theta_max_m4_deg": 94.3,
+    "limit_hit_in_m5": false,
+    "limit_hit_in_m4": false,
+    "handed_off": true,
+    "pend_wraps": 3,
+    "ceiling_hits": 25,
+    "loop_overruns": 3,
+    "transition": {
+      "reason": "near+slow+peak+forced+energy",
+      "alpha_deg": -171.56,
+      "vel_dps": 18.73,
+      "energy_ratio": 0.9946
+    }
+  },
+  {
+    "rep": 2,
+    "sp": 60,
+    "homing_range": 270.35,
+    "samples": 10463,
+    "rate_hz": 493.0,
+    "t_in_m5_s": 17.88,
+    "t_in_m4_s": 0.0,
+    "alpha_peak_m5_deg": 107.4,
+    "theta_max_m5_deg": 12.5,
+    "theta_max_m4_deg": 0.0,
+    "limit_hit_in_m5": false,
+    "limit_hit_in_m4": false,
+    "handed_off": false,
+    "pend_wraps": 4,
+    "ceiling_hits": 0,
+    "loop_overruns": 3,
+    "transition": null
+  },
+  {
+    "rep": 3,
+    "sp": 60,
+    "homing_range": 270.35,
+    "samples": 9809,
+    "rate_hz": 499.0,
+    "t_in_m5_s": 0.96,
+    "t_in_m4_s": 0.45,
+    "alpha_peak_m5_deg": 163.7,
+    "theta_max_m5_deg": 65.4,
+    "theta_max_m4_deg": 94.7,
+    "limit_hit_in_m5": false,
+    "limit_hit_in_m4": false,
+    "handed_off": true,
+    "pend_wraps": 4,
+    "ceiling_hits": 0,
+    "loop_overruns": 5,
+    "transition": {
+      "reason": "energy",
+      "alpha_deg": 162.77,
+      "vel_dps": 46.45,
+      "energy_ratio": 0.9779
+    }
+  },
+  {
+    "rep": 4,
+    "sp": 60,
+    "homing_range": 270.53,
+    "samples": 9781,
+    "rate_hz": 499.3,
+    "t_in_m5_s": 1.53,
+    "t_in_m4_s": 1.08,
+    "alpha_peak_m5_deg": 173.1,
+    "theta_max_m5_deg": 68.3,
+    "theta_max_m4_deg": 94.5,
+    "limit_hit_in_m5": false,
+    "limit_hit_in_m4": false,
+    "handed_off": true,
+    "pend_wraps": 4,
+    "ceiling_hits": 39,
+    "loop_overruns": 4,
+    "transition": {
+      "reason": "forced",
+      "alpha_deg": 172.27,
+      "vel_dps": 104.94,
+      "energy_ratio": 0.9972
+    }
+  }
+]
