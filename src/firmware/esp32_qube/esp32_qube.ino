@@ -155,36 +155,94 @@ void updateRlObservation(float pos_deg, float pendPosRaw_deg) {
   rl_obs_ald = rl_vf_alVel;
 }
 
+// ── Instrumentacion de P21 ───────────────────────────────────────────────────
+// La campana del 2026-08-04 midio corr(segundos en rama politica, loop_overruns)
+// = +0,996 con n=10: la inferencia rompe el lazo de 500 Hz, ~21% de los ticks
+// atrasan mas de 10 ms. Para 6.464 MACs en un ESP32 a 240 MHz eso es del orden de
+// 100x de mas, asi que hay algo patologico y NO se puede optimizar a ciegas.
+//
+// Se cronometran las dos mitades por separado porque son sospechosos distintos:
+//   fwd  = solo las multiplicaciones (pesos `constexpr` leidos desde flash)
+//   step = fwd + armado de la observacion (4 transcendentales por llamada)
+// Si el grueso esta en `step - fwd`, el problema son los cosf/sinf y no la red.
+// Se reinician con /cmd?rj=1, igual que las metricas del lazo.
+// Se acumulan las dos SUMAS, no solo los maximos: separar red de armado exige comparar
+// media contra media. Restarle un maximo a una media no significa nada.
+volatile uint32_t rl_fwd_us_last  = 0, rl_fwd_us_max  = 0;
+volatile uint32_t rl_step_us_last = 0, rl_step_us_max = 0;
+volatile uint64_t rl_step_us_sum  = 0, rl_fwd_us_sum  = 0;
+volatile uint32_t rl_infer_count  = 0;
+
+// ── P21: los pesos viven en RAM, no en flash ─────────────────────────────────
+// Medido el 2026-08-04: con los pesos leidos desde `.rodata` una inferencia costaba
+// 1.855 us de media y hasta 15.469 us, con max/media = 8,3x. Ese perfil a picos es
+// caracteristico de fallos de cache de flash, no del costo de la aritmetica: 6.464
+// MACs en un ESP32 a 240 MHz deberian ser decenas de microsegundos.
+//
+// 6.593 floats son ~26 KB de RAM, contra 320 KB disponibles y 27,7% en uso. Se copian
+// una vez en setup() y el bucle caliente no vuelve a tocar flash.
+static float RL_W0[RL_HIDDEN * RL_INPUT_DIM];
+static float RL_B0[RL_HIDDEN];
+static float RL_W1[RL_HIDDEN * RL_HIDDEN];
+static float RL_B1[RL_HIDDEN];
+static float RL_W2[RL_HIDDEN];
+static float RL_B2;
+
+// Sumas de control, calculadas una sola vez al copiar. Se contrastan desde el PC contra
+// la misma suma sobre policy_weights.h: es lo que separa "la copia corrompio la
+// politica" de "la politica es la misma y lo que cambio es el banco".
+float rl_w0_sum = 0.0f, rl_w1_sum = 0.0f;
+
+void rl_weights_to_ram() {
+    memcpy(RL_W0, policy_weights::LAYER_0_WEIGHT, sizeof(RL_W0));
+    memcpy(RL_B0, policy_weights::LAYER_0_BIAS,   sizeof(RL_B0));
+    memcpy(RL_W1, policy_weights::LAYER_1_WEIGHT, sizeof(RL_W1));
+    memcpy(RL_B1, policy_weights::LAYER_1_BIAS,   sizeof(RL_B1));
+    memcpy(RL_W2, policy_weights::LAYER_2_WEIGHT, sizeof(RL_W2));
+    RL_B2 = policy_weights::LAYER_2_BIAS[0];
+    double s0 = 0.0, s1 = 0.0;
+    for (int i = 0; i < RL_HIDDEN * RL_INPUT_DIM; i++) s0 += RL_W0[i];
+    for (int i = 0; i < RL_HIDDEN * RL_HIDDEN; i++)    s1 += RL_W1[i];
+    rl_w0_sum = (float)s0;
+    rl_w1_sum = (float)s1;
+}
+
 // Forward pass: input[36] → action in [-1, 1] via tanh (matches SB3 SAC
 // deterministic output; verified numerically vs model.predict, err < 2e-7).
 float rl_forward(const float* input) {
+    const uint32_t t_fwd0 = micros();
     float h1[RL_HIDDEN];
     for (int j = 0; j < RL_HIDDEN; j++) {
-        float sum = policy_weights::LAYER_0_BIAS[j];
+        float sum = RL_B0[j];
         for (int k = 0; k < RL_INPUT_DIM; k++) {
-            sum += policy_weights::LAYER_0_WEIGHT[j * RL_INPUT_DIM + k] * input[k];
+            sum += RL_W0[j * RL_INPUT_DIM + k] * input[k];
         }
         h1[j] = sum > 0.0f ? sum : 0.0f;  // ReLU
     }
     float h2[RL_HIDDEN];
     for (int j = 0; j < RL_HIDDEN; j++) {
-        float sum = policy_weights::LAYER_1_BIAS[j];
+        float sum = RL_B1[j];
         for (int k = 0; k < RL_HIDDEN; k++) {
-            sum += policy_weights::LAYER_1_WEIGHT[j * RL_HIDDEN + k] * h1[k];
+            sum += RL_W1[j * RL_HIDDEN + k] * h1[k];
         }
         h2[j] = sum > 0.0f ? sum : 0.0f;  // ReLU
     }
-    float raw_out = policy_weights::LAYER_2_BIAS[0];
+    float raw_out = RL_B2;
     for (int k = 0; k < RL_HIDDEN; k++) {
-        raw_out += policy_weights::LAYER_2_WEIGHT[k] * h2[k];
+        raw_out += RL_W2[k] * h2[k];
     }
     // SB3 SAC squashes the actor mean with tanh for the deterministic action.
     // (Previously Hardtanh(-2,2)*0.5 downstream — wrong fn, err up to 0.27.)
-    return tanhf(raw_out);
+    const float out = tanhf(raw_out);
+    rl_fwd_us_last = micros() - t_fwd0;
+    if (rl_fwd_us_last > rl_fwd_us_max) rl_fwd_us_max = rl_fwd_us_last;
+    rl_fwd_us_sum += rl_fwd_us_last;
+    return out;
 }
 
 // Build observation from current state and append to history
 float rl_infer_step(float theta_rad, float alpha_rad, float theta_dot, float alpha_dot) {
+    const uint32_t t_step0 = micros();
     rl_obs_idx = (rl_obs_idx + 1) % RL_HISTORY_STEPS;
     rl_obs_buf[rl_obs_idx][0] = theta_rad;
     rl_obs_buf[rl_obs_idx][1] = alpha_rad;
@@ -207,6 +265,10 @@ float rl_infer_step(float theta_rad, float alpha_rad, float theta_dot, float alp
 
     float action = rl_forward(input);
     rl_last_action = action;
+    rl_step_us_last = micros() - t_step0;
+    if (rl_step_us_last > rl_step_us_max) rl_step_us_max = rl_step_us_last;
+    rl_step_us_sum += rl_step_us_last;
+    rl_infer_count++;
     return action;
 }
 
@@ -1976,6 +2038,23 @@ String getStateJson() {
   json += "\"hybrid_enter_deg\":" + String(hybrid_enter_deg, 1) + ",";
   json += "\"hybrid_exit_deg\":" + String(hybrid_exit_deg, 1) + ",";
   json += "\"hybrid_lqr\":" + String(hybrid_lqr ? 1 : 0) + ",";
+  // P21: cuanto cuesta UNA inferencia. `fwd` es solo la red; `step` la incluye mas el
+  // armado de la observacion. La diferencia entre ambas separa "la red es lenta" de
+  // "los transcendentales del armado son lentos", que exigen arreglos distintos.
+  json += "\"rl_fwd_us_last\":" + String(rl_fwd_us_last) + ",";
+  json += "\"rl_fwd_us_max\":" + String(rl_fwd_us_max) + ",";
+  json += "\"rl_fwd_us_mean\":" + String(rl_infer_count ? (uint32_t)(rl_fwd_us_sum / rl_infer_count) : 0) + ",";
+  json += "\"rl_step_us_last\":" + String(rl_step_us_last) + ",";
+  json += "\"rl_step_us_max\":" + String(rl_step_us_max) + ",";
+  json += "\"rl_step_us_mean\":" + String(rl_infer_count ? (uint32_t)(rl_step_us_sum / rl_infer_count) : 0) + ",";
+  json += "\"rl_infer_count\":" + String(rl_infer_count) + ",";
+  // Sumas de los pesos en RAM, calculadas UNA VEZ en el arranque. La primera version
+  // las recorria en cada llamada a /state — 6.400 flotantes a 25 Hz durante una
+  // campana. Instrumentacion que perturba lo que mide: exactamente el defecto que este
+  // mismo dia costo dos diagnosticos (P19 y los picos de P21).
+  json += "\"rl_w0_sum\":" + String(rl_w0_sum, 6) + ",";
+  json += "\"rl_w1_sum\":" + String(rl_w1_sum, 6) + ",";
+  json += "\"rl_last_action\":" + String(rl_last_action, 6) + ",";
   // Salud del lazo de control: periodo real peor caso y re-sincronizaciones desde
   // el ultimo reset (/cmd?rj=1). Con esto los "500 Hz" son un dato medido y no una
   // constante del codigo — y cada traza capturada lleva su propia evidencia de
@@ -2369,6 +2448,13 @@ void handleCmd(AsyncWebServerRequest *request) {
   if (request->hasParam("rj")) {
     loopMaxPeriodUs = 0;
     loopOverruns = 0;
+    // Los contadores de P21 se reinician junto con los del lazo: se comparan entre si
+    // dentro de la MISMA ventana, si no la correlacion no significa nada.
+    rl_fwd_us_last = rl_fwd_us_max = 0;
+    rl_step_us_last = rl_step_us_max = 0;
+    rl_step_us_sum = 0;
+    rl_fwd_us_sum = 0;
+    rl_infer_count = 0;
   }
   request->send(200, "application/json", getStateJson());
 }
@@ -3076,6 +3162,11 @@ void setup() {
     Serial.println("NO DETECTADO");
   }
   printHelp();
+
+  // P21: los pesos de la politica pasan de flash a RAM antes del primer tick del
+  // modo 7. Ver rl_weights_to_ram(): leerlos desde .rodata costaba hasta 15,5 ms por
+  // inferencia contra los 2 ms de periodo del lazo.
+  rl_weights_to_ram();
 
   // ── ArduinoOTA (flasheo por WiFi) ────────────────────────────────────────
   ArduinoOTA.setHostname("qube-esp32");
