@@ -1,9 +1,9 @@
 """
 Diagrama de cableado COMPLETO del sistema QUBE (ayuda visual, no a escala).
 Configuracion L298N + DOBLE LM2596:
-  Fuente 12 V -> Fusible 1.5 A -> INA219 -> L298N -> Motor.
-  LM2596 #1 (buck 12->5 V) alimenta SOLO el ESP32 (rail 5V-E, aislado).
-  LM2596 #2 (buck 12->5 V) alimenta la logica: L298N +5V, encoders y protoboard (rail 5V-L).
+  Fuente 15 V -> Fusible 1.5 A -> INA219 -> L298N -> Motor.
+  LM2596 #2 (buck 15->5 V) alimenta SOLO el ESP32 (rail 5V-E, aislado).
+  LM2596 #1 (buck 15->5 V) alimenta la logica: L298N +5V, encoders y protoboard (rail 5V-L).
   2x CD40106BE para acondicionamiento (pull-ups 2k2 + doble inversion + RC 10k/10n).
   ESP32 como concentrador (PWM IN1/IN2/ENA, I2C, encoders).
 
@@ -18,9 +18,9 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle, FancyBboxPatch
 
 # --- colores por red ---
-C_12V = "#00695c"   # potencia 12 V (fuente / VS motor)
-C_5VE = "#e53935"   # bus 5 V ESP32   (LM2596 #1, aislado)
-C_5VL = "#3949ab"   # bus 5 V logica  (LM2596 #2: L298N +5V, encoders, protoboard)
+C_15V = "#00695c"   # potencia 15 V (fuente / VS motor)
+C_5VE = "#e53935"   # bus 5 V ESP32   (LM2596 #2, aislado)
+C_5VL = "#3949ab"   # bus 5 V logica  (LM2596 #1: L298N +5V, encoders, protoboard)
 C_3V3 = "#fb8c00"   # bus 3V3 (regulador ESP32)
 C_GND = "#37474f"   # tierra
 C_I2C = "#039be5"   # I2C (SDA/SCL)
@@ -114,8 +114,8 @@ net([(36, 30), (82, 30)], C_3V3, lw=2)
 # =========================================================================
 # CADENA DE POTENCIA:  Fuente -> Fusible -> INA219 -> L298N -> Motor
 # =========================================================================
-block(6, 104, 20, 16, "FUENTE", C_SRC, sub="12 V DC")
-pin("SRC_P", 26, 116, "+12V", dx=-1.2, ha="right", fs=7)
+block(6, 104, 20, 16, "FUENTE", C_SRC, sub="15 V DC")
+pin("SRC_P", 26, 116, "+15V", dx=-1.2, ha="right", fs=7)
 pin("SRC_G", 26, 108, "GND", dx=-1.2, ha="right", fs=7)
 
 block(34, 112, 18, 8, "FUSIBLE", C_FUSE, sub="1.5 A", fs=10)
@@ -131,7 +131,7 @@ pin("INA_SDA", 90, 104, "SDA", dy=1.6, fs=6)
 pin("INA_SCL", 96, 104, "SCL", dy=1.6, fs=6)
 
 block(118, 100, 34, 26, "L298N", C_BLK, sub="puente H dual")
-pin("L_VS", 118, 122, "VS +12V", dx=1.4, ha="left", fs=6)
+pin("L_VS", 118, 122, "VS +15V", dx=1.4, ha="left", fs=6)
 pin("L_5V", 118, 113, "+5V", dx=1.4, ha="left", fs=6.5)
 pin("L_GND", 118, 104, "GND", dx=1.4, ha="left", fs=6.5)
 pin("L_IN1", 126, 100, "IN1", dy=1.6, fs=6)
@@ -144,15 +144,15 @@ block(166, 105, 24, 18, "MOTOR", "#5d4037", sub="DC")
 pin("MOT_p", 166, 118, "M+", dx=1.4, ha="left", fs=6.5)
 pin("MOT_m", 166, 110, "M-", dx=1.4, ha="left", fs=6.5)
 
-# --- LM2596 #2 (logica): 12->5 V, alimenta L298N +5V, encoders y protoboard ---
-block(70, 76, 30, 16, "LM2596 #2", C_BLK, sub="buck 12->5 V - logica")
+# --- LM2596 #1 (logica): 15->5 V, alimenta L298N +5V, encoders y protoboard ---
+block(70, 76, 30, 16, "LM2596 #1", C_BLK, sub="buck 15->5 V - logica")
 pin("L2_INp", 76, 92, "IN+", dy=-1.6, fs=6)
 pin("L2_OUTp", 94, 92, "OUT+", dy=-1.6, fs=5.5)
 pin("L2_INm", 82, 76, "IN-", dy=-1.6, fs=6)
 pin("L2_OUTm", 88, 76, "OUT-", dy=-1.6, fs=5.5)
 
-# --- LM2596 #1 (ESP32): 12->5 V, alimenta SOLO el ESP32 (rail aislado) ---
-block(36, 72, 28, 14, "LM2596 #1", C_BLK, sub="buck 12->5 V - ESP32", fs=10)
+# --- LM2596 #2 (ESP32): 15->5 V, alimenta SOLO el ESP32 (rail aislado) ---
+block(36, 72, 28, 14, "LM2596 #2", C_BLK, sub="buck 15->5 V - ESP32", fs=10)
 pin("L1_INp", 42, 86, "IN+", dy=-1.6, fs=6)
 pin("L1_OUTp", 58, 86, "OUT+", dy=-1.6, fs=5.5)
 pin("L1_INm", 48, 72, "IN-", dy=-1.6, fs=6)
@@ -161,7 +161,7 @@ pin("L1_OUTm", 54, 72, "OUT-", dy=-1.6, fs=5.5)
 # =========================================================================
 # ESP32 (concentrador)
 # =========================================================================
-block(172, 14, 34, 90, "ESP32", C_MCU, sub="WROOM-32")
+block(172, 14, 34, 90, "ESP32", C_MCU, sub="DevKit V1 - 30 pines")
 esp_pins = [
     ("ESP_5V", 96, "5V / VIN", C_5VE),
     ("ESP_3V3", 88, "3V3", C_3V3),
@@ -213,19 +213,19 @@ pin("U2_G", 60, 8, "7", dy=1.4, fs=6)
 # =========================================================================
 # NETS
 # =========================================================================
-# ---- 12 V: Fuente -> Fusible -> nodo -> {INA219 VIN+, LM2596 #1 IN+, #2 IN+} ----
-link("SRC_P", "F_L", C_12V, lw=2.5)
-net([(52, 116), (70, 116)], C_12V, lw=2.5)          # fusible -> VIN+
-dot(60, 116, C_12V)                                 # nodo 12 V
-net([(60, 116), (60, 90)], C_12V, lw=2.2)           # bajante 12 V
-dot(60, 100, C_12V)
-dot(60, 90, C_12V)
-net([(60, 100), (76, 100), (76, 92)], C_12V, lw=2.2)  # -> LM2596 #2 IN+
-net([(60, 90), (42, 90), (42, 86)], C_12V, lw=2.2)    # -> LM2596 #1 IN+
-# VS (12 V tras el shunt): INA219 VIN- -> L298N VS
-net([(100, 116), (109, 116), (109, 122), (118, 122)], C_12V, lw=2.5)
+# ---- 15 V: Fuente -> Fusible -> nodo -> {INA219 VIN+, LM2596 #1 IN+, #2 IN+} ----
+link("SRC_P", "F_L", C_15V, lw=2.5)
+net([(52, 116), (70, 116)], C_15V, lw=2.5)          # fusible -> VIN+
+dot(60, 116, C_15V)                                 # nodo 15 V
+net([(60, 116), (60, 90)], C_15V, lw=2.2)           # bajante 15 V
+dot(60, 100, C_15V)
+dot(60, 90, C_15V)
+net([(60, 100), (76, 100), (76, 92)], C_15V, lw=2.2)  # -> LM2596 #2 IN+
+net([(60, 90), (42, 90), (42, 86)], C_15V, lw=2.2)    # -> LM2596 #1 IN+
+# VS (15 V tras el shunt): INA219 VIN- -> L298N VS
+net([(100, 116), (109, 116), (109, 122), (118, 122)], C_15V, lw=2.5)
 
-# ---- 5V-L (logica): LM2596 #2 OUT+ -> rail -> {L298N +5V, encoders, protoboard} ----
+# ---- 5V-L (logica): LM2596 #1 OUT+ -> rail -> {L298N +5V, encoders, protoboard} ----
 net([(94, 92), (94, V5_Y)], C_5VL, lw=2.5)
 dot(94, V5_Y, C_5VL)
 net([(114, V5_Y), (114, 113), (118, 113)], C_5VL, lw=2.0)  # rail -> L298N +5V
@@ -235,7 +235,7 @@ dot(10, V5_Y, C_5VL)
 net([(10, 40), (10, 10)], C_5VL, lw=2.0)                   # -> enc pendulo 5V
 dot(10, 40, C_5VL)
 
-# ---- 5V-E (ESP32): LM2596 #1 OUT+ -> ESP32 VIN (rail dedicado, aislado) ----
+# ---- 5V-E (ESP32): LM2596 #2 OUT+ -> ESP32 VIN (rail dedicado, aislado) ----
 net([(58, 86), (58, 68), (170, 68), (170, 96), (172, 96)], C_5VE, lw=2.5)
 dot(172, 96, C_5VE)
 
@@ -275,13 +275,13 @@ net([(16, 40), (28, 40), (28, GND_Y)], C_GND, lw=1.6)   # ENC servo GND
 dot(28, GND_Y, C_GND)
 net([(60, 38), (66, 38), (66, GND_Y)], C_GND, lw=1.6)   # U1 pin 7 GND
 dot(66, GND_Y, C_GND)
-# GND de LM2596 #1 (ESP32): sale por la izquierda esquivando U1
+# GND de LM2596 #2 (ESP32): sale por la izquierda esquivando U1
 net([(48, 72), (54, 72)], C_GND, lw=1.6)                # une IN-/OUT- del buck #1
 net([(48, 72), (32, 72), (32, GND_Y)], C_GND, lw=1.6)
 dot(32, GND_Y, C_GND)
-# GND de la seccion INA219 + LM2596 #2 a colector unico a la derecha (x=104)
+# GND de la seccion INA219 + LM2596 #1 a colector unico a la derecha (x=104)
 net([(82, 104), (82, 100), (104, 100), (104, GND_Y)], C_GND, lw=1.6)  # INA219 GND
-net([(82, 76), (104, 76)], C_GND, lw=1.6)                             # LM2596 #2 IN-/OUT-
+net([(82, 76), (104, 76)], C_GND, lw=1.6)                             # LM2596 #1 IN-/OUT-
 dot(88, 76, C_GND)
 dot(104, 76, C_GND)
 dot(104, 100, C_GND)
@@ -339,9 +339,9 @@ net([(150, 68), (150, 86)], C_5VE, lw=1.4)
 dot(150, 68, C_5VE)
 net([(150, 82), (150, GND_Y)], C_GND, lw=1.2)
 dot(150, GND_Y, C_GND)
-# 470 uF en 12 V (VS del L298N)
+# 470 uF en 15 V (VS del L298N)
 comp(110, 84, 6.0, 4.0, C_CAP, "470µF", fs=5.5)
-net([(109, 116), (110, 116), (110, 86)], C_12V, lw=1.4)
+net([(109, 116), (110, 116), (110, 86)], C_15V, lw=1.4)
 net([(110, 82), (110, GND_Y)], C_GND, lw=1.2)
 dot(110, GND_Y, C_GND)
 # 10 uF en 3V3 (junto a los pines 3V3/GND del ESP32)
@@ -353,10 +353,10 @@ net([(166, 82), (166, 80), (172, 80)], C_GND, lw=1.2)
 # leyenda + titulo
 # =========================================================================
 handles = [
-    mpatches.Patch(color=C_12V, label="12 V (fuente / VS motor)"),
+    mpatches.Patch(color=C_15V, label="15 V (fuente / VS motor)"),
     mpatches.Patch(color=C_FUSE, label="fusible 1.5 A"),
-    mpatches.Patch(color=C_5VE, label="5 V ESP32 (LM2596 #1)"),
-    mpatches.Patch(color=C_5VL, label="5 V logica (LM2596 #2)"),
+    mpatches.Patch(color=C_5VE, label="5 V ESP32 (LM2596 #2)"),
+    mpatches.Patch(color=C_5VL, label="5 V logica (LM2596 #1)"),
     mpatches.Patch(color=C_3V3, label="3V3 (ESP32)"),
     mpatches.Patch(color=C_GND, label="GND (estrella)"),
     mpatches.Patch(color=C_MOT, label="potencia motor (M+/M-)"),
@@ -371,7 +371,7 @@ ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.01),
           ncol=5, fontsize=8.5, frameon=False)
 
 ax.set_title("QUBE — Diagrama de cableado completo (ayuda visual, no a escala)\n"
-             "Fuente 12 V · Fusible 1.5 A · INA219 · L298N · Motor · "
+             "Fuente 15 V · Fusible 1.5 A · INA219 · L298N · Motor · "
              "2× LM2596 (5 V: ESP32 + logica) · 2× CD40106BE · ESP32",
              fontsize=14, fontweight="bold")
 ax.set_xlim(0, 216)

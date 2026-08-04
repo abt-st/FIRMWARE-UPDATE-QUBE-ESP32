@@ -8,7 +8,7 @@ Lista completa de componentes con especificaciones y costos.
 
 | Componente                    | Especificación                               | Cantidad | Precio aprox.     |
 | ----------------------------- | --------------------------------------------- | -------- | ----------------- |
-| **ESP32-WROOM-32**      | Dual-core 240 MHz, WiFi+BLE                   | 1        | $6–10 USD        |
+| **ESP32-WROOM-32**      | Dual-core 240 MHz, WiFi+BLE — placa DevKit V1, 30 pines | 1        | $6–10 USD        |
 | **L298N**               | Dual H-Bridge, 2 A/canal, 5–35 V             | 1        | $1.5–3 USD       |
 | **INA219**              | Monitor I2C, 0–26 V, ±3.2 A                 | 1        | $2–4 USD         |
 | **LM2596**              | Buck converter ajustable, 3 A                 | 2        | $2–6 USD         |

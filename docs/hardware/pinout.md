@@ -2,6 +2,8 @@
 
 Referencia completa de conexiones pin por pin.
 
+**Placa:** DOIT ESP32 DevKit V1, **30 pines** (módulo ESP32-WROOM-32). Es la única placa del proyecto desde el 2026-08-01; reemplazó a la variante de 38 pines sin cambiar ni un número de GPIO (ver `CHANGELOG.md` v1.57.1).
+
 ## Tabla completa
 
 | Subsistema       | Origen                   | Destino                                                | Notas                                |
@@ -33,19 +35,70 @@ Referencia completa de conexiones pin por pin.
 
 ## Configuración de pines ESP32
 
-| Pin     | Función               | Tipo         | Notas                                |
-| ------- | --------------------- | ------------ | ------------------------------------ |
-| GPIO21  | I2C SDA               | Bidireccional| Pull-up interno                      |
-| GPIO22  | I2C SCL               | Salida       | Pull-up interno                      |
-| GPIO25  | L298N ENA (PWM)        | Salida      | Solo opción A, jumper ENA retirado  |
-| GPIO26  | L298N IN1              | Salida      | PWM adelante                         |
-| GPIO27  | L298N IN2              | Salida      | PWM reversa                          |
-| GPIO32  | Encoder péndulo A     | Entrada      | Schmitt + RC (10 kΩ/10 nF)         |
-| GPIO33  | Encoder péndulo B     | Entrada      | Schmitt + RC (10 kΩ/10 nF)         |
-| GPIO34  | Encoder servo A       | Entrada      | Schmitt + RC (10 kΩ/10 nF), input-only |
-| GPIO35  | Encoder servo B       | Entrada      | Schmitt + RC (10 kΩ/10 nF), input-only |
+La columna **Posición** cuenta desde el extremo del conector USB (el pin 1 de cada fila es el más cercano al USB), para poder cablear contando posiciones en vez de buscar el serigrafiado con lupa.
+
+| Pin     | Función               | Tipo         | Posición        | Notas                                |
+| ------- | --------------------- | ------------ | --------------- | ------------------------------------ |
+| GPIO21  | I2C SDA               | Bidireccional| der. #11 (D21)  | Pull-up interno                      |
+| GPIO22  | I2C SCL               | Salida       | der. #14 (D22)  | Pull-up interno                      |
+| GPIO25  | L298N ENA (PWM)        | Salida      | izq. #8 (D25)   | **Sin conectar en el montaje actual** (opción A). Solo se cablea en opción B, con el jumper ENA retirado |
+| GPIO26  | L298N IN1              | Salida      | izq. #7 (D26)   | PWM adelante                         |
+| GPIO27  | L298N IN2              | Salida      | izq. #6 (D27)   | PWM reversa                          |
+| GPIO32  | Encoder péndulo A     | Entrada      | izq. #10 (D32)  | Schmitt + RC (10 kΩ/10 nF)         |
+| GPIO33  | Encoder péndulo B     | Entrada      | izq. #9 (D33)   | Schmitt + RC (10 kΩ/10 nF)         |
+| GPIO34  | Encoder servo A       | Entrada      | izq. #12 (D34)  | Schmitt + RC (10 kΩ/10 nF), input-only |
+| GPIO35  | Encoder servo B       | Entrada      | izq. #11 (D35)  | Schmitt + RC (10 kΩ/10 nF), input-only |
+| VIN     | Entrada 5 V           | Alimentación | izq. #1         | Desde LM2596 #2 (riel dedicado)      |
+| 3V3     | Salida 3.3 V          | Alimentación | der. #1         | Vcc de los CD40106BE ×2 + pull-ups 2.2 kΩ ×4 |
+| GND     | Tierra                | Alimentación | izq. #2 / der. #2 | Cualquiera de las dos; una sola bajada al GND común (estrella) |
 
 > **Nota:** GPIO34 y GPIO35 son pines input-only en el ESP32-WROOM-32. No soportan `INPUT_PULLUP` por firmware — los pull-ups deben ser externos.
+
+### Mapa completo de los 30 pines
+
+Tarjeta imprimible para el banco: **[`pinout_esp32_30.png`](pinout_esp32_30.png)** (se
+regenera con `uv run python docs/hardware/pinout_esp32_30.py`). Es la misma información
+que la tabla de abajo, dibujada en orden físico y con las trampas marcadas.
+
+Vista desde arriba, con el USB hacia arriba. Posición #1 = el pin más cercano al USB.
+
+| # | Fila izquierda | Asignación QUBE | # | Fila derecha | Asignación QUBE |
+|---|---|---|---|---|---|
+| 1 | `VIN` | **5 V ← LM2596 #2** (riel dedicado, anti-brownout) | 1 | `3V3` | **Vcc CD40106BE ×2 + pull-ups 2.2 kΩ ×4** |
+| 2 | `GND` | **GND común** (estrella) | 2 | `GND` | **GND común** (basta una bajada) |
+| 3 | `D13` | libre | 3 | `D15` | libre |
+| 4 | `D12` | libre | 4 | `D2` | libre |
+| 5 | `D14` | libre | 5 | `D4` | libre |
+| 6 | `D27` | **L298N IN2** (PWM reversa) | 6 | `RX2` (GPIO16) | libre |
+| 7 | `D26` | **L298N IN1** (PWM adelante) | 7 | `TX2` (GPIO17) | libre |
+| 8 | `D25` | **L298N ENA** — sin conectar (opción A) | 8 | `D5` | libre |
+| 9 | `D33` | **Encoder péndulo B** ← J4 | 9 | `D18` | libre |
+| 10 | `D32` | **Encoder péndulo A** ← J4 | 10 | `D19` | libre |
+| 11 | `D35` | **Encoder servo B** ← J4 (input-only) | 11 | `D21` | **INA219 SDA** |
+| 12 | `D34` | **Encoder servo A** ← J4 (input-only) | 12 | `RX0` (GPIO3) | ⚠ UART0 del USB — no cablear |
+| 13 | `VN` (GPIO39) | libre (input-only) | 13 | `TX0` (GPIO1) | ⚠ UART0 del USB — no cablear |
+| 14 | `VP` (GPIO36) | libre (input-only) | 14 | `D22` | **INA219 SCL** |
+| 15 | `EN` | reset — no cablear | 15 | `D23` | libre |
+
+**Balance:** de los 30 pines, 13 están comprometidos (9 GPIO de señal + VIN + 3V3 + los dos
+GND) y 3 no son cableables (`EN` es el reset, `RX0`/`TX0` son la UART0 del USB). Quedan
+**14 libres**: 12 GPIO de propósito general (`D13`, `D12`, `D14`, `D15`, `D2`, `D4`, `D5`,
+`D18`, `D19`, `D23`, más `RX2`/`TX2` si no se usa la UART2) y 2 input-only sin pull-up
+(`VP`, `VN`). `D25` no cuenta como libre: queda reservado para la opción B del ENA.
+`D2`, `D4`, `D5`, `D12` y `D15` son pines de strapping: usables, pero conviene dejarlos
+para último si hace falta expandir, porque su nivel en el arranque decide el modo de boot.
+
+> Verificar contra el serigrafiado de la placa antes de cablear: hay clones con las filas espejadas.
+
+### Trampas de cableado de esta placa
+
+- **IN1/IN2 quedan contiguos pero INVERTIDOS** (izq. #6-#7). El header baja `D27` (=IN2) y después `D26` (=IN1), mientras que el bloque del L298N va IN1, IN2. **Una cinta recta los permuta.** Y permutarlos no se nota hasta que se cierra un lazo: el modo 1 manual no aplica `MOTOR_DIR`, así que el brazo se mueve "bien", pero el PID, el LQR y el swing-up sí lo aplican y quedan en realimentación **positiva** — el brazo se fuga al tope. Con `MOTOR_DIR = -1` la relación correcta es **PWM crudo positivo → la posición BAJA**. Medido en banco el 2026-08-03: estaban permutados.
+- **Los 4 canales de encoder ocupan 4 posiciones seguidas** (izq. #9 a #12), pero en el orden `33, 32, 35, 34` — que es **exactamente el inverso** del orden del conector J4 de la perfboard (`34, 35, 32, 33`, ver `perfboard_layout.py`). La cinta va cruzada extremo con extremo. Si se conecta "derecha", los dos encoders quedan intercambiados y el síntoma (el brazo mueve las cuentas del péndulo) no apunta al conector.
+- **SDA y SCL no son contiguos:** entre GPIO21 (der. #11) y GPIO22 (der. #14) están RX0 y TX0. Correrse una posición desde SDA aterriza en la UART0 del USB — se pierde el flasheo por serie y el síntoma no parece un problema de I2C.
+- **Pines que esta placa no expone:** GPIO0 y GPIO6–11 (flash SPI). Ninguno se usa en este montaje, por eso la migración desde la placa de 38 pines no requirió renumerar nada.
+- **Ninguno de los 9 GPIO en uso es pin de strapping** (0, 2, 4, 5, 12, 15), así que el cableado no puede dejar la placa en un modo de arranque equivocado.
+
+> **Mecánica:** la DevKit V1 de 30 pines es más corta (y algo más angosta) que la de 38 pines. Si la placa va sobre zócalo o sobre una protoboard fija, medir el footprint antes de comprometer el montaje.
 
 ## Cableado de ENA (L298N)
 
@@ -54,7 +107,7 @@ Referencia completa de conexiones pin por pin.
 | **A (recomendada, en uso)** | Dejar puesto | No conectar al ESP32       | PWM directo por IN1/IN2 |
 | B (alternativa)           | Retirar      | ESP32 GPIO25 → ENA (señal) | PWM por ENA, IN1/IN2 solo fijan dirección |
 
-> **Importante:** el bloque ENA del L298N tiene 2 pines físicos: ENA (señal) y +5V, puenteados por el jumper. Con el jumper puesto (opción A, la usada), el PWM se aplica directamente en IN1/IN2 y GPIO25 queda libre. Si se retira el jumper (opción B), GPIO25 va solo al pin ENA (señal), nunca al pin +5V.
+> **Importante:** GPIO25 sí está expuesto en la DevKit V1 de 30 pines (izq. #8), así que la opción B sigue disponible en esta placa. El bloque ENA del L298N tiene 2 pines físicos: ENA (señal) y +5V, puenteados por el jumper. Con el jumper puesto (opción A, la usada), el PWM se aplica directamente en IN1/IN2 y GPIO25 queda libre. Si se retira el jumper (opción B), GPIO25 va solo al pin ENA (señal), nunca al pin +5V.
 >
 > El firmware (`esp32_qube.ino`) ya está actualizado a L298N (comentarios e `IN1`/`IN2`); solo conserva referencias históricas a BTS7960 donde documenta la migración revertida (ver `CHANGELOG.md` v1.52.0). GPIO25 se sigue dejando en HIGH en `setup()` por herencia de esa etapa (era R_EN/L_EN del BTS7960); en el L298N actual (opción A, jumper puesto) esa salida no está conectada a nada — es inofensiva pero no cumple ninguna función.
 
