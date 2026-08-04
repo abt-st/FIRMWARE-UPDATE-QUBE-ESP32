@@ -114,11 +114,27 @@ def make_real_env(
     invert_action: bool = True,
     invert_alpha: bool = True,
     angle_limits: list[float] | None = None,
+    homing_every: int | None = None,
+    homing_on_start: bool = False,
 ) -> gym.Env:
     """Build the real-hardware (ESP32 over HTTP) environment.
 
     Mirrors :func:`make_sim_env`'s wrapper stack (minus the simulator) so a
     policy trained in sim sees the same observation layout on hardware.
+
+    ``homing_every`` / ``homing_on_start`` se agregaron el 2026-08-04: existian en
+    ``QubeRealEnv`` pero esta factory no los pasaba, asi que **por aca el homing era
+    inalcanzable** y todo evaluador construido con ella arrancaba los episodios con el
+    brazo donde hubiera quedado la corrida anterior.
+
+    Por que importa: la escalera de seguridad del firmware abraza la accion del modo 6
+    a partir de |theta| = 80 grados y hace setMode(0) a los 95. Si el brazo arranca
+    pasado ese punto, el episodio muere en el primer paso — y como
+    ``updateRlObservation`` solo corre en los modos 6 y 7, ``/rl_state`` queda
+    CONGELADO en el ultimo valor en vez de fallar. La politica sigue "corriendo" cientos
+    de pasos contra una observacion muerta y el resultado parece una brecha sim2real
+    catastrofica. Medido asi el 2026-08-04: 3 episodios arrancando en 91-94 grados,
+    reach=0%, theta constante en las 1500 muestras.
     """
     from gymnasium.wrappers import TimeLimit
     from stable_baselines3.common.monitor import Monitor
@@ -141,6 +157,8 @@ def make_real_env(
         invert_action=invert_action,
         invert_alpha=invert_alpha,
         angle_limits=angle_limits,
+        homing_every=homing_every,
+        homing_on_start=homing_on_start,
     )
     if max_episode_steps:
         env = TimeLimit(env, max_episode_steps=max_episode_steps)

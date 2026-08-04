@@ -138,6 +138,11 @@ def main() -> None:
     p.add_argument("--scale", type=float, default=0.85, help="real torque cap (mode 6)")
     p.add_argument("--friction-mult", type=float, default=0.0,
                    help="if >0, also roll the policy in sim at this friction× (3-way compare)")
+    p.add_argument("--homing-every", type=int, default=1,
+                   help="hacer homing cada N resets (1 = cada episodio, el default). "
+                        "0 lo desactiva, pero entonces el brazo arranca donde quedo: "
+                        "si eso cae sobre 80 grados el episodio muere en el primer paso "
+                        "y /rl_state se congela sin avisar")
     p.add_argument("--skip-real", action="store_true", help="sim-only (no hardware)")
     p.add_argument("--skip-sim", action="store_true")
     p.add_argument("--out", default="", help="output CSV (default diagnose_<ts>.csv)")
@@ -188,9 +193,19 @@ def main() -> None:
         log(f"Setting torque scale={args.scale} on {args.ip}")
         with contextlib.suppress(Exception):
             requests.get(f"http://{args.ip}/rl_cmd", params={"scale": str(args.scale)}, timeout=3)
+        # homing_every=1 por defecto (2026-08-04). ANTES no se pasaba nada, y el
+        # default de make_real_env es no hacer homing NUNCA: el brazo arrancaba donde
+        # hubiera quedado la corrida anterior. El 2026-08-04 eso dio 3 episodios
+        # empezando en 91-94 grados, o sea pasada la abrazadera del modo 6 (80) y a un
+        # grado del corte duro (95). La primera accion cruzo el limite, el firmware
+        # hizo setMode(0), y como updateRlObservation SOLO corre en los modos 6 y 7,
+        # /rl_state quedo CONGELADO: la politica corrio 500 pasos contra una
+        # observacion muerta, saturando al 95%. El resultado (reach=0%) parecia una
+        # brecha sim2real catastrofica y no medía nada.
         real_env = ActionScale(
             make_real_env(esp32_ip=args.ip, reward="linear_alpha",
                           max_episode_steps=args.max_steps, auto_set_mode=True,
+                          homing_every=args.homing_every,
                           angle_limits=[theta_rad, math.pi]),
             scale=args.scale)
         log("Rolling policy on REAL rig…")

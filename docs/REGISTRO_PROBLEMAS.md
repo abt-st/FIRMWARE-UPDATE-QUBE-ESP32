@@ -25,6 +25,8 @@ Estados: `ABIERTO` · `EN CURSO` · `RESUELTO` · `MITIGADO` · `NO ES DEFECTO`
 | [P16](#p16) | ~~El encoder pierde cuentas por velocidad (filtro RC)~~ → **explicación refutada**; la deriva de α sólo aparece cuando el brazo golpea el tope | media | `ACOTADO` (2026-08-04) — sin deriva en 8 corridas hasta 1668 °/s |
 | [P17](#p17) | **El contador del péndulo satura a las 16 vueltas** y α se vuelve basura, sin ninguna señal que lo denuncie | **alta** | `MITIGADO` (v1.58.4) — el bombeo ya no puede embalarse; falta el acumulador de desbordamiento |
 | [P18](#p18) | **El bombeo no tenía techo de energía**: sin traspaso, el péndulo se embala sin límite | **alta** | `RESUELTO` (2026-08-04, v1.58.4) |
+| [P19](#p19) | **`/rl_state` se congela en silencio** al salir de los modos 6/7: repite el último valor en vez de fallar | **alta** | `ABIERTO` |
+| [P20](#p20) | **El lazo RL por HTTP corre a 14,3 Hz**, no a los 50 Hz para los que se entrena. El modo 6 no puede evaluar una política | **alta** | `ABIERTO` |
 
 ---
 
@@ -996,6 +998,106 @@ producción: traspaso normal a `E/E*` = 0,9550, 0 vueltas.
 
 ---
 
+## P19 {#p19}
+### `/rl_state` se congela en silencio al salir de los modos 6/7
+
+**Estado:** `ABIERTO` · **Detectado:** 2026-08-04, durante el primer diagnóstico
+real-vs-sim.
+
+`updateRlObservation()` **sólo corre en las ramas de los modos 6 y 7**
+(`esp32_qube.ino:3586`, `:3844`, `:3899`). Si el firmware sale de esos modos —por
+ejemplo el respaldo de `SERVO_HARD_LIMIT_DEG` a 95°, que hace `setMode(0)`—, el endpoint
+`/rl_state` **sigue respondiendo 200 con el último valor calculado, para siempre**.
+
+No falla, no avisa, no cambia un flag: **repite**.
+
+#### Lo medido
+
+Tres episodios de 500 pasos con el brazo arrancando en 91–94°. En el primer paso se
+cruzó el límite, el firmware cortó a modo 0, y a partir de ahí `theta` quedó
+**exactamente constante** en las 1500 muestras (`min = max = inicio = fin`), igual que
+`alpha`. La política corrió los 500 pasos de cada episodio contra una observación muerta
+y saturó al 95%.
+
+El resultado (`reach = 0%`, `min_dist = 176°`) parecía una brecha sim2real catastrófica
+y **no medía nada**.
+
+#### Por qué es grave
+
+Un agente de RL no tiene forma de distinguir "el estado no cambió" de "el estado dejó de
+medirse". Un episodio de entrenamiento sobre hardware que entre en este régimen aprende
+de datos inventados, y el `reward` que acumula es igual de falso. **Cualquier campaña
+sim2real previa que haya cruzado el límite blando está bajo sospecha**, y no hay forma de
+saberlo mirando sus CSV salvo por esta firma.
+
+#### Cómo detectarlo desde el cliente, hoy
+
+Un estado que no cambia **ni un conteo de encoder** entre pasos no es un estado medido:
+el péndulo cuelga libre y no puede estar perfectamente inmóvil con el motor accionando.
+`qube_real.py` debería tratar N lecturas idénticas consecutivas como error.
+
+#### Cómo afrontarlo
+
+1. **Que `/rl_state` diga en qué modo se calculó** y cuántos ms hace que se actualizó.
+   Es el mismo patrón que ya se usó en `swing_trans_ms_ago`: un dato latcheado sin su
+   marca de tiempo es una trampa.
+2. **Que el cliente falle ruidosamente** ante lecturas repetidas o `mode != 6`, en vez de
+   seguir alimentando la política.
+3. Ver [P12](#p12): mientras el brazo pueda alcanzar el límite blando durante un
+   episodio, este camino se sigue ejecutando.
+
+---
+
+## P20 {#p20}
+### El lazo RL por HTTP corre a 14,3 Hz, no a los 50 Hz para los que se entrena
+
+**Estado:** `ABIERTO` · **Detectado:** 2026-08-04, medido directamente.
+
+Un paso del modo 6 son **dos** viajes de ida y vuelta —`rl_cmd` para mandar la acción y
+`/rl_state` para leer— y tarda **69,9 ms** medidos sobre 100 pasos. El período que exige
+`control_freq = 50` es de 20 ms.
+
+**La política corre 3,5× más lento de lo que fue entrenada.**
+
+#### Lo que provoca
+
+Cada acción se sostiene 3,5 veces más de lo esperado, el brazo se pasa de largo y alcanza
+la abrazadera de 80°. Ahí la observación queda **fuera de la distribución de
+entrenamiento** —en sim el brazo nunca superó 73°— y la política satura, lo que la clava
+más contra el tope. Se realimenta.
+
+Medido con `r7_ft_fr100_s0_best`: en el hierro, acción media 0,936 con 93,6% de pasos
+saturados y 91,3% del tiempo por encima de 80°. La **misma política en sim**: acción
+media 0,111, 1,5% saturados, 0% por encima de 80°, y sostiene 9,43 s.
+
+#### La consecuencia que más duele
+
+**El modo 6 no es un banco de pruebas válido para políticas de 50 Hz**: mide el enlace,
+no la política. Eso incluye muy probablemente el *"el deploy real del modelo de 95% dio
+hold ~0"* de junio, que fue uno de los dos pilares que justificaron toda la campaña de
+adaptación de fricción. No se puede afirmar sin los datos de aquella corrida, pero el
+mecanismo estaba disponible y el script era el mismo.
+
+El plan del 2026-06-26 ya había escrito esta rama —*"si el real no sube como la sim, el
+problema es latencia… ningún sweep de fricción lo arregla"*— y el diagnóstico nunca se
+corrió.
+
+#### Cómo afrontarlo
+
+1. **Modo 7 (inferencia en la ESP32).** Corre a la frecuencia del lazo, sin HTTP en el
+   medio. Es el único despliegue que puede evaluar honestamente una política de 50 Hz.
+   Requiere `export_rltools` → `policy_weights.h` → verificar → flashear.
+2. **Que `rl_cmd` devuelva el estado en la misma respuesta**: de dos viajes a uno, ~35 ms.
+   No llega a 50 Hz, pero deja de ser el factor dominante.
+3. ESP-NOW o USB directo, si alguna vez hace falta entrenar sobre el hardware.
+
+> **Corolario para el diseño:** entrenar a 50 Hz y desplegar por un enlace de 14 Hz es una
+> divergencia silenciosa entre entrenamiento y despliegue, de la misma familia que
+> `MOTOR_DIR`. `control_freq` debería verificarse contra la tasa realmente alcanzable
+> **antes** de correr una campaña, no después.
+
+---
+
 ## Historial de cambios
 
 | fecha | problema | cambio | verificación |
@@ -1040,3 +1142,6 @@ producción: traspaso normal a `E/E*` = 0,9550, 0 vueltas.
 | 2026-08-04 | P4 | Barrido 5 condiciones × 4 intercaladas, n=19 con traspaso (`experiments/2026-08-04_p4_catch/`) | **H2 REFUTADA, y en la dirección contraria**: con `cg=0` la supervivencia cae monótona al acortar el catch (0,567 → 0,461 → 0,406 s). El catch también disipa energía; la cuenta del `cosh` medía su costo y no su beneficio. **H6 se sostiene** (+15%/+19% en medianas). **Y `corr(calidad de entrega, supervivencia) ≈ −0,09`: la entrada no explica nada ⇒ el cuello es el controlador (H3/H5).** El outlier de 3,33 s no se reprodujo en 4 intentos |
 | 2026-08-04 | sim | **`Dp` medido por spin-down con el brazo sujeto**: 1e-6 → **7,52e-6** (`experiments/2026-08-04_friction_spindown/`) | n=2, λ coincide al 0,4% con amplitudes de 64° y 43° ⇒ amortiguamiento **viscoso**. El barrido de junio (20×–130×) estuvo entre **2,7× y 17,3×** la fricción real, y `Dp_std`=5e-7 hacía que la aleatorización muestreara en [0, 2e-6]: **el valor real quedaba fuera de la distribución entera**. Validación gratis: ω_n con brazo fijo 10,68 analítico vs **10,46 medido** ⇒ la inercia de la sim está bien |
 | 2026-08-04 | sim | Hipótesis **descartada**: que `Dr` estuviera igual de mal por el freno del L298N a `PWM=0` | **La sim ya modela ese freno** en el término de back-EMF (`trq = n·km·(V − km·θ̇·n)/Rm` ⇒ 2,1e-4 con V=0, **42× el `Dr` mecánico**). τ del brazo en la sim = 0,47 s, no los 46 s de `Dr` solo. Medir `Dr` es una corrección del 2%: **no reponer esta hipótesis** |
+| 2026-08-04 | P19/P20 | Primer `diagnose_real_vs_sim.py` de la historia del proyecto (`experiments/2026-08-04_sim2real/`) | **El cuello del sim2real es el enlace, no la física.** Un paso del modo 6 tarda 69,9 ms (dos viajes) ⇒ **14,3 Hz contra los 50 de entrenamiento**. La misma política: en sim acción media 0,111 y hold 9,43 s; en el hierro acción media 0,936, 93,6% saturada y 91,3% del tiempo contra la abrazadera de 80° |
+| 2026-08-04 | P19 | Descubierto que `/rl_state` **repite el último valor** al salir de los modos 6/7 en vez de fallar | Firma: `theta` exactamente constante en 1500 muestras. Un brazo trabado igual daría ruido de encoder, y el péndulo colgando no puede estar inmóvil con el motor al 95%. Convirtió un episodio muerto en un `reach=0%` que parecía brecha sim2real |
+| 2026-08-04 | infra | `make_real_env()` no exponía `homing_every`/`homing_on_start`: **por la factory el homing era inalcanzable** | Los episodios arrancaban donde hubiera quedado la corrida anterior — el 2026-08-04, en 91–94°, a 1° del corte duro. Corregido en la factory y `--homing-every` con default 1 en el script. Con homing, `min_dist` pasó de 176° a **68–89°** |
