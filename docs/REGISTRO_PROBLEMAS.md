@@ -20,14 +20,14 @@ Estados: `ABIERTO` · `EN CURSO` · `RESUELTO` · `MITIGADO` · `NO ES DEFECTO`
 | [P11](#p11) | El bombeo satura contra `swingupPwmMax`, anulando `ke_gain` | alta | `RESUELTO` (no era el cuello) |
 | [P13](#p13) | `resetPendulumOffsetHere()` redefine el cero del péndulo en silencio | media | `RESUELTO` |
 | [P12](#p12) | El límite del brazo trunca swing-ups | alta | `ABIERTO` — la "refutación" del 2026-08-04 se midió con la referencia de α corrida (P22). Con `zp=1` el brazo llega a **94,9°** en bombeo, contra un tope de 95 |
-| [P22](#p22) | **La referencia angular del péndulo deriva y nadie la re-establece**: colgando y quieto leía 82/97/91 y una vez −264°, debiendo leer 0 | **alta** | `MITIGADO` (2026-08-04) — `zp=1` tras reposo verificado elimina el fallo total (0/5 contra 1/4) |
+| [P22](#p22) | **La referencia angular del péndulo deriva y nadie la re-establece**: colgando y quieto leía 82/97/91 y una vez −264°, debiendo leer 0 | **alta** | `RESUELTO` (2026-08-04, v1.58.8) — el modo 5 exige quietud y re-establece el cero antes de bombear; 0/5 fallos y 5/5 con `E/E*` en rango |
 | [P14](#p14) | Las cuatro compuertas de traspaso comparaban un ángulo **sin acotar** | **alta** | `RESUELTO` (2026-08-03, v1.57.2) |
 | [P15](#p15) | Con el motor bombeando, el lazo produce **256–330 Hz**, no 500, con paradas de hasta 0,49 s | **alta** | `NO REPRODUCIBLE` (2026-08-03) — 18/18 corridas limpias tras reiniciar |
 | [P16](#p16) | ~~El encoder pierde cuentas por velocidad (filtro RC)~~ → **explicación refutada**; la deriva de α sólo aparece cuando el brazo golpea el tope | media | `ACOTADO` (2026-08-04) — sin deriva en 8 corridas hasta 1668 °/s |
 | [P17](#p17) | **El contador del péndulo satura a las 16 vueltas** y α se vuelve basura, sin ninguna señal que lo denuncie | **alta** | `MITIGADO` (v1.58.4) — el bombeo ya no puede embalarse; falta el acumulador de desbordamiento |
 | [P18](#p18) | **El bombeo no tenía techo de energía**: sin traspaso, el péndulo se embala sin límite | **alta** | `RESUELTO` (2026-08-04, v1.58.4) |
 | [P19](#p19) | **`/rl_state` se congela en silencio** al salir de los modos 6/7: repite el último valor en vez de fallar | **alta** | `ABIERTO` |
-| [P20](#p20) | **El lazo RL por HTTP corre a 14,3 Hz**, no a los 50 Hz para los que se entrena. El modo 6 no puede evaluar una política | **alta** | `ABIERTO` |
+| [P20](#p20) | **El lazo RL por HTTP corre a 26,1 Hz**, no a los 50 Hz para los que se entrena. El modo 6 no puede evaluar una política | **alta** | `ABIERTO` — cifra **corregida** el 2026-08-04: los 14,3 Hz medían `rl_cmd`+`rl_state`, no `/rl_step`, que es lo que usa el env |
 | [P21](#p21) | **La inferencia en chip (m7) rompe el lazo de 500 Hz**: ~21% de los ticks atrasan >10 ms, unas 100× más lento de lo esperable | **alta** | `ABIERTO` |
 
 ---
@@ -1055,11 +1055,26 @@ el péndulo cuelga libre y no puede estar perfectamente inmóvil con el motor ac
 
 **Estado:** `ABIERTO` · **Detectado:** 2026-08-04, medido directamente.
 
-Un paso del modo 6 son **dos** viajes de ida y vuelta —`rl_cmd` para mandar la acción y
-`/rl_state` para leer— y tarda **69,9 ms** medidos sobre 100 pasos. El período que exige
-`control_freq = 50` es de 20 ms.
+> ### ⚠ Corrección (misma sesión)
+>
+> La primera medición cronometró **`rl_cmd` + `rl_state`**, que son dos viajes de ida y
+> vuelta. **Pero `QubeRealEnv.step()` no usa ese camino**: desde el protocolo v3 usa
+> **`/rl_step`**, que fija la acción y devuelve el estado en un solo round-trip.
+>
+> | camino | latencia | tasa |
+> |---|---|---|
+> | `rl_cmd` + `rl_state` (lo medido primero) | 75,8 ms | 13,2 Hz |
+> | **`/rl_step` (el que corre de verdad)** | **38,3 ms** | **26,1 Hz** |
+>
+> El defecto se sostiene —26 Hz sigue siendo la mitad de los 50 que la política
+> necesita— pero **la cifra estaba mal por un factor 2**. Y el arreglo que se había
+> propuesto ("que `rl_cmd` devuelva el estado en la misma respuesta") **ya existía**:
+> es `/rl_step`. Se corrige el registro en vez de dejar el número inflado.
 
-**La política corre 3,5× más lento de lo que fue entrenada.**
+Un paso del modo 6 por `/rl_step` tarda **38,3 ms** medidos sobre 60 pasos. El período que
+exige `control_freq = 50` es de 20 ms.
+
+**La política corre ~2× más lento de lo que fue entrenada.**
 
 #### Lo que provoca
 
@@ -1089,8 +1104,8 @@ corrió.
 1. **Modo 7 (inferencia en la ESP32).** Corre a la frecuencia del lazo, sin HTTP en el
    medio. Es el único despliegue que puede evaluar honestamente una política de 50 Hz.
    Requiere `export_rltools` → `policy_weights.h` → verificar → flashear.
-2. **Que `rl_cmd` devuelva el estado en la misma respuesta**: de dos viajes a uno, ~35 ms.
-   No llega a 50 Hz, pero deja de ser el factor dominante.
+2. ~~Que `rl_cmd` devuelva el estado en la misma respuesta~~ — **ya existe**: `/rl_step`,
+   protocolo v3. Es lo que ya corre, y aun así da 26 Hz.
 3. ESP-NOW o USB directo, si alguna vez hace falta entrenar sobre el hardware.
 
 > **Corolario para el diseño:** entrenar a 50 Hz y desplegar por un enlace de 14 Hz es una
@@ -1196,8 +1211,28 @@ tras reposo verificado, antes de cada intento:
 | + reposo tras homing | 96,0–180,0° | 12–67° | 1/4 |
 | **+ `zp=1`** | **159,4–179,6°** | **64,1–94,9°** | **0/5** |
 
-**Elimina el modo de fallo catastrófico.** Falta llevarlo al firmware o al protocolo
-canónico: hoy vive en el script del experimento.
+**Elimina el modo de fallo catastrófico.**
+
+#### La corrección definitiva (v1.58.8)
+
+El arreglo del cliente dependía de que cada script se acordara de llamarlo, así que se
+llevó al firmware: **el modo 5 tiene ahora una fase de quietud + re-cero antes de
+bombear**, con el mismo patrón que `H_WAIT_QUIET` del homing y por la misma razón que
+dice su comentario — quietud **sostenida por ventana** y no velocidad instantánea, porque
+a 500 Hz la diferencia entre dos muestras del encoder es cero o un conteo entero. Vigila
+el brazo además del péndulo, y **agotar el timeout es falla**, no arranque a ciegas.
+
+Medido con el cliente usando el protocolo VIEJO, o sea sin que el script haga nada:
+
+| | fallos totales | `E/E*` en rango | θ en bombeo |
+|---|---|---|---|
+| antes (fw viejo) | 1/4 | 3/4 | 12–68° |
+| `zp=1` desde el cliente | 0/5 | 4/5 | 64–**95°** |
+| **fw v1.58.8** | **0/5** | **5/5** | **58–86°** |
+
+Mejor que la versión del cliente en las tres columnas. `?sz=0` desactiva la fase para
+poder medir contra el comportamiento anterior; por defecto va **activa**, porque es una
+corrección y no instrumentación.
 
 #### Una hipótesis previa que resultó FALSA, para que no se reponga
 
@@ -1219,6 +1254,9 @@ de 95. P12 vuelve a `ABIERTO` y hay que re-medirlo con el protocolo corregido.
 
 | fecha | problema | cambio | verificación |
 |---|---|---|---|
+| 2026-08-04 | P22 | Fase de quietud + re-cero del péndulo al entrar al modo 5 (v1.58.8), con el patrón de `H_WAIT_QUIET` | Con el cliente usando el protocolo **viejo**: **0/5 fallos** (antes 1/4), **5/5** con `E/E*` en rango y θ de bombeo 58–86°. Agotar el timeout es falla, no arranque a ciegas. `?sz=0` para el A/B |
+| 2026-08-04 | P20 | **Corrección de la cifra**: se había cronometrado `rl_cmd`+`rl_state` | `QubeRealEnv.step()` usa `/rl_step` desde proto v3 — un solo round-trip. **38,3 ms → 26,1 Hz**, no 14,3. El defecto se sostiene (26 < 50) pero el número estaba mal por 2×, y el arreglo propuesto **ya existía** |
+| 2026-08-04 | P12 | **Reabierto**: su "refutación" del mismo día se midió con la referencia de α corrida | Con el bombeo sano (`zp=1`) el brazo llega a **94,9°** contra un tope de 95, no a los 68° que se habían medido. Hay que re-medirlo con el protocolo corregido |
 | 2026-07-30 | P7 | `pwm_active_frac_inmode` + `time_in_mode_s` | m4 pasó de FAIL a PASS; el modo accionaba el 100% del tiempo vigente |
 | 2026-07-30 | P3 | Ventana de homing 250–290 → **262–278** | Rechaza las 3 corridas malas de 250,3–251,7; homing OK con 269,1 |
 | 2026-07-30 | P5 | `PEND_INERTIA` 2e-5 → **7,75e-5**, de ω_n medido | Oscilación libre: T=0,46 s ⇒ ω_n=14,34 rad/s vs 28,2 del valor viejo |

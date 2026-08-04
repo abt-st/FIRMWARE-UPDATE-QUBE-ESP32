@@ -500,6 +500,17 @@ unsigned long lqr_catchDurMs = LQR_CATCH_MS;
 // false = comportamiento historico (rampa llena desde el primer tick).
 // true  = lo que el comentario decia: 2 s sin centering + 2 s de rampa.
 bool lqr_centeringGrace = false;
+// ── P22: re-cero del pendulo al entrar al modo 5 ─────────────────────────────
+// `swing_zeroEnabled` por defecto en true: es una CORRECCION, no instrumentacion.
+// `?sz=0` lo desactiva para poder medir el A/B contra el comportamiento anterior.
+bool          swing_zeroEnabled = true;
+uint8_t       swing_zeroPhase   = 0;      // 0 = listo para bombear, 1 = esperando quietud
+bool          swing_zeroOk      = false;  // resultado del ultimo intento
+unsigned long swing_zeroQuietMs = 0;
+unsigned long swing_zeroStartMs = 0;
+float         swing_zeroPrevPend = 0.0f;
+float         swing_zeroPrevArm  = 0.0f;
+
 float pendPosRawPrev = 0.0f;  // Para detectar spinning
 // Cuantas veces se acoto la lectura del pendulo restando vueltas. Se expone en
 // /state para que el analisis pueda distinguir una corrida donde el pendulo giro de
@@ -1481,6 +1492,15 @@ void setMode(int newMode) {
     homingEnterPhase(H_WAIT_QUIET, getRawPositionDeg());
   }
   if (mode == 5) {
+    // P22: la fase de quietud + re-cero corre ANTES del bombeo. Se arma aca y la
+    // resuelve la rama del modo 5. Con `sz=0` se salta y queda el comportamiento
+    // anterior, que es lo que permite el A/B.
+    swing_zeroPhase   = swing_zeroEnabled ? 1 : 0;
+    swing_zeroOk      = false;
+    swing_zeroQuietMs = millis();
+    swing_zeroStartMs = millis();
+    swing_zeroPrevPend = getPendulumPositionDeg();
+    swing_zeroPrevArm  = getPositionDeg();
     prev_alpha_dot_peak = 0.0f;  // Reset peak detection
     swing_maxAngleAchieved = 0.0f;  // Reset adaptive ke_gain
     swing_lastImprovementMs = millis();
@@ -2031,6 +2051,11 @@ String getStateJson() {
   json += "\"swing_trans_energy\":" + String(swing_transEnergyRatio, 4) + ",";
   json += "\"swing_energy_ceiling\":" + String(swingupEnergyCeiling, 2) + ",";
   json += "\"swing_ceiling_hits\":" + String(swing_ceilingHits) + ",";
+  // P22: en que anda la fase de re-cero. Sin esto no se puede distinguir un intento
+  // que arranco con la referencia sana de uno que arranco a ciegas.
+  json += "\"swing_zero_enabled\":" + String(swing_zeroEnabled ? 1 : 0) + ",";
+  json += "\"swing_zero_phase\":" + String(swing_zeroPhase) + ",";
+  json += "\"swing_zero_ok\":" + String(swing_zeroOk ? 1 : 0) + ",";
   json += "\"swing_trans_ms_ago\":" + String(swing_transMs ? (millis() - swing_transMs) : 0) + ",";
   // Ventana del catch del LQR (P4/H2, H6) + supervivencia latcheada por el firmware.
   // `lqr_alive_ms` cuenta desde el FIN del catch hasta que se salio del modo 4; deja
@@ -2208,6 +2233,11 @@ void handleCmd(AsyncWebServerRequest *request) {
   if (request->hasParam("zp")) {
     zeroPendulumHere();
     lastCommandMs = millis();
+  }
+  // P22: `sz=0` desactiva la fase de quietud + re-cero al entrar al modo 5, para poder
+  // medir contra el comportamiento anterior. Por defecto va ACTIVA — es una correccion.
+  if (request->hasParam("sz")) {
+    swing_zeroEnabled = (request->getParam("sz")->value().toInt() != 0);
   }
 
   if (request->hasParam("o")) {
@@ -3688,6 +3718,48 @@ void loop() {
     } else if (mode == 5) {
     // ══════════════════════════════════════════════════════════════════════════
     // MODO 5: Swing-up por energia con kick continuo
+
+      // ── P22: quietud + re-cero del pendulo ANTES de bombear ────────────────
+      // Medido el 2026-08-04: con el pendulo colgando y en reposo VERIFICADO desde el
+      // cliente, la lectura daba 82,62 / 97,38 / 91,06 y una vez -264,02 grados, cuando
+      // colgando tiene que dar 0. No era movimiento — era la referencia corrida, y
+      // corrida distinto en cada intento: `pend_wraps` sube en cada swing-up y
+      // wrapPendulumTurns() resta vueltas enteras pero deja el residuo.
+      //
+      // Importa porque alpha alimenta la energia, las cuatro compuertas de traspaso y el
+      // techo de P18. Con la referencia mal, el bombeo trabaja contra un angulo que no es
+      // el real: 1 de cada 4 intentos bombeaba 18 s sin llegar. Re-establecerla desde el
+      // cliente antes de cada intento lo bajo a 0 de 5.
+      //
+      // El patron es el de H_WAIT_QUIET del homing, y por la misma razon que dice su
+      // comentario: se exige quietud SOSTENIDA por ventana y no una velocidad
+      // instantanea, porque a 500 Hz la diferencia entre dos muestras del encoder es o
+      // cero o un salto de un conteo entero. Se vigila el brazo ADEMAS del pendulo.
+      //
+      // Y como alli, agotar el timeout es FALLA y no arranque a ciegas: el riesgo no es
+      // mecanico, es un cero equivocado aceptado en silencio.
+      if (swing_zeroPhase == 1) {
+        setMotorDirect(0);
+        if (fabsf(pendPosRaw - swing_zeroPrevPend) > HOMING_QUIET_DEG ||
+            fabsf(pos - swing_zeroPrevArm) > HOMING_QUIET_DEG) {
+          swing_zeroPrevPend = pendPosRaw;
+          swing_zeroPrevArm  = pos;
+          swing_zeroQuietMs  = millis();
+        }
+        if ((millis() - swing_zeroQuietMs) > HOMING_QUIET_HOLD_MS) {
+          zeroPendulumHere();
+          swing_zeroPhase = 0;
+          swing_zeroOk = true;
+          Serial.println("[SWING] cero del pendulo re-establecido");
+        } else if ((millis() - swing_zeroStartMs) > HOMING_QUIET_TIMEOUT_MS) {
+          swing_zeroPhase = 0;
+          swing_zeroOk = false;
+          Serial.println("[SWING] FALLA: el pendulo no se aquieto; no se arranca a ciegas");
+          setMode(0);
+        }
+        return;
+      }
+
       int pwm = 0;
       // ── Fin de carrera del modo 5: freno activo hacia el centro ────────────
       {

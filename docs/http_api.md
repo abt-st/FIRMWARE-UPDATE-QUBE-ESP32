@@ -76,6 +76,9 @@ Retorna JSON con el estado completo del sistema (servo + péndulo + INA219 + Kal
 | `swing_trans_vel`   | float  | \|α̇\| en el traspaso (°/s) |
 | `swing_trans_energy`| float  | `E/E*` en el traspaso; `1.0` = energía justa para llegar a vertical |
 | `swing_trans_ms_ago`| int    | ms desde el traspaso; `0` = no hubo. `setMode(5)` limpia el latch |
+| `swing_zero_enabled`| 0/1    | Fase de quietud + re-cero del péndulo al entrar al modo 5 activa (ver `/cmd?sz=`) |
+| `swing_zero_phase`  | int    | `1` = esperando quietud antes de bombear; `0` = bombeando |
+| `swing_zero_ok`     | 0/1    | El último intento logró re-establecer el cero. `0` **después** de un intento significa que no se aquietó y el modo abortó a 0 — no se arranca a ciegas |
 | `lqr_catch_ms`      | int    | Duración vigente del catch del modo 4 (ver `/cmd?lc=`) |
 | `lqr_centering_grace`| 0/1   | Periodo de gracia del centering vigente (ver `/cmd?cg=`) |
 | `lqr_alive_ms`      | int    | **Supervivencia del último intento de balanceo**: ms desde el fin del catch hasta la salida del modo 4. Cuenta desde el *fin* del catch porque durante el catch el LQR no corre. Deja de actualizarse solo al caer, así que leerlo después de la caída da el valor final; sobrevive a la caída a propósito, para poder leerse sin carrera. `0` = no hubo traspaso |
@@ -185,6 +188,8 @@ Envía comandos de configuración y control.
 | `kpc`, `kic`, `kdc`    | float  | PID gains modo grueso (requiere `gs=1`) |
 | `lqr1`–`lqr4`           | float  | LQR gains                  |
 | `lc`                       | 0–2000 | Duración del catch del LQR en ms (def. 400). **Durante el catch el LQR no corre** (la rama termina en `return`): con ω_n = 14,34 rad/s una desviación crece ×155 en 400 ms. `lc=0` lo desactiva y el LQR controla desde el primer tick (P4/H2) |
+| `sz`                       | 0/1    | Fase de quietud + re-cero del péndulo al entrar al modo 5 (def. **1**, activa). Sin ella la referencia de α deriva entre intentos y el bombeo trabaja contra un ángulo que no es el real (P22). `sz=0` reproduce el comportamiento anterior a v1.58.8 |
+| `sz`                       | 0/1    | Fase de quietud + re-cero del péndulo al entrar al modo 5 (def. **1**, activa). Sin ella la referencia de α deriva entre intentos —medido: un péndulo colgando y quieto leía 82/97/91 y una vez −264°— y el bombeo trabaja contra un ángulo que no es el real (P22). `sz=0` reproduce el comportamiento previo a v1.58.8 |
 | `cg`                       | 0/1    | Periodo de gracia del centering en m4 (def. 0 = comportamiento histórico). Con `cg=1` el centering espera 2 s tras el catch y rampa en otros 2, que es lo que el código decía hacer y nunca hizo (P4/H6) |
 | `kf`                       | 0/1    | Toggle filtro de Kalman (LQG) |
 | `ke`                       | float  | Ganancia swing-up (⚠ ver nota) |

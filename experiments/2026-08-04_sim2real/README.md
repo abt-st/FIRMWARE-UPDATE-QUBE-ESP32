@@ -1,5 +1,15 @@
 # Diagnóstico real-vs-sim — el cuello del sim2real es el enlace, no la física
 
+> ## ⚠ CORRECCIÓN
+>
+> Las cifras de latencia de abajo (69,9 ms, 14,3 Hz) cronometran `rl_cmd` + `rl_state`,
+> **que no es el camino que usa el entorno**: `QubeRealEnv.step()` usa `/rl_step` desde
+> el protocolo v3, un solo round-trip. Medido: **38,3 ms → 26,1 Hz**.
+>
+> El diagnóstico se sostiene —26 Hz sigue siendo la mitad de los 50 Hz de entrenamiento,
+> y las corridas de este experimento corrieron a esa tasa— pero **el número estaba mal por
+> un factor 2**, y la mejora que se propuso al final ya estaba implementada.
+
 Primera ejecución de `diagnose_real_vs_sim.py`, el "Paso 1 de mayor leverage" que el
 plan del 2026-06-26 identificó y que **nunca se había corrido**. Seis semanas después, y
 después de una campaña entera barriendo fricción, resulta que el diagnóstico apuntaba al
