@@ -27,7 +27,7 @@ El servidor se comunica por `stdio` (transporte estándar de MCP).
 | ------------------------ | -------------------------------- | --------------------------------------- |
 | `pio_compile`          | Compila el firmware              | `pio_compile(environment="esp32dev")` |
 | `pio_upload`           | Compila y sube por USB serial    | `pio_upload()`                        |
-| `pio_ota_flash`        | Compila y flashea por WiFi (OTA) | `pio_ota_flash(ip="192.168.100.50")`  |
+| `pio_ota_flash`        | Compila y flashea por WiFi (OTA) | `pio_ota_flash(ip="192.168.4.1")`  |
 | `pio_clean`            | Limpia archivos de build         | `pio_clean()`                         |
 | `pio_serial_monitor`   | Lee líneas del monitor serial   | `pio_serial_monitor(baud=115200)`     |
 | `read_firmware_source` | Lee el código fuente completo   | `read_firmware_source()`              |
@@ -37,7 +37,7 @@ El servidor se comunica por `stdio` (transporte estándar de MCP).
 
 | Herramienta             | Descripción                                   | Ejemplo                                               |
 | ----------------------- | ---------------------------------------------- | ----------------------------------------------------- |
-| `qube_connect`        | Configura IP y verifica conexión              | `qube_connect(ip="192.168.100.50")`                 |
+| `qube_connect`        | Configura IP y verifica conexión              | `qube_connect(ip="192.168.4.1")`                 |
 | `qube_get_state`      | Estado actual (posición, modo, PWM, potencia) | `qube_get_state()`                                  |
 | `qube_send_command`   | Envía comando genérico a`/cmd`             | `qube_send_command(m=5, s=90)`                      |
 | `qube_set_mode`       | Cambia modo de operación                      | `qube_set_mode(mode=4)`                             |
@@ -91,18 +91,19 @@ pio run -e esp32dev --target upload
 ### Flasheos subsecuentes (WiFi)
 
 ```bash
-# Desde terminal
-pio run -e esp32dev_ota --target upload --upload-port 192.168.100.50
+# Desde terminal (SoftAP puro: el PC debe estar asociado a QUBE-ESP32)
+pio run -e esp32dev_ota --target upload
 
 # Desde MCP
-pio_ota_flash(ip="192.168.100.50")
+pio_ota_flash()                          # 192.168.4.1 por defecto
+pio_ota_flash(ip="192.168.100.50")       # placa con firmware AP+STA
 ```
 
 ### Requisitos OTA
 
-- ESP32 conectado a la misma red que la PC
+- PC asociado a la red `QUBE-ESP32` (o, con firmware AP+STA, en la misma red que el ESP32)
 - Firmware con ArduinoOTA ya flasheado (el primer flash debe ser por USB)
-- IP conocida (por defecto `192.168.100.50` en la configuración STA)
+- IP conocida: **siempre `192.168.4.1`** en SoftAP puro; `192.168.100.50` en AP+STA
 
 ### Configuración OTA en `platformio.ini`
 
@@ -110,7 +111,7 @@ pio_ota_flash(ip="192.168.100.50")
 [env:esp32dev_ota]
 extends = env:esp32dev
 upload_protocol = espota
-upload_port = 192.168.100.50
+upload_port = 192.168.4.1
 ```
 
 ---
@@ -146,16 +147,16 @@ El ESP32 expone una API HTTP REST:
 
 ```bash
 # Leer estado
-curl http://192.168.100.50/state
+curl http://192.168.4.1/state
 
 # Cambiar a swing-up
-curl "http://192.168.100.50/cmd?m=5"
+curl "http://192.168.4.1/cmd?m=5"
 
 # Detener motor
-curl "http://192.168.100.50/cmd?x=1"
+curl "http://192.168.4.1/cmd?x=1"
 
 # Ajustar PID
-curl "http://192.168.100.50/cmd?kp=2.0&ki=0.5&kd=0.1"
+curl "http://192.168.4.1/cmd?kp=2.0&ki=0.5&kd=0.1"
 ```
 
 ---

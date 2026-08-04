@@ -113,15 +113,16 @@ def pio_clean(environment: str = "esp32dev") -> str:
 
 @mcp.tool()
 def pio_ota_flash(
-    ip: str = "192.168.100.50",
+    ip: str = "192.168.4.1",
 ) -> str:
     """Compila y flashea el firmware al ESP32 por WiFi (OTA).
 
-    Requiere que el ESP32 esté encendido, conectado a la red WiFi,
-    y ejecutando un firmware con ArduinoOTA habilitado.
+    Requiere que el ESP32 esté encendido y ejecutando un firmware con ArduinoOTA
+    habilitado. Con el firmware en SoftAP puro (rol por defecto), el PC debe estar
+    ASOCIADO a la red QUBE-ESP32; para una placa AP+STA, pasar 192.168.100.50.
 
     Args:
-        ip: Dirección IP del ESP32 en la red local.
+        ip: Dirección IP del ESP32 (default: 192.168.4.1, SoftAP).
 
     Returns:
         Salida de la compilación y upload OTA con estado de éxito/error.

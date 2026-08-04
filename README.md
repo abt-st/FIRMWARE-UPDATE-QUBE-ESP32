@@ -174,7 +174,7 @@ curl "http://192.168.4.1/cmd?x=1"
 | Libre | `m0`  | Motor deshabilitado, encoders activos     |
 | PWM manual | `m1`  | PWM fijo, sin lazo (`/cmd?p=100`)    |
 | PID servo | `m2`  | Setpoint en grados, lazo cerrado (`/cmd?s=20`) |
-| ~~PID péndulo~~ | ~~`m3`~~ | **Código libre.** Retirado en v1.34: el péndulo es un eslabón pasivo subactuado, un PID de posición directa no es realizable. No se reutiliza para mantener IDs estables. |
+| Homing | `m3`  | Recupera el cero del brazo tocando ambos topes; el centro es el punto medio del recorrido. Asíncrono: seguir por `homing_phase` en `/state` |
 | LQR | `m4`  | Control en espacio de estados (gain scheduling) |
 | Swing-up | `m5`  | Levantamiento por energía (`/cmd?m=5&ke=0.75`) |
 | Deep RL (HTTP) | `m6`  | Control por agente SAC externo vía HTTP |
@@ -230,7 +230,7 @@ src/firmware/
 | -------------------- | ---------- | -------- |
 | `Kp`               | 3.0        | —       |
 | `Ki`               | 0.5        | —       |
-| `Kd`               | 0.15       | —       |
+| `Kd`               | 0.45       | —       |
 | `K1` (θ servo)    | —         | 2.0      |
 | `K2` (α péndulo) | —         | 22.0     |
 | `K3` (θ')         | —         | 1.5      |
@@ -276,6 +276,16 @@ curl "http://192.168.4.1/rl_cmd?r=1"      # Reset episodio
 > Se conserva WiFi: la latencia **no afecta** los modos autónomos (PID/LQR/swing-up y RL
 > on-device modo 7, cerrados en el ESP32 a 500 Hz); solo limita el entrenamiento RL con el
 > PC en el lazo (modo 6), para el cual el modo 7 on-device ya ofrece una ruta sin red.
+>
+> **Actualización (2026-07-31) — SoftAP puro.** Antes de invertir en el dongle ESP-NOW se
+> tomó el paso barato: apagar el rol STA. Los picos de ~100 ms venían de la coexistencia
+> AP+STA sobre una radio única, y el beacon a 300 ms era un paliativo, no la cura. El
+> firmware arranca ahora como **SoftAP puro** (`192.168.4.1` fija, sin router), lo que
+> además deja el banco autónomo de la red del laboratorio. La mejora de latencia es
+> **esperada, no medida**: el A/B que la decide está definido en
+> `docs/research/softap_app_escritorio.md` §9, y para correrlo se compila el rol anterior
+> con `pio run -e esp32dev_apsta`. Si el enlace sigue por encima de 20 ms, lo de arriba
+> se mantiene sin cambios.
 
 ### Modo 7: RL on-device (inferencia en ESP32)
 
@@ -333,6 +343,8 @@ uv run python -m qube_rl.export_rltools --model models/qube_sac_64x2.zip
 src/
 ├── firmware/                  ← Firmware ESP32 (PlatformIO) + GUI web (data/)
 ├── qube_rl/                   ← Deep RL (entrenamiento, inferencia, export)
+├── qube_daq/                  ← Adquisición por bloques a 500 Hz (CLI: record/plot)
+├── qube_app/                  ← App de escritorio (trazas en vivo, control, análisis)
 └── qube_analysis/             ← Análisis de datos (plotter.py, metrics.py)
 ```
 
@@ -358,10 +370,43 @@ uv run mcp dev mcp/esp32_qube_server.py  # Desarrollo
 
 ---
 
-## GUI
+## Interfaces
 
-La interfaz es una **GUI web embebida** servida por el propio ESP32 desde SPIFFS
-(no requiere instalar nada en el PC).
+Hay dos, y se reparten el trabajo: la web es la que se **opera**, la de escritorio es la
+que se usa para **medir**.
+
+| | GUI web embebida | App de escritorio |
+| --- | --- | --- |
+| Transporte | WebSocket `/ws` | `/daq/read` binario + `/state` |
+| Tasa de las trazas | 10 Hz (20 con `tp=50`) | **500 Hz** |
+| Instalación | ninguna | `uv sync --extra app` |
+| Análisis | retrato de fase, % upright | + métricas de escalón, salud del lazo |
+
+### App de escritorio (`qube_app`)
+
+Adquisición por bloques a 500 Hz con trazas en vivo, control completo de modos y
+ganancias, métricas de escalón, retrato de fase y grabación a CSV con doble marca de
+tiempo. PySide6 + pyqtgraph.
+
+```bash
+uv sync --extra app
+uv run python -m qube_app                          # GUI
+uv run python -m qube_app --selftest --seconds 20  # adquisición sin GUI (banco)
+uv run python -m qube_app --selftest --fake        # ídem, con placa simulada
+```
+
+Sin escribir comandos: doble clic en **`scripts/QUBE App.cmd`**. Para llevar el banco a
+una máquina sin Python, `make exe` empaqueta todo en `dist/QubeApp/QubeApp.exe`.
+
+> Estrenada en banco el 2026-08-03 con el brazo en reposo: **10.469 muestras a 500,1 Hz,
+> 0 perdidas**. Esa primera corrida destapó que `/daq/read` nunca había servido un bloque
+> (colisión de rutas, `CHANGELOG.md` v1.58.2). Falta probarla con el motor en movimiento;
+> el protocolo y los criterios están en
+> [`docs/mine/APP_ESCRITORIO.md`](docs/mine/APP_ESCRITORIO.md) §6.
+
+### GUI web embebida
+
+Servida por el propio ESP32 desde SPIFFS (no requiere instalar nada en el PC).
 
 1. Flashear firmware + filesystem (`pio run -t upload` y `pio run -t uploadfs`)
 2. Conectar el PC a la red WiFi del ESP32 (`QUBE-ESP32` / `qube1234`)
@@ -374,7 +419,8 @@ gain scheduling, Deep RL y flasheo OTA por web.
 > Documentación completa: [`src/firmware/data/README.md`](src/firmware/data/README.md)
 >
 > _Nota: la antigua GUI de escritorio Tkinter (`gui/app.py`, `src/qube_ui/`) fue
-> eliminada; la GUI web la reemplaza por completo._
+> eliminada. La GUI web la reemplazó por completo; `qube_app` no la resucita, es otra
+> cosa: adquisición a 500 Hz y análisis, no un segundo panel de control._
 
 ---
 
@@ -467,6 +513,7 @@ experiments/
 - [ ] LQR péndulo invertido (modo 4) — validación
 - [ ] SAC sim-to-real — fine-tuning completo en hardware
 - [ ] Migración del lazo RL (modo 6) a enlace de baja latencia ESP-NOW con puente USB — trabajo futuro (ver nota de diseño en Deep RL)
+- [x] App de escritorio con trazas a 500 Hz, control y análisis en vivo (`src/qube_app/`) — sin correr en banco todavía
 - [ ] Dashboard web en tiempo real (WebSocket)
 - [ ] PCB Rev2.0 con acondicionamiento integrado
 

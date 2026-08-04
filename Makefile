@@ -3,7 +3,7 @@
 #  Usa `uv` para gestionar el entorno Python y ejecutar herramientas.
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: install lint format check typecheck clean test help flash flash-build flash-upload export-policy
+.PHONY: install lint format check typecheck clean test help flash flash-build flash-upload export-policy app exe
 
 # ── Configuración ──────────────────────────────────────────────────────────
 PYTHON     := uv run python
@@ -40,6 +40,12 @@ clean:             ## Limpiar archivos temporales de Python
 	rm -rf .pytest_cache
 	rm -rf .ruff_cache
 	rm -rf *.egg-info
+
+app:               ## Abrir la app de escritorio (requiere: uv sync --extra app)
+	$(PYTHON) -m qube_app
+
+exe:               ## Empaquetar la app en dist/QubeApp/QubeApp.exe (PyInstaller)
+	$(UV) run pyinstaller scripts/qube_app.spec --noconfirm --distpath dist --workpath build
 
 export-policy:     ## Export SAC model weights INTO the firmware header (MODEL=path)
 	$(PYTHON) -m qube_rl.export_rltools --model $(MODEL) \

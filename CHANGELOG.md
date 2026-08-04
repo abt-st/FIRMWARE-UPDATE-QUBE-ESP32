@@ -1,3 +1,1075 @@
+## [sim] Fricción del péndulo medida — 2026-08-04
+
+### `Dp` deja de ser un número inventado: 1e-6 → **7,52e-6** (medido)
+
+**Sin cambios de firmware.** Cambia el simulador, y con él toda campaña de RL futura.
+
+#### Lo medido
+
+Spin-down libre del péndulo **con el brazo sujeto a mano**, n=2
+(`experiments/2026-08-04_friction_spindown/`):
+
+| | captura 1 | captura 2 |
+|---|---|---|
+| amplitud de suelta | 64,2° | 43,3° |
+| el brazo se movió | 3,69° | 1,23° |
+| λ | 0,0282 1/s | **0,0283 1/s** |
+| t½ | 24,5 s | **24,5 s** |
+
+`Dp = 2·Jp·λ = 7,52e-6`, o **7,5×** el nominal anterior.
+
+**El amortiguamiento es viscoso**, que es el modelo que usa `QubeDynamics` (`Dp·α̇`). La
+evidencia fuerte no es el R² (0,955 vs 0,926 para exponencial contra lineal: con un
+decaimiento de factor 2 las dos curvas se parecen), sino que **λ es idéntico con
+amplitudes de suelta de 64° y 43°**. Con fricción seca, un ajuste exponencial daría λ
+dependiente de la amplitud.
+
+#### Por qué el barrido de junio no podía funcionar
+
+Probó multiplicadores de **20× a 130×**. La realidad es 7,5×: el valor más bajo del
+barrido ya era **2,7 veces** la fricción real, y el más alto **17,3 veces**.
+
+Peor: `Dp_std` era 5e-7, así que la aleatorización de dominio muestreaba `Dp` en
+**[0, 2e-6]**. El valor real quedaba **fuera de la distribución entera** — no mal
+centrada, sino sin intersección. Eso explica las dos cosas que junio dejó abiertas: por
+qué el balance salía plano entre fr20 y fr130 (todos fuertemente sobreamortiguados
+respecto del hierro), y por qué un modelo de 95% en sim dio hold ~0 en el rig.
+
+`Dp_std` pasa a 1,5e-6 (20%): la medición repite al 0,4%, así que ese ancho ya no
+representa ignorancia sino variabilidad real más robustez sim2real.
+
+#### Lo que hizo que la medición sirviera
+
+**Sujetar el brazo.** Con el brazo libre, todo el rango `Dp` ×1→×130 mueve el t½ de 1,20
+a 0,41 s (factor 2,9): la energía se va por el acoplamiento al brazo y `Dp` casi no es
+observable. Con el brazo bloqueado el mismo rango va de 174,7 a 1,4 s. **El experimento
+de junio no estaba mal medido: estaba en el régimen equivocado.**
+
+Se agregó `--lock-arm` a `measure_friction_spindown.py`. Ojo con la ecuación: un brazo
+sujeto impone `thdd = 0` por reacción externa, así que **no** se puede tomar `aldd` de la
+matriz de masa acoplada —eso supone el brazo libre de acelerar—. La restringida es
+`Jp·aldd = −Dp·ald − c4·sin(al)`. Una primera versión ponía θ/θ̇ en cero pero seguía
+usando el modelo acoplado: daba 12,09 rad/s donde la analítica da 10,68 y el hierro
+mide 10,46.
+
+#### Validación cruzada que salió gratis
+
+La frecuencia natural con brazo fijo, `sqrt(c4/Jp)`, da **10,68 rad/s** contra los
+**10,46 rad/s medidos**: 2%. La inercia que explicaría la medición difiere 4% de la de la
+sim. **Los parámetros inerciales de la sim están bien**; lo que estaba mal era solo el
+amortiguamiento.
+
+> **Una hipótesis que se investigó y resultó FALSA, para que no se reponga:** que el
+> `Dr = 5e-6` del brazo estuviera igual de mal porque el L298N frena el motor con
+> `PWM = 0` (IN1=IN2=LOW cortocircuita los bornes) mientras la sim lo dejaría planear.
+> **La sim ya modela ese freno**: su modelo de motor es `trq = n·km·(V − km·θ̇·n)/Rm`, que
+> con `V=0` deja `trq = −(n²km²/Rm)·θ̇` = 2,1e-4, **42× el `Dr` mecánico**. Medido en la
+> propia sim, el brazo desde 200°/s con acción 0 tiene τ = 0,47 s, no los 46 s que daría
+> `Dr` solo. Medir `Dr` es una corrección del 2% sobre un término ya modelado.
+
+## [1.58.5] — 2026-08-04
+
+### La ventana del catch del LQR, medible por primera vez (P4/H2 + H6)
+
+**Los defaults reproducen exactamente el comportamiento anterior.** Flashear esta
+versión no cambia nada por sí solo: es instrumentación para poder medir dos defectos
+que hasta ahora estaban soldados en el firmware, no una corrección de ninguno.
+
+#### H2 — durante el catch el LQR no corre
+
+La rama del catch termina en `return`, así que durante `LQR_CATCH_MS` = 400 ms el
+controlador no ejecuta ni un tick. Con ω_n = 14,34 rad/s (medida, P5) una desviación de
+la vertical crece como `cosh(ω_n·t)`: **×155 en 400 ms**. Una entrega a 1,6° es una
+caída completa antes del primer tick de control.
+
+`?lc=` (0–2000 ms, def. 400) hace configurable esa duración. **`lc=0` desactiva el catch**
+y el LQR controla desde el primer tick.
+
+#### H6 — el periodo de gracia del centering nunca existió
+
+Hallazgo nuevo de esta versión, por lectura del bloque de centering del modo 4. El
+código calculaba `centering_sec = (millis() - lqr_catchMs)/1000`, pero `lqr_catchMs` ya
+se había puesto a cero al salir del catch, unas líneas más arriba. `millis() - 0` es el
+**uptime de la placa**, siempre >> 2 s, así que `ramp` valía 1 desde el primer tick.
+
+Su propio comentario dice *"solo activo 2+ segundos después del catch; durante los
+primeros 2 s el LQR necesita control total del servo"* — **y eso no ocurría nunca.** El
+centering entraba a ganancia plena, con hasta ±25 PWM sobre un `LQR_PWM_MAX` de 70,
+justo cuando el swing-up entrega con el brazo lejos del centro.
+
+Es el mismo patrón que H1 y H4: un camino de código que no hace lo que su comentario
+dice. `?cg=` elige entre el comportamiento histórico (`0`, el default) y el documentado
+(`1`), para medir la diferencia en vez de suponerla.
+
+#### `lqr_alive_ms`: la supervivencia deja de inferirse desde el cliente
+
+`/state` expone ahora `lqr_catch_ms`, `lqr_centering_grace` y `lqr_alive_ms`. El último
+es la supervivencia del intento de balanceo, latcheada por el firmware, y **cuenta desde
+el fin del catch, no desde la entrada al modo**: contar los 400 ms en que el LQR no corre
+se los regalaría por igual a todas las condiciones del A/B. Se mide en el firmware por lo
+mismo que `swing_trans_*` — a 25 Hz de HTTP, "sobrevivió 0,3 s" son 7 muestras.
+
+El cronómetro se invalida en `resetLqr()` y se actualiza tick a tick dentro del modo 4:
+al caer deja de actualizarse solo y el último valor *es* lo que aguantó. `lqr_aliveMs` no
+se limpia al entrar al modo a propósito — tiene que sobrevivir a la caída para poder
+leerse después sin carrera.
+
+#### Verificación en banco
+
+| prueba | resultado |
+|---|---|
+| Flasheo USB | 1.019.600 B, hash verificado |
+| Campos nuevos en `/state` | los tres presentes |
+| Defaults tras el arranque | `lc=400`, `cg=0` — el comportamiento histórico |
+| `?lc=` / `?cg=` ida y vuelta | 4 de 4 confirmadas por `/state` |
+| Saturación de `lc` | `9999` → `2000` |
+
+#### Medido el mismo día: H2 refutada, y el cuello no es la entrada
+
+20 intentos (5 condiciones × 4, intercaladas) en `experiments/2026-08-04_p4_catch/`.
+
+| lc | cg | n | media | mediana |
+|---|---|---|---|---|
+| 400 | 0 | 4 | 0,567 s | 0,575 |
+| 400 | 1 | 4 | 0,806 s | 0,661 |
+| 100 | 0 | 3 | 0,461 s | 0,543 |
+| 0 | 0 | 4 | 0,406 s | 0,379 |
+| 0 | 1 | 4 | 0,608 s | 0,451 |
+
+**H2 falla en la dirección contraria a la predicha.** Con `cg=0` la supervivencia baja
+monótonamente al acortar el catch (0,567 → 0,461 → 0,406 s): **quitarlo empeora**. H2
+era correcta en su mitad —durante el catch el LQR no corre— y ciega en la otra: el catch
+también **disipa energía**. La cuenta del `cosh(ω_n·t)` medía su costo y nunca su
+beneficio.
+
+**H6 se sostiene**, en media y mediana, en las dos filas. La fila limpia es `lc=0`, con
+entregas equivalentes entre `cg=0` y `cg=1`.
+
+**Y el hallazgo que no estaba en ninguna hipótesis:** `corr(α de entrega, supervivencia)
+= −0,088` y `corr(E/E*, supervivencia) = −0,101` sobre n=19. **La calidad de la entrega
+no predice nada.** Hubo entregas de 179,1° con E/E* = 1,002 que aguantaron 0,582 s, y una
+de 157,2° que aguantó 1,335 s. Eso da vuelta la premisa de P4 desde julio: con P14
+corregido el swing-up ya entrega bien y el LQR se cae igual. **El cuello es el
+controlador (H3/H5), no la entrada.**
+
+El control reprodujo el histórico (contiene los 0,48 y 0,55 del 3 de agosto). Los 3,33 s
+**no reaparecieron** en 4 intentos: era un outlier y no debería seguir citándose.
+
+> **Lo que estos datos no permiten afirmar:** n=4 por condición con dispersión global de
+> factor 33. La mejora de `cg=1` se apoya en un intento largo por grupo; en medianas es
+> +15% y +19%, no el +42%/+50% de las medias.
+
+> El flasheo OTA quedó bloqueado por el firewall de Windows (la red del SoftAP se
+> clasifica como pública y la placa no puede abrir la conexión de vuelta);
+> `platformio.ini` fija ahora `--host_port=39266` para poder abrir un solo puerto en vez
+> de habilitar `python.exe` entero. Se flasheó por USB.
+
+## [1.58.4] — 2026-08-04
+
+### El bombeo no tenía techo de energía: el péndulo podía embalarse sin límite
+
+#### El problema
+
+La ley resonante (`pl=0`, la que corre por defecto) hace `pump_ref = alpha_dot * K`: cuanto
+más rápido va el péndulo, más grande la referencia y más se bombea. **Es autorreforzante y
+no tiene ningún término que la apague sola** — a diferencia de la ley de Åström-Furuta
+(`pl=1`), donde el factor `(E* − E)` se encarga, como dice su propio comentario.
+
+Consecuencia: **lo único que detenía el bombeo era el traspaso al LQR.** Si el traspaso no
+dispara —o se desactiva con `tr=0`— no hay techo. Medido el 2026-08-04: **18 vueltas en
+12 s**, suficiente para saturar el contador del encoder (P17) y dejar α sin sentido físico.
+
+El anti-spin que ya existía no alcanza, y vale entender por qué: **frena el brazo**, y un
+péndulo girando sobre un brazo quieto sólo pierde energía por fricción. El cooldown expira
+y el bombeo vuelve a inyectar.
+
+#### Los guardianes
+
+- **Techo de energía** en la rama de bombeo: por encima de `E/E* > swingupEnergyCeiling`
+  no se inyecta. Se deja en coast, no se frena: el freno actúa sobre el brazo y no le saca
+  energía al péndulo, mientras que dejar de bombear sí la deja caer por fricción y damping.
+- **Corte por vueltas** (`SWINGUP_MAX_TURNS = 3`) como respaldo: aborta a modo 0. El bombeo
+  sano no completa ninguna vuelta; P2 necesita al menos una para medir la meseta con
+  `tr=0`, así que 3 deja margen.
+- **`?ec=` configurable y `swing_ceiling_hits` en `/state`.** No es adorno: un guardián que
+  nunca se ejecutó no es un guardián, y esperar a la condición patológica no sirve porque
+  es rara y además el brazo suele tocar el tope antes (P12).
+
+#### Verificación en banco
+
+| prueba | resultado |
+|---|---|
+| Techo forzado a `ec=0.35` | **179 cortes**, el péndulo se queda en ~43° en vez de acumular. **El camino de código ejecuta.** |
+| Regresión con `ec=1.15` (producción) | Traspaso normal a los 4,8 s: `peak+energy`, **`E/E*` = 0,9550**, 0 vueltas |
+| `tr=0`, `sp=45`, 18 s | 0 vueltas (antes: 18) |
+
+> **El techo actúa ~53 veces en un swing-up normal**, sobre unos 2400 ticks. No es un
+> fallo: `E/E*` supera transitoriamente 1,15 durante el bombeo sano y el guardián recorta
+> ese exceso sin impedir el traspaso. Pero **no es cierto que "nunca actúe en operación
+> normal"**, y conviene saberlo antes de leer `swing_ceiling_hits` como una alarma.
+
+## [P15 — no reproducido] — 2026-08-03
+
+### El colapso del lazo con el motor en marcha no sobrevive a un protocolo controlado
+
+**Sin cambios de firmware ni de software.** Es una campaña de medición, con el criterio
+escrito antes de medir: `experiments/2026-08-03_p15_loop/`.
+
+Seis condiciones × n=3, 15 s cada una, intercaladas, corridas **dentro de la app** para ver
+la traza mientras medía —el firmware admite un solo consumidor de `/daq/read`, así que
+script y GUI no pueden leer en paralelo—.
+
+**18 de 18 corridas entre 490 y 500 Hz, cero paradas sobre 20 ms, cero muestras perdidas.**
+La réplica del protocolo original (dejar bombear 6 s para capturar al péndulo ya girando)
+dio 500,2 Hz con máximo 8,7 ms, `pend_wraps = 5` y traspaso a α=176,84° con `E/E*` 0,9994.
+
+Contra las corridas de la mañana en v1.58.2: 330,1 Hz con 214 ms de hueco, y 256,4 Hz con
+488 ms. **P15 pasa a `NO REPRODUCIBLE`, que no es `RESUELTO`**: el fenómeno se midió tres
+veces con instrumentos distintos, pero entre unas mediciones y otras la placa se reinició
+(reflasheo OTA) y no hay forma de separar retroactivamente qué lo causaba. El registro deja
+escrito qué capturar **antes** de reiniciar si vuelve a aparecer.
+
+**Lo que sí quedó medido:** el motor conmutando le cuesta al lazo ~2 % de las muestras
+(`m1_osc` 490,4 Hz y 19–32 overruns contra 498,7 y 3–9 en reposo). No es el que más
+corriente pico tiene, así que lo que pesa es la **frecuencia de inversión del puente**, no
+la corriente. Y apagar la línea serial (`sv=0`) o diezmar la telemetría (`tp=1000`) no
+cambia nada: la hipótesis del costo de comunicaciones dentro del `loop()` queda sin
+respaldo.
+
+> Vale independientemente de P15: `loop_dt_max_us` marcó 17,3 ms en la corrida con un hueco
+> de 488 ms. **Leerlo solo no permite descartar una parada del lazo** — hay que leerlo junto
+> a `loop_overruns`.
+
+## [1.58.3] — 2026-08-03
+
+### P6 / etapa 4: `Kd` 0,15 → 0,45. El sobrepaso baja de 39,3 % a 8,4 %
+
+Primer valor de sintonía de este proyecto elegido con un barrido medido sobre la traza a
+500 Hz en vez de sobre `/state` a 25 Hz. Datos y protocolo en
+`experiments/2026-08-03_p6_pid/`.
+
+#### El barrido
+Escalón +17° → −20° (cruza el cero), `kp=3.0`, `ki=0.5`, `se=2`, `sk=30`, repeticiones
+intercaladas, reposo del péndulo verificado antes de cada punto.
+
+| `kd` | sobrepaso | `sse` | cruces | pwm activo |
+|---|---|---|---|---|
+| 0,15 (anterior) | **39,3 %** | 2,70° | 0 | 1,00 |
+| 0,30 | 21,6 % | 2,81° | 0 | 1,00 |
+| **0,45** | **8,4 %** | 2,66° | 0 | 0,86 |
+| 0,60 | 0,0 % | 3,11° | 0 | 0,86 |
+
+Confirmado con **n=5** en 0,15 y 0,45: 37,6–39,4 % contra 7,9–8,8 %. **Las distribuciones
+no se solapan**, el error de régimen no se degrada y no hubo hunting en ninguna corrida.
+Se elige 0,45 y no 0,60 para dejar margen antes de que el derivativo amplifique ruido.
+
+**Verificado tras el reflasheo OTA:** un escalón sin enviar ninguna ganancia da **9,5 %**.
+El default viejo habría dado ~39 %.
+
+#### Dos cosas que el mismo barrido dejó dichas, y no son buenas noticias
+
+**El control del paso 4.1 falla su propio criterio.** Pedía reproducir el error de régimen
+de ~4,8° con el kick viejo (`se=8`, `sk=12`) y da **2,45°**. La causa más probable es otra
+vez la ventana de medición: los 4,8° salen de segmentos de 3,5 s, y hoy el mismo escalón
+mide 7,7–15,9° con 5 s contra 2,7° con 14 s. Un `sse` tomado antes de que asiente no es un
+error de régimen. **La línea base de P6 hay que rehacerla entera.**
+
+**El kick anti-fricción no mueve la aguja:** 2,45° con los valores viejos contra 2,49° con
+los nuevos, y la dispersión *dentro* de cada configuración (1,33–3,56) es **mayor** que la
+diferencia *entre* configuraciones. Con n=2 no se puede resolver ni a favor ni en contra;
+lo que sí se ve es `pwm_activo ≈ 1` con **0 cruces**, que es un tope por fricción estática
+con el integrador apoyado contra él, no un ciclo límite.
+
+> El tiempo de establecimiento no discrimina en esta campaña: la banda del 2 % son 0,74° y
+> el error de régimen es ~2,8°, así que la respuesta nunca entra en la banda y la métrica
+> queda saturada en el largo del segmento. Es un límite de la definición, no un dato de la
+> planta.
+
+## [1.58.2] — 2026-08-03
+
+### `/daq/read` nunca sirvió un bloque: colisión de rutas con `/daq`
+
+#### El síntoma
+El primer intento de adquirir contra la placa devolvió
+`magic 0x7670227b != 0x51414451`. Esos cuatro bytes son ASCII: `{"pv`. El endpoint
+binario estaba respondiendo el **JSON de estado**, con `Content-Type: application/json`
+y 148 bytes.
+
+#### La causa
+ESPAsyncWebServer acepta subrutas: `AsyncCallbackWebHandler::canHandle` compara con
+`_uri != url && !url.startsWith(_uri + "/")` (`WebHandlerImpl.h:121`). Con
+
+```cpp
+server.on("/daq",      HTTP_GET, handleDaq);       // registrado PRIMERO
+server.on("/daq/read", HTTP_GET, handleDaqRead);   // inalcanzable
+```
+
+`/daq` captura también `/daq/read`, y como los handlers se prueban en orden de registro,
+el segundo nunca corría. **La adquisición por bloques no funcionó nunca**, desde que se
+implementó en v1.57.0: sus 19 tests son sin hardware y el CLI nunca se había corrido en
+banco, así que el defecto sobrevivió a la revisión de código y a la suite entera.
+
+**Corregido:** `/daq/read` se registra antes que `/daq` (GET y OPTIONS), con el porqué
+anotado en el fuente para que un reordenamiento cosmético no lo reintroduzca.
+
+#### Verificación en banco — primera adquisición real del DAQ
+
+`python -m qube_app --selftest --seconds 20`, brazo y péndulo en reposo, motor sin
+energizar, PC asociado al SoftAP:
+
+| métrica | resultado |
+|---|---|
+| muestras | **10.469** en 95 bloques, 20,93 s |
+| tasa efectiva | **500,1 Hz** (nominal 500,0 · desvío +0,0 %) |
+| muestras perdidas | **0** |
+| intervalo | mediana **2,000 ms**, máx 8,99 ms |
+| huecos (>1,5×) | 296 |
+| 503 / errores de red | 0 / 0 |
+
+Los 296 huecos son el lazo estirado por la radio, no muestras que falten: el contador de
+perdidas está en cero y la tasa efectiva coincide con la nominal. Es exactamente la
+distinción para la que existen los dos contadores separados.
+
+**Costo sobre el lazo:** `loop_dt_max_us` dio 19.212 sin DAQ y 11.157 con DAQ;
+`loop_overruns` 1 y 0. Con n=1 por condición y ambos números dominados por eventos de
+radio, **lo único afirmable es que no se observó degradación atribuible a la captura**.
+No es una medición del costo del DAQ; para eso hace falta repetirlo varias veces.
+
+## [app-0.1.0] — 2026-08-03
+
+### App de escritorio: trazas a 500 Hz, control y análisis en vivo
+
+**Sin cambios de firmware.** Todo es software del PC (`src/qube_app/`), sobre el DAQ por
+bloques que ya existía desde v1.57.0.
+
+#### Qué resuelve
+La GUI web se alimenta del WebSocket a 10 Hz: un transitorio de 400 ms —el catch del LQR,
+la entrega del swing-up— cae en 4 muestras. El DAQ ya muestreaba a 500 Hz pero sólo sabía
+grabar a CSV y graficar después. La app mira ese mismo transporte **mientras ocurre**.
+
+#### Contenido
+- `stream.py` — consumo incremental de `/daq/read` en un hilo; encadena el desenrollado
+  de `micros()` y contabiliza perdidas, huecos y 503. `DaqClient.record()` no servía: se
+  bloquea toda la captura y devuelve al final.
+- `link.py` / `poller.py` — `/cmd` y `/state` fuera del hilo de Qt, paro de emergencia con
+  bandera propia atendida antes que la cola de comandos, y modo **sólo lectura** para no
+  ser un segundo escritor cuando corre un entrenamiento RL.
+- `analysis.py` — métricas de escalón, α̇ derivada de α **sin envolver**, retrato de fase
+  con corte en el envolvimiento, % upright y hold.
+- `recorder.py` — CSV canónico + `t_pc_block_s` y `t_now_us` al final. Verificado que
+  `qube_daq plot` lo relee sin adaptadores.
+- `fake.py` — placa simulada que codifica con la misma función que decodifica el cliente.
+- `ui/` — cuatro trazas, retrato de fase, paneles de control y barra de salud.
+
+#### Costo en el PC: 88 % de un núcleo → 14 %
+Perfilando en vez de suponiendo. Las optimizaciones del análisis (bucles de Python
+vectorizados: `upright_stats` 14,0 → 1,9 ms; `derive_velocity` 3,9 → 1,9 ms; envolver α
+sobre la ventana visible y no sobre la historia) **no movieron la aguja**: el costo estaba
+en el pintado. Con las gráficas ocultas el proceso caía a 3 %.
+
+Lo que sí lo movió: **avanzar la ventana de tiempo a saltos en vez de deslizarla**
+(74 % → 19 %), porque cada cambio de rango regenera las marcas y rótulos de los cuatro
+ejes; rango fijo en Y en vez de automático (→ 59 %); y lápiz de ancho 1 en vez de 1,4, que
+deja de ser cosmético y Qt lo dibuja por el doble.
+
+Dos cosas que **no** funcionaron, anotadas para que no se reintroduzcan: el diezmado
+automático de pyqtgraph salió peor (19,1 contra 16,4 ms/cuadro), y diezmar a mano de
+10.000 a 1.000 puntos apenas bajó de 8,2 a 7,4 ms — el costo es **fijo por repintado**, no
+por punto. Detalle en `docs/mine/APP_ESCRITORIO.md` §4.b.
+
+#### Distribución
+- `scripts/QUBE App.cmd` — doble clic, corre el código actual del repositorio.
+- `make exe` → `dist/QubeApp/QubeApp.exe` (~167 MB) con PyInstaller, para llevar el banco
+  a una máquina sin Python. **onedir** y no `--onefile` (que se descomprime en `%TEMP%`
+  en cada arranque), con consola porque la autoprueba reporta ahí, y con torch/SB3/
+  mlflow/matplotlib excluidos: están en el entorno y sin excluirlos el bundle son GB.
+- La consola se pone en UTF-8 al arrancar: empaquetada arranca en la página heredada y
+  los rótulos del proyecto (°, α, θ, ·) salían como basura.
+
+#### `compute_overshoot_step` en `qube_analysis/metrics.py`
+`compute_overshoot` normaliza por `|setpoint|`: en un escalón que cruza el cero **duplica**
+la cifra (68–77 % contra 39–42 % reales sobre las trazas del 30-jul). Se agrega la función
+correcta **sin tocar la vieja**, y la app muestra las dos —la nueva y la *legacy*— para
+poder empalmar con las campañas anteriores.
+
+#### Verificación
+37 tests nuevos sin hardware (encadenado de bloques, wrap de `micros()`, hueco entre
+bloques, anillos, sólo lectura, sobrepaso correcto vs legacy, esquema del CSV, arranque
+de la ventana offscreen). `ruff` y `pyright` limpios en `src/qube_app`.
+
+#### Sesión completa en banco — 2026-08-03
+Sentido de giro (criterio de lazo abierto), homing **270,53°**, escalón `m2` +17 → −20
+con sobrepaso **36,5 / 37,7 / 38,4 %** (n=3) y `sse` 2,72°, y swing-up con traspaso
+`peak` a α=157,15° y `E/E* = 0,9615`. La app midió todo sobre la traza a 500 Hz.
+
+> **Y encontró P15 el primer día.** Con el motor bombeando la tasa efectiva cae a
+> **256–330 Hz** con paradas de hasta **488 ms**, y `dropped = 0` en todas las corridas:
+> las muestras no se produjeron, no se perdieron en el enlace. Además `loop_dt_max_us`
+> marcó 17,3 ms en esa misma corrida — **la métrica de salud del firmware no ve estas
+> paradas**; sí las ve `loop_overruns`. Causa sin establecer, n=1 por condición con
+> motor. Detalle y plan en `docs/REGISTRO_PROBLEMAS.md` P15.
+
+## [1.58.1] — 2026-08-03
+
+### P4 / H1 y H4: el catch medía desplazamiento acumulado y `k4_eff` era el doble
+
+#### H1 — `lqr_prevAlpha` congelado durante el catch
+La rama del catch termina en `return`, así que se saltaba el `lqr_prevAlpha = alpha_raw`
+de más abajo. Durante los 400 ms de `LQR_CATCH_MS` la referencia quedaba congelada en el
+valor de entrada, y `-(pendPosRaw - lqr_prevAlpha)/dt` dividía el desplazamiento
+**acumulado** por un tick de 2 ms: 30° acumulados daban 15.000 °/s y el freno saturaba
+contra `LQR_CATCH_PWM` (25) casi de inmediato. Peor: la dirección se fijaba en los primeros
+10 ms desde esa misma lectura, que con una entrega buena (vel ≈ 0) es ruido de una cuenta
+de encoder — 400 ms de empuje constante de ±25 PWM en un sentido esencialmente aleatorio.
+
+**Corregido:** `lqr_prevAlpha = pendPosRaw` dentro de la rama; la derivada vuelve a ser por
+tick.
+
+#### H4 — un `RAD_TO_DEG` de más en el escalado por velocidad
+`velAlpha_ctrl` **ya está en deg/s** en el modo 4: sale de `lqr_filteredVelAlpha`, que
+deriva `pendPosRaw` (grados), o de `kf_x[3]`, que `kalmanUpdate` alimenta también con
+grados. El `* RAD_TO_DEG` hacía que el umbral de 200 se cruzara con **3,5 °/s reales** y que
+`vel_scale` topara en 2,0 con **8,7 °/s**: `k4_eff` era el **doble** del declarado casi
+siempre. No era gain scheduling, era una constante escondida.
+
+El gemelo del modo 7 (`:3828`) ya lo hacía bien, y su comentario lo dice: *"velAlpha_ctrl is
+deg/s"*. Las dos líneas no podían estar bien a la vez; la del modo 4 era la equivocada.
+
+**Corregido:** `vel_alpha_dps = fabsf(velAlpha_ctrl)`, sin conversión.
+
+> **El `k4` efectivo se reduce a la mitad.** Cualquier sintonía previa de `lqr_K4` hay que
+> rehacerla. Se puede barrer por HTTP con `lqr4=` sin reflashear.
+
+#### Verificación en banco — 5 ciclos swing-up → LQR
+
+| ciclo | criterio | α entrega | vel (°/s) | `E/E*` | supervivencia |
+|---|---|---|---|---|---|
+| 1 | near+slow+forced+energy | −175,25° | 16,0 | 0,9983 | 0,48 s |
+| 2 | — | — | — | — | sin traspaso |
+| 3 | peak+forced | −174,55° | 77,6 | 0,9987 | 0,55 s |
+| 4 | — | — | — | — | sin traspaso |
+| 5 | forced | 173,85° | 109,3 | 0,9990 | **3,33 s** |
+
+Línea base: **0,3 s**, idéntica el 30-jul y en las dos campañas del 03-ago. El mejor caso
+es un orden de magnitud más.
+
+#### Lo que estos datos dicen del siguiente paso (H2)
+Las supervivencias de 0,48 y 0,55 s son `LQR_CATCH_MS` (0,4 s) **más 80–150 ms de LQR
+real**: en esos ciclos el controlador apenas alcanzó a correr. El ciclo 5 son 0,4 s de catch
+más **2,9 s de LQR sosteniendo**. **H2 —los 400 ms sin control— pasa a ser el cuello.**
+
+No sobreinterpretar con n=3: la entrega más lenta (16 °/s) sobrevivió menos que la más
+rápida (109 °/s). Puede ser que el freno del catch, ya honesto, sólo haga trabajo útil
+cuando hay velocidad que frenar. Son tres puntos.
+
+## [1.58.0] — 2026-08-03
+
+### Homing: frenado de aproximación al tope
+
+#### Motivación
+- El homing llegaba al tope a `HOMING_PWM_SEEK` = 70 y golpeaba a plena marcha.
+
+#### Por qué no se baja el seek y ya
+- Es exactamente lo que se hizo en v1.53.2 para suavizar el impacto, y **causó P3**: a 55
+  el brazo no siempre vence el punto duro que hay a ~119° del centro, se cala ahí y acepta
+  un cero corrido de 16°. `HOMING_PWM_SEEK` volvió a 70 por esa razón y se queda en 70.
+- Acortar `HOMING_STALL_MS` tampoco sirve: reduce el tiempo de presión **después** del
+  golpe, no el golpe. La energía de impacto la fija la velocidad de llegada.
+
+#### Cambios aplicados
+- **`HOMING_SEEK_SLOW_DEG = 8.0`**: el seek mantiene 70 y baja a `HOMING_PWM_TOUCH` (55)
+  en los últimos 8°. El umbral es deliberadamente **menor que los ~16°** que separan el
+  punto duro (119°) del tope (135°): frenar antes sería reintroducir P3.
+- Predicción del tope, sin estado persistente en NVS y sin depender del signo del cableado:
+  - **Segundo tope:** distancia recorrida desde el primero, ya medido en esa misma corrida.
+    Se usa `fabsf(rawPos - homing_stopPosRaw)` para no depender de `homing_pwmSign`, que
+    recién se aprende al terminar el toque negativo.
+  - **Primer tope:** medición de la corrida anterior (`homing_prevStopPosRaw`), sembrada
+    **sólo** si esa corrida pasó la validación de recorrido. Sin memoria válida no frena:
+    el comportamiento cae al anterior en vez de frenar a ciegas.
+
+#### Verificación en banco (6 homings consecutivos)
+| | antes (v1.57.2) | después |
+|---|---|---|
+| éxitos | 5/5 y 3/3 | **6/6** |
+| rango | 270,35–270,70 | **270,176 en las 6** |
+| dispersión tope + | 0,17° (1 cuenta) | **0,000°** |
+| dispersión tope − | 0,53° (3 cuentas) | **0,000°** |
+
+La repetibilidad pasa de 1–3 cuentas a **cero**: llegando frenado el brazo se cala siempre
+en la misma cuenta. El rango queda 0,2–0,5° más corto, coherente con comprimir menos el
+tope.
+
+#### Lo que NO está medido
+La reducción de la fuerza de impacto **no se cuantificó**. El muestreo de corriente por
+HTTP va a ~2,5 Hz y el transitorio del golpe dura milisegundos, así que los picos de
+120–129 mA registrados no son comparables con nada. Lo que sí está medido es que la
+aproximación ocurre a 55 en vez de 70 y que la medición se volvió perfectamente repetible.
+
+## [1.57.2] — 2026-08-03
+
+### P14: las cuatro compuertas de traspaso comparaban un ángulo sin acotar
+
+#### Problema identificado
+- Las cuatro condiciones que disparan el traspaso m5→m4 comparaban `fabsf(pendPos)`
+  contra sus umbrales **sin acotar `pendPos` a [−180, 180]**. Si el péndulo acumula una
+  vuelta, `pendPos` se va fuera del rango y `|pendPos|` supera cualquier umbral hasta 178
+  con el péndulo **lejos** de la vertical.
+- `wrapPendulumTurns()` (P13) sí acota, pero sólo se llama en las ramas de spin y de
+  recovery. Entre medio `pendPos` puede pasarse sin que nadie lo corrija.
+
+#### Evidencia medida (2026-08-03, campaña de bring-up run 2, m5)
+
+| `trans_alpha` latcheado | ángulo real | dista de vertical | reportó | correspondía |
+|---|---|---|---|---|
+| −199,16° | 160,84° | 19,2° | near+slow+**forced**+energy | `forced` es falso (160,84 < 165) |
+| −223,42° | 136,58° | **43,4°** | near+slow+forced | **ninguna**: 136,58 < 155 |
+
+La segunda repetición traspasó con el péndulo a 43° de la vertical y `E/E*` = 0,863 — una
+entrega que el LQR no puede sostener. En ambas, `swing_trans_vel = 0,00` **exacto**, así
+que la compuerta de velocidad también se cumplía trivialmente: las dos mitades del criterio
+se satisfacían de forma espuria a la vez.
+
+#### Cambios de firmware
+```cpp
+// Acotado local para la EVALUACION; el estado y el offset los sigue manejando
+// wrapPendulumTurns() (P13). No se toca el cero.
+float pendPosWrapped = fmodf(pendPos + 180.0f, 360.0f);
+if (pendPosWrapped < 0.0f) pendPosWrapped += 360.0f;
+pendPosWrapped -= 180.0f;
+```
+- `nearVertical`, `atPeakTransition`, `forcedTransition` y `energyReady` pasan a usar
+  `fabsf(pendPosWrapped)`.
+- `swing_transAlphaDeg` latchea el **acotado** — es el que evaluaron las compuertas y el
+  único comparable entre corridas. El crudo sigue en el log de Serial.
+
+#### Notas
+- Es la misma familia que P1 (`forced` anulando a las demás) y P13 (el cero corriéndose en
+  silencio): un umbral evaluado contra una referencia que no significa lo que el umbral
+  supone.
+- **Consecuencia para P2 y P4:** cualquier corrida en la que el péndulo acumulara vuelta
+  podía traspasar lejos de la vertical, entregándole al LQR una condición insostenible.
+  Las mediciones previas de ambos problemas hay que releerlas con esto en mente.
+- PATCH y no MAJOR: corrige un bug, no cambia arquitectura ni pines. Sí cambia
+  comportamiento del lazo, así que se prueba solo, sin mezclar con otros cambios.
+
+## [1.57.1] — 2026-08-01
+### Migración a placa ESP32 DevKit V1 de 30 pines (sin cambio de GPIO)
+
+#### Motivación
+- Se reemplaza la placa ESP32 del montaje por una **DOIT ESP32 DevKit V1 de 30 pines**, que
+  pasa a ser la única placa del proyecto. Mismo módulo WROOM-32, mismo `board = esp32dev`
+  en `platformio.ini`.
+
+#### Hallazgo: no hubo que renumerar ningún pin
+- El firmware usa 9 GPIO: **21, 22, 25, 26, 27, 32, 33, 34, 35**. Los 30 pines exponen
+  todos.
+- Lo único que la placa de 30 pines no expone respecto de la de 38 es **GPIO0 y GPIO6–11**
+  (flash SPI), y ninguno estaba en uso.
+- Ninguno de los 9 es pin de strapping (0, 2, 4, 5, 12, 15), así que tampoco aparecen
+  modos de arranque distintos.
+- Por eso esta entrada es **PATCH y no MAJOR**: la tabla de versionado marca MAJOR para
+  "cambio de pines", y aquí el mapa de pines es idéntico. Cambió la placa, no la
+  asignación.
+
+#### Cambios aplicados
+
+**1. `docs/hardware/pinout.md` — pinout indexado por posición física**
+- Nueva columna **Posición** en la tabla de pines: fila (izq./der.) y número contado desde
+  el extremo del USB, para cablear contando posiciones.
+- Orden completo de ambos headers de la DevKit V1 de 30 pines, con la advertencia de
+  verificar el serigrafiado (hay clones con las filas espejadas).
+- Sección nueva "Trampas de cableado de esta placa":
+  - IN1/IN2 quedan contiguos (izq. #6-#7).
+  - Los 4 canales de encoder ocupan izq. #9–#12 en orden `33, 32, 35, 34`, **inverso** al
+    del conector J4 de la perfboard (`34, 35, 32, 33`): la cinta va cruzada. Conectarla
+    "derecha" intercambia los dos encoders.
+  - SDA (der. #11) y SCL (der. #14) no son contiguos: entre medio están RX0 y TX0. Correrse
+    una posición aterriza en la UART0 del USB y el síntoma no parece de I2C.
+- Nota mecánica: la placa de 30 pines es más corta y angosta; medir el footprint si va
+  sobre zócalo.
+- La opción B del ENA sigue disponible: GPIO25 está expuesto (izq. #8).
+
+**2. `docs/hardware/bom.md`**
+- Se precisa el formato de placa en la BOM: `ESP32-WROOM-32 — placa DevKit V1, 30 pines`.
+
+**3. `docs/hardware/system_wiring_l298n.py`**
+- Etiqueta del bloque ESP32: `WROOM-32` → `DevKit V1 - 30 pines`. PNG regenerado.
+
+**4. `docs/hardware/pinout_esp32_30.py` — tarjeta de pinout físico (nueva)**
+- Dibuja la placa con sus dos headers en **orden físico**, numerados desde el USB, para
+  cablear en el banco contando posiciones. Complementa a `system_wiring_l298n.py`, que es
+  un diagrama de redes (qué se conecta con qué) y no dice dónde cae cada pin.
+- Marca en rojo las tres trampas: la cinta de encoders cruzada, RX0/TX0 entre SDA y SCL,
+  y los pines que la placa no expone.
+- `pinout.md` pasa a documentar **los 30 pines**, no solo los 9 en uso: 13 comprometidos,
+  3 no cableables (`EN`, `RX0`, `TX0`) y **14 libres** (12 GPIO de propósito general + 2
+  input-only), dato que hacía falta para evaluar expansiones como el dongle ESP-NOW.
+
+#### Cambios de firmware
+```cpp
+// Encabezado de esp32_qube.ino — solo comentario, sin cambio funcional:
+// Placa: DOIT ESP32 DevKit V1, 30 pines (modulo WROOM-32). El cambio desde la
+//        placa de 38 pines (2026-08-01, v1.57.1) no altero ningun GPIO.
+```
+- Las constantes `PIN_ENC_A/B`, `PIN_PEND_A/B`, `PIN_ENA/IN1/IN2` y `PIN_I2C_SDA/SCL`
+  quedan **intactas**.
+
+#### Notas
+- El `perfboard_layout.py` no cambia: la ESP32 no va sobre la perfboard, se conecta por los
+  headers J3/J4.
+- Orden de verificación en banco tras recablear, con el riel de 15 V **apagado** hasta el
+  final: continuidad despoderado → alimentar solo el riel de la ESP32 → flashear →
+  observar por HTTP (`http://192.168.4.1/state`, no abrir `pio device monitor`, que
+  resetea) → confirmar INA219 → girar brazo y péndulo a mano y ver las cuentas → recién
+  ahí energizar los 15 V con `m1` a PWM bajo → `m3` homing.
+
+## [1.57.0] — 2026-07-31
+### Adquisición por bloques: el ESP32 muestrea a 500 Hz, el PC interpreta y analiza
+
+La idea era dejar la ESP32 **solo como adquisición de datos**. Se adopta en su parte de
+adquisición y análisis, y **no** en la de mover el lazo de control al PC, por una cifra:
+adquirir está limitado por **caudal** y controlar por **latencia**. Un bloque que tarda
+30 ms en llegar no degrada nada, porque cada muestra viaja con el `micros()` del tick que
+la produjo; un lazo de control con período de 2 ms no puede esperar 32 ms (medidos, con
+colas de 63 ms). Cerrar el lazo desde el PC a 500 Hz pediría 500 round-trips por segundo
+contra un techo medido de 31 Hz.
+
+El resultado es que la adquisición **baja** el tráfico en vez de subirlo: 512 muestras
+por frame en vez de una muestra cada 100 ms.
+
+#### Firmware
+- Buffer circular SPSC de 2048 muestras (32 KB, 4,1 s a 500 Hz). El productor es el lazo
+  (core 1) y el consumidor el handler HTTP (core 0); sólo uno mueve cada índice, así que
+  la ruta de 500 Hz no paga una sección crítica. **Apagado por defecto**: cuesta una
+  lectura de bool.
+- Muestra de 16 B: `t_us`, `th_deg`, `al_deg` **sin envolver**, `pwm`, `mode`, `flags`.
+  Sin velocidades: derivar y filtrar es trabajo del PC, que es el punto. El wrap de
+  ±180° va afuera porque destruye cualquier derivada numérica.
+- `GET /daq?start=1&decim=N` / `?stop=1` / estado en JSON, y `GET /daq/read` con el
+  bloque binario. `start` **vacía el buffer**: dos sesiones mezcladas darían un salto
+  temporal indistinguible de un dato real.
+- Buffer lleno: se descarta la muestra **nueva** y se cuenta; el acumulado viaja en cada
+  bloque. Nunca hay pérdida silenciosa.
+- Un solo consumidor: `beginResponse_P` no copia, así que una segunda petición
+  concurrente recibe 503 en vez de datos pisados.
+- **`/cmd?sv=0`**: apaga la línea de telemetría por Serial. Son ~120 caracteres cada
+  100 ms, unos 10 ms de UART a 115200 contra un período de lazo de 2 ms — y el
+  consumidor habitual no existe, porque abrir el monitor reinicia la placa. Default 1,
+  para no romper `qube_serial_tool.py`.
+- `/state` suma `daq_running`, `daq_available`, `daq_dropped`, `serial_telemetry`.
+- RAM: 15,2 % → 27,7 % de 327 KB (32 KB de anillo + 8 KB de staging).
+
+#### Python — nuevo paquete `src/qube_daq/`
+- `protocol.py`: decodificador con validación de `magic`, versión y tamaño. Incluye el
+  desenrollado de `micros()`, que **da la vuelta cada 71,6 minutos** y sin corregir haría
+  que el tiempo retroceda a mitad de una captura larga.
+- `client.py`: `DaqClient.record()` y `Acquisition`, que reporta **tasa efectiva medida**
+  (no la nominal pedida), huecos y muestras perdidas. Vacía la cola al detener: lo que
+  quedó en el buffer es dato ya medido y descartarlo recortaría el final de cada captura.
+- `__main__.py`: `status`, `record` (CSV con el esquema canónico de `capture.py`) y
+  `plot`. Con `--mode` pide confirmación y siempre corta el motor al salir.
+
+#### Verificación
+19 tests nuevos (149 en total, todos pasan) contra bloques sintéticos: campos, bloque
+truncado, desajuste de versión, bloque vacío como caso legítimo, wrap de `micros()`
+dentro y entre bloques, concatenación, vaciado de cola y contabilidad de perdidas. El
+firmware compila en ambos entornos.
+
+**Sin correr en banco.** No se midió la tasa efectiva real, ni cuánto le cuesta al lazo
+capturar a 500 Hz, ni si el buffer alcanza con la radio en condiciones reales.
+
+#### Documentación
+- `docs/research/adquisicion_por_bloques.md` — diseño, formato, contratos y la
+  discusión de por qué el lazo NO se mueve al PC.
+- `docs/http_api.md` — `/daq`, `/daq/read`, `sv` y los campos nuevos de `/state`.
+- `experiments/2026-07-31_softap/scripts/measure_loop_load.py` — mide quién le roba
+  tiempo a quién (red vs ley de control), con las dos hipótesis separables por diseño.
+
+## [1.56.0] — 2026-07-31
+### Rol de radio: SoftAP puro por defecto (el STA queda como entorno de compilación)
+
+El firmware levantaba SoftAP **y** cliente del router a la vez. Esa coexistencia AP+STA
+sobre una radio única fue la causa **medida** de los picos de ~100 ms del lazo
+PC-en-el-lazo (v1.50.0): se verificó en tres flasheos OTA que ni `setSleep(false)` ni
+`WIFI_PS_NONE` los quitaban y que el `beacon_interval` 100→300 ms sí. Es decir, el
+beacon era un paliativo sobre una causa que seguía ahí. Se apaga el rol STA.
+
+**Esto no está medido todavía.** La mejora de latencia es la hipótesis que motiva el
+cambio, no un resultado: el A/B que la valida —o la revierte— está en
+`experiments/2026-07-31_softap/`, con el criterio de decisión **pre-registrado** antes
+de la primera corrida. Lo que sí se gana desde ya, y no depende de la latencia, es que
+el banco deja de necesitar el router del laboratorio y que la dirección pasa a ser fija.
+
+#### Firmware (`src/firmware/esp32_qube/esp32_qube.ino`)
+- `ENABLE_STA` pasa a derivarse del macro `QUBE_ENABLE_STA` (default **0**). El rol
+  anterior se reconstruye sin editar el fuente: `pio run -e esp32dev_apsta`.
+- `AP_CHANNEL` (6) como constante con nombre. En AP+STA el canal no se elige —se copia
+  del router por escaneo, porque la radio es una sola—; en SoftAP puro se usa
+  directamente y **se evita el escaneo, que es bloqueante** y domina `loop_dt_max_us`
+  al arrancar.
+- `beacon_interval` pasa a ser condicional: **300 ms en AP+STA, 100 ms en SoftAP puro**.
+  Alargarlo servía para robarle menos aire al STA; sin STA es contraproducente, porque
+  el AP retiene las tramas de una estación en power-save hasta el DTIM siguiente y un
+  beacon largo alarga esa retención. Con el PC como estación, quien puede dormir ya no
+  es el ESP32 (que tiene `WIFI_PS_NONE`) sino el adaptador del portátil.
+
+#### Configuración de red del lado del PC
+- `platformio.ini`: nuevo `[env:esp32dev_apsta]`; el OTA por defecto apunta a
+  `192.168.4.1` (hay que estar **asociado** a `QUBE-ESP32` para flashear).
+- Nuevo `DEFAULT_ESP32_IP` en `src/qube_rl/config.py`, con override por variable de
+  entorno `QUBE_IP` — que es lo que permite medir A y B con el mismo script.
+- Apuntan al SoftAP: `qube_real.py`, `envs/factory.py`, `inference.py`, `finetune.py`,
+  `flash.py`, `capture.py`, `monitor_swingup.py`, `demo/demo_avance.py`,
+  `mcp/esp32_qube_server.py`.
+- **No se tocó el registro histórico**: los scripts y handoffs de `experiments/` y las
+  entradas viejas de este CHANGELOG conservan la IP con la que realmente se corrieron.
+
+#### Documentación
+- `docs/research/softap_app_escritorio.md` — evaluación completa: qué cambia al invertir
+  los roles de radio, los cinco transportes evaluados, ventajas y desventajas etiquetadas
+  como medidas/derivadas/esperadas, riesgos operativos y el protocolo de medición.
+- `docs/literature_studies/electricui-latency-benchmark.md` — referencia externa de
+  latencia por enlace (WiFi TCP ~6 ms, UDP ~9 ms, ESP-NOW 5,6 ms entre pares ESP32) más
+  los reportes de Espressif sobre ráfagas del SoftAP y descartes UDP en modo AP. Es la
+  evidencia que sostiene **no** migrar a UDP binario.
+- Actualizados `README.md`, `docs/http_api.md`, `demo/README.md`, `mcp/README.md`,
+  `src/firmware/data/README.md`; `docs/mine/GUI_WEB_WEBSOCKET.md` queda marcado como
+  desactualizado en su sección de IP estática.
+
+#### Reversión
+Un comando: `pio run -e esp32dev_apsta --target upload`, y `QUBE_IP=192.168.100.50`
+para los scripts. La app de escritorio (el otro tramo de la propuesta) **no** se
+implementó: espera al resultado del A/B.
+
+## [1.55.2] — 2026-07-31
+### P6: el sobrepaso del PID era 39%, no 77%; y el kick anti-fricción no podía funcionar
+
+Investigación de las causas de los problemas que quedaron abiertos el 30. Lo de este
+release es P6 completo (menos el barrido en banco) más las causas candidatas de P4
+documentadas. **Nada de esto está medido en banco todavía**: compila y los cálculos
+sobre las trazas del 30 se rehicieron, pero el barrido está pendiente.
+
+#### La métrica de sobrepaso estaba mal, y por el doble
+
+`validate.py` normalizaba por `|setpoint|` en vez del tamaño del escalón, y tomaba
+`max(|θ|)` de todo el segmento —transitorio de entrada incluido—. En un escalón que
+cruza el cero eso duplica la cifra. Recalculado sobre **las mismas trazas**:
+
+| escalón | vieja | **nueva** |
+|---|---|---|
+| +3 → +20 (Δ 17°) | 13,8–28,3% | 16,3–31,7% |
+| +17 → −20 (Δ 37°) | **68,3–76,7%** | **38,8–42,0%** |
+| −15 → 0 (Δ 15°) | no se medía | 14,4–21,4% |
+
+`step_overshoot()` normaliza por `sp − θ₀` y busca el pico **tras el primer cruce** del
+setpoint. La cifra vieja se conserva como `overshoot_pct_max_legacy` para poder
+empalmar con las tandas del 30. En los escalones cortos la nueva da *más* que la
+vieja, que es lo correcto: ahí el escalón es menor que `|sp|`.
+
+El sobrepaso real sigue siendo alto (~40%) y la causa es `Td = Kd/Kp = 0,05 s`: 113
+PWM de empuje inicial contra ~44 de freno derivativo a 295 °/s.
+
+#### El kick anti-fricción estaba mal por los dos extremos
+
+El error de régimen de 4,8° del m2 no es del ajuste, es fricción estática — y el
+mecanismo que debía cubrirla no podía:
+
+- exigía `|err| > 8°`, y la banda donde el brazo queda pegado es **0,8–8°**;
+- aplicaba `PWM_MIN = 12`, y **12 PWM no mueve el mecanismo**. El homing usa 45 para
+  vencer la misma fricción, y la traza muestra al brazo inmóvil con el PID pidiendo
+  14–15 PWM durante más de 1 s.
+
+Un kick por debajo del arranque real es un kick que por construcción no arranca. Con
+la banda descubierta, lo único que saca al brazo es el integrador a ~2,4 PWM/s.
+
+- `stiction_err_thresh_deg` 8 → **2**, `stiction_kick_pwm` 12 → **30**, ambos por HTTP
+  (`?se=`, `?sk=`) y en `/state`.
+- **`PWM_MIN` eliminado**: su único uso era éste, y el nombre prometía un piso global
+  que nunca fue.
+- El **feedforward gravitacional se movió antes de la zona muerta**. Estaba después, o
+  sea que el `pwm = 0` de la zona muerta quedaba pisado por el `ff` sumado a
+  continuación. Inocuo sólo porque `servo_ff_pwm = 0` por defecto.
+
+#### P4: cinco causas candidatas, por lectura de código
+
+En `docs/REGISTRO_PROBLEMAS.md`. Las dos que más explican el síntoma: el `catch`
+retorna antes de actualizar `lqr_prevAlpha`, así que durante 400 ms divide por un tick
+todo el desplazamiento acumulado y satura el freno en una dirección fijada desde ruido
+de encoder; y durante esos mismos 400 ms **no corre el LQR**, tiempo en que una
+desviación de la vertical crece ×155. Sin cambios aplicados: el orden importa y no
+conviene mezclarlos con un cambio de ganancias.
+
+#### Reserva sobre "sobra energía" (P2)
+
+Esa conclusión descansa en 2 corridas de 3 con `tr=0`; las 4 posteriores con `tn=175`
+toparon en 159–160°. La diferencia parece ser la duración de la corrida (30 s vs unos
+segundos), no la energía. Conviene repetir con n ≥ 5 antes de construir encima.
+
+#### Nuevo
+
+- `experiments/2026-07-31_pid/scripts/sweep_pid.py`: barre `kd`/`kp` y el par
+  `se`/`sk` por HTTP. Mide **hunting** (cruces del setpoint y PWM activo en régimen) a
+  propósito — subir el piso del kick puede cambiar un error de régimen por un ciclo
+  límite, que es peor.
+
+---
+
+## [1.55.1] — 2026-07-30
+### Ventana de validación del homing apretada a 262–278°
+
+`experiments/2026-07-30_full_validation/` (24 repeticiones, 8 modos × 3) encontró que
+**3 de 24 homings midieron ~250,3–251,7° y fueron ACEPTADOS** por la ventana 250–290:
+un cero corrido ~10° se dio por bueno. Las 3 vienen justo después de `m1`, el único
+modo que empuja el brazo a PWM fijo contra los topes.
+
+El recorrido real es 268–270°, así que 250 de piso no filtraba nada útil. Ventana
+nueva: **262–278**. Verificado tras el cambio: homing OK con 269.121°.
+
+Reconfirmado con 24 muestras: **el tope negativo se repite con 0,70° de dispersión y
+el positivo con 20,56°**. `SEEK_NEG` siempre corre con carrera constante desde el tope
+opuesto; `SEEK_POS` arranca desde donde quedó el brazo. Hipótesis para el fallo: calado
+falso por el péndulo agitado. Sin probar.
+
+---
+
+## [1.55.0] — 2026-07-30
+### `/state` expone el criterio de traspaso swing-up → LQR
+
+El criterio ganador se imprimía **sólo por Serial**, y el monitor serial reinicia la
+placa: en la práctica el traspaso no era atribuible. Ahora se latchea en el instante
+de la transición y sale por `/state`.
+
+- Campos nuevos: `swing_trans_reason` (bitmask: 1=near+slow, 2=peak, 4=forced,
+  8=energy), `swing_trans_alpha`, `swing_trans_vel`, `swing_trans_energy`
+  (`E/E*`), `swing_trans_ms_ago`.
+- **Bitmask, no enum:** los 4 criterios se evalúan antes del cortocircuito y saber
+  cuáles coincidieron dice más que saber cuál ganó.
+- Se latchea **antes** de `setMode(4)` y `setMode(5)` lo limpia, así que lo que se lee
+  siempre corresponde al intento en curso.
+
+#### Lo que reveló, de inmediato
+En 4 de 4 intentos el criterio fue **`forced` y sólo `forced`**, con α ≈ 125–127°,
+velocidad 506–871 °/s y **`E/E*` de 0.81–0.86**.
+
+`forcedTransition = |pendPos| > 125` es la única de las cuatro condiciones **sin
+compuerta de velocidad ni de energía**. Como su umbral (125°) está apenas sobre el de
+cercanía (120°), se cruza antes de que las condiciones con compuerta se cumplan: los
+criterios que sí verifican velocidad y energía quedan **efectivamente muertos**, y el
+LQR recibe un péndulo a 55° de su punto de operación y girando rápido.
+
+#### Corrección de un resultado previo
+La primera tanda sugería que el ángulo de traspaso variaba entre 76° y 128°. **Era
+artefacto de muestreo** (cliente a 8–13 Hz viendo el cambio de modo hasta 120 ms
+tarde). Los 4 criterios exigen `|pendPos| > 120`, así que 76° era imposible por
+construcción. Con el valor latcheado el ángulo real es consistente en ~125–127°.
+
+---
+
+## [1.54.2] — 2026-07-30
+### Barrido funcional de los 8 modos (`experiments/2026-07-30_mode_sweep/`)
+
+Primera campaña que corre `m0..m7` de corrido sin intervención manual. Lo que la
+hace posible es el homing: antes, cualquier modo que derivara el brazo al tope
+dejaba el banco trabado hasta moverlo a mano.
+
+- **Los 8 modos entran y despachan.** La reasignación de `m3` no rompió el resto.
+- `m2` (PID servo) es el único que cierra un lazo limpio hoy: sobrepaso ~25%, sin
+  cortes. `m4`/`m5`/`m7` siguen sin sostener la vertical.
+- `m5` bombea bastante más fuerte de lo registrado antes (|α| 117° contra ~84°) y
+  **entrega el control al LQR solo**. Pero vertical son 180°: el traspaso se dispara
+  75° antes, y el LQR aguanta ~1,4 s antes de que el brazo cruce el límite blando.
+- El `safeStop` por límite actuó en los 3 modos donde correspondía.
+- **7 recuperaciones automáticas del cero, cero intervenciones manuales.**
+
+#### Hallazgo: la dispersión del homing está toda en un tope
+Las 7 corridas comparten marco `raw` (no hubo reinicio). Reconstruyendo los topes:
+el **tope negativo se repite con dispersión de 0.010°** —por debajo de un conteo de
+encoder— mientras el **positivo dispersa 1.060°**. Coherente con que `SEEK_NEG`
+siempre arranca desde el tope opuesto, con carrera constante de 270°, y `SEEK_POS`
+desde donde haya quedado el brazo. **Es hipótesis, no conclusión**: explica el patrón
+pero no se corrió el experimento que la probaría.
+
+#### Limitación de telemetría encontrada
+El criterio que dispara el traspaso `m5`→`m4` (`canTransition` / `atPeakTransition` /
+`forcedTransition` / `energyReady`) se imprime **sólo por serial**, y el monitor
+serial reinicia la placa. Hoy no es atribuible por HTTP. Candidato a `/state`.
+
+---
+
+## [1.54.1] — 2026-07-30
+### GUI: panel de homing
+
+`src/firmware/data/index.html` (requiere `pio run -e esp32dev_ota -t uploadfs`).
+
+- Panel **Homing** en la pestaña Calib: botón de ejecución, abortar (`m=0`), y
+  fase / resultado / tope+ / tope− / recorrido / centro en vivo. La telemetría ya
+  viajaba: el WebSocket emite `getStateJson()`, el mismo payload que `/state`.
+- El resultado se colorea: verde con el cero fijado, ámbar en curso, rojo en fallo
+  con el motivo traducido del código (1 recorrido fuera de tolerancia, 2/3 timeout
+  de tope, 4 timeout al centrar).
+- `Homing` agregado al selector de modos y a `MODE_NAMES`. **No era cosmético:** el
+  badge hace `el('mode').value=d.mode`, así que sin la opción `value="3"` el selector
+  quedaba en blanco cada vez que el firmware reportaba modo 3.
+- Confirmación obligatoria antes de arrancar, y el botón "Aplicar" del selector se
+  enruta por la misma función: el modo 3 es el único que mueve el brazo contra los
+  topes a propósito, y no debería poder dispararse por un clic distraído.
+
+---
+
+## [1.54.0] — 2026-07-30
+### `QubeRealEnv` puede recuperar el cero sin intervención
+
+Cierra el objetivo original: dejar el banco entrenando y que se recupere solo si
+pierde la referencia.
+
+#### `src/qube_rl/envs/qube_real.py`
+- `run_homing()` público (usable desde un notebook o un script de recuperación),
+  más `_start_homing()` / `_wait_homing()` / `_center_arm()`.
+- Disparadores: `homing_every=N` (periódico), `homing_on_start`, y
+  `homing_on_limit` (por defecto **sí**) que encola un homing cuando un episodio
+  termina por límite de servo — la firma de un cero corrido o perdido. `step()` solo
+  lo *encola*; correrlo ahí dejaría al brazo moviéndose mientras el llamador todavía
+  cree tener el control del lazo.
+- `reset(options={"homing": True/False})` fuerza o suprime una corrida puntual sin
+  reconfigurar el entorno.
+- **Opt-in por defecto** (`homing_every=None`): la rutina mueve el brazo contra
+  ambos topes, y eso no puede pasar por sorpresa en un banco desatendido.
+- **Centrado fino encadenando `m2`** después del homing. El homing garantiza el
+  *cero*, no dónde queda estacionado el brazo (ver la limitación en v1.53.2). Es
+  best-effort y no levanta excepción: un brazo descentrado es un mal estado inicial,
+  no una referencia corrupta.
+- **Un homing fallido levanta excepción.** Seguir contra un cero desconocido
+  corrompe en silencio todos los `theta` del dataset; caerse es más barato. En el
+  fallo no se incrementa `zero_epoch` y queda pedido el reintento.
+
+#### Trazabilidad del marco de referencia
+Cada homing **redefine** `theta = 0`. `reset()` ahora devuelve `info["zero_epoch"]`
+en **todos** los resets (no solo los que corrieron homing), y `info["homing"]` con la
+geometría medida en los que sí. Sin eso, episodios de antes y después de un homing se
+mezclarían como si compartieran marco.
+
+#### Verificado contra el hardware
+`reset(options={"homing": True})` completo en **11,4 s**: `range_deg` 269.648 (cuarto
+valor idéntico consecutivo), `park_error_deg` 0.0, theta inicial 0.178°. Un reset sin
+homing toma 1,2 s. Las rutas de fallo y de timeout se probaron con la telemetría
+simulada.
+
+---
+
+## [1.53.2] — 2026-07-30
+### Homing más suave contra los topes
+
+Los dos *toques* ya eran suaves (arrancan a 5° del tope, apenas aceleran); lo que
+golpeaba fuerte eran las dos *búsquedas*, y `SEEK_NEG` es la peor porque tiene 265°
+de carrera para llegar a velocidad terminal.
+
+- `HOMING_PWM_SEEK` de 70 a 55. Velocidad de impacto medida: **80 → 67 °/s**
+  (~30% menos energía). No se puede bajar más: a 40 la fricción sola frena el brazo
+  y el detector de calado lo lee como tope — ese fue el defecto de v1.53.1.
+- `HOMING_STALL_MS` de 200 a 120. No reduce el golpe (ya ocurrió) pero sí los 200 ms
+  de empuje sostenido contra el tope después del contacto. Margen de sobra: a PWM 55
+  el brazo recorre ~7° en 120 ms, contra un umbral de 0,5°.
+- `HOMING_SIDE_TIMEOUT_MS` de 8000 a 12000, porque cruzar los 270° a PWM 55 toma ~5 s.
+
+Confirmación indirecta de que golpea más suave: `homing_range` bajó de 270.18° a
+269.65°, **el mismo valor en dos corridas**. Esos 0,5° eran deformación elástica del
+tope bajo impacto. La repetibilidad del centro sigue en un conteo (0.176°).
+
+**Presupuesto de tiempo:** el total es ~9–13 s según dónde arranque el brazo, y
+`GOTO_CENTER` se lleva la mitad. La búsqueda completa son ~5 s.
+
+**Validación de punta a punta.** Con la ESP32 reiniciada y el cero perdido de verdad
+(`offset_deg = 0`, `homing_ok = false`), el homing reconstruyó el centro con una
+diferencia de 0,176° —un conteo de encoder— respecto de la calibración anterior, y
+midió el mismo recorrido (269.648°) que las dos corridas previas al reinicio. Es el
+caso de uso para el que existe el modo: una corrida de entrenamiento desatendida que
+sufre un reset puede recuperar su referencia sin intervención.
+
+**Limitación conocida:** el brazo no siempre queda centrado. En una de las corridas
+terminó a 19,5° del centro: al cortar el motor el puente queda en corte, no en freno,
+y el péndulo con swing residual back-drivea el brazo (es direct-drive). **No afecta la
+calibración** — el offset se fija en el centro geométrico medido, no donde quedó
+estacionado. Si hace falta centrado fino, lo correcto es encadenar `m2` (PID de
+posición) después del homing, que ya es legítimo porque el cero existe.
+
+---
+
+## [1.53.1] — 2026-07-30
+### Homing validado en banco: dos defectos corregidos
+
+Primera ejecución real de `m3` sobre el mecanismo. La máquina de estados recorrió la
+secuencia completa sin trabarse, pero las dos primeras corridas expusieron defectos
+que solo aparecen con el brazo puesto.
+
+- **El toque lento se calaba antes del tope.** Con `HOMING_PWM_TOUCH = 40` el brazo
+  se detenía por fricción y el detector lo leía como tope: en la corrida 1 el brazo
+  ya había alcanzado `raw = -107.9` durante `SEEK_POS` y el toque terminó en `-97.6`,
+  10° corto. Subido a 55 (y `HOMING_PWM_MIN` de 35 a 45).
+- **`GOTO_CENTER` se pasaba del centro y reportaba éxito igual.** El lazo P llegaba
+  al centro a PWM 70 y declaraba `DONE` en el instante de cruzar la tolerancia;
+  `setMotorDirect(0)` deja el puente en corte, no en freno, así que el brazo seguía
+  por inercia. En la corrida 2 se pasó 126° y quedó contra el tope opuesto con
+  `homing_ok = true` y `position_deg = -125.7`, fuera del límite blando. Ahora el
+  éxito exige además que el brazo esté detenido, hay techo de PWM reducido dentro de
+  los últimos 30° (`HOMING_CENTER_SLOW_DEG`) y la tolerancia de estacionamiento pasa
+  de 2° a 5° — es tolerancia de estacionamiento, no de calibración: el cero se fija
+  en el centro geométrico medido pase lo que pase.
+- **Ventana de recorrido corregida con medición.** Los 150–230° eran una suposición
+  y hacían abortar con `fail=1` un homing correcto. El recorrido real del brazo es
+  **270°**; la ventana queda en 250–290.
+
+#### Repetibilidad (4 corridas limpias, 2026-07-30)
+`homing_range`: 270.352 / 270.000 / 270.000 / 270.352. En las tres corridas hechas
+sin reset intermedio —o sea, comparables en el mismo marco `raw`— `homing_center`
+dio 63.809 / 63.633 / 63.633. La dispersión es **un conteo de encoder** (0.176°), el
+límite de resolución del sensor. El brazo queda estacionado a menos de 5° del centro.
+
+---
+
+## [1.53.0] — 2026-07-28
+### Modo 3 reasignado: homing por topes mecánicos
+
+**Cambio de significado de un ID de modo.** `m3` fue el PID de péndulo hasta v1.34,
+quedó como hueco no despachado desde entonces, y ahora es la rutina de homing. Los
+logs y datasets con `"mode": 3` anteriores a esta versión corresponden al PID de
+péndulo o a un no-op, **no** al homing.
+
+Motivación: el encoder del brazo es incremental y pierde el cero en cada reset. Sin
+una forma autónoma de recuperarlo, una corrida de entrenamiento desatendida que
+sufra un reset queda entrenando contra una referencia desconocida.
+
+#### Firmware (`esp32_qube.ino`)
+- Máquina de estados de homing: espera a que el péndulo se aquiete, busca cada tope,
+  retrocede 5° y vuelve a tocarlo lento, valida el recorrido y adopta el punto medio
+  como cero (`positionOffsetDeg`). Termina sola en `setMode(0)`.
+- **Detección de calado por encoder** (sin movimiento >0,5° durante 200 ms con par
+  aplicado), no por temporizador fijo ni por corriente: no depende del INA219, cuya
+  caída deja el corte por calado inhabilitado.
+- Validación de recorrido (150–230°) antes de fijar el cero. Cubre el caso de encoder
+  muerto, que de otro modo mediría un rango ≈0 y calibraría sobre basura.
+- Exención del fin de carrera común (`SERVO_HARD_LIMIT_DEG`) para `mode == 3`: el
+  homing corre con el cero inválido y necesita alcanzar los topes. Sin la exención se
+  auto-mata en el primer tick.
+- Usa `setMotorDirect()`: la soft saturation de `setMotor()` escala el PWM según un
+  offset que durante el homing todavía no es válido.
+- `/state` expone `homing_phase`, `homing_ok`, `homing_fail`, `homing_stop_pos`,
+  `homing_stop_neg`, `homing_range`, `homing_center`. El disparo es asíncrono
+  (`/cmd?m=3`) y el cliente hace polling: bloquear el callback HTTP dispararía el
+  watchdog y congelaría el lazo de 500 Hz.
+
+#### Scripts que mandaban `m=3` (antes inocuo, ahora mueve el brazo)
+- `experiments/2026-06-15_training/test_approach_c.py`: enviaba `m=3` creyendo que
+  era swing-up; corregido a `m=5`, que es lo que pretendía.
+- `experiments/2026-06-04_pid_tuning/test_pid.py`: `--mode pendulum/both` aborta con
+  error explícito; el default pasa de `both` a `servo`.
+
+#### Pendiente
+- Gancho en `qube_real.py::reset()` para disparar el homing desatendido.
+- Validación en banco por etapas antes de soltarlo a rango completo.
+
+---
+
 ## [1.52.0] — 2026-07-28
 ### Reversión de hardware: BTS7960 → L298N (documentación + firmware)
 

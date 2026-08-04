@@ -24,6 +24,12 @@ test = [
 viz = [
     "matplotlib>=3.8.0",
 ]
+# App de escritorio (qube_app). Extra y no dependencia base a proposito: PySide6 pesa
+# ~100 MB y no tiene por que entrar al entorno de RL ni a CI, que corren sin GUI.
+app = [
+    "pyside6>=6.7",
+    "pyqtgraph>=0.13",
+]
 rl = [
     "stable-baselines3>=2.2.1",
     "gymnasium>=0.29.1",
@@ -70,6 +76,14 @@ ignore = [
 "tests/test_sysid.py" = ["N806"]
 # MCP tool docstrings/strings intentionally use Greek θ/α for pendulum angles.
 "mcp/*.py" = ["RUF001", "RUF002", "RUF003"]
+# La demo imprime prosa en castellano: °, ×, – y — son tipografia intencional.
+"demo/*.py" = ["RUF001", "RUF002", "RUF003"]
+# El CLI del DAQ rotula ejes con los simbolos del proyecto (θ, α): son intencionales.
+"src/qube_daq/__main__.py" = ["RUF001"]
+# La app rotula ejes y paneles con los simbolos del proyecto (θ, α, α̇, ·, —).
+"src/qube_app/*.py" = ["RUF001", "RUF002", "RUF003"]
+"src/qube_app/ui/*.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/test_app_*.py" = ["ARG001", "S101", "RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -86,6 +100,7 @@ dev = [
     "pytest>=8.0.0",
     "pyright>=1.1.380",
     "pyserial>=3.5",
+    "pyinstaller>=6.21.0",
 ]
 
 [build-system]
@@ -93,4 +108,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/qube_rl", "src/qube_analysis"]
+packages = ["src/qube_rl", "src/qube_analysis", "src/qube_daq", "src/qube_app"]
