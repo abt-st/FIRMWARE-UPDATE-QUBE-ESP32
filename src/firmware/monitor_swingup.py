@@ -2,11 +2,13 @@
 
 import contextlib
 import json
+import os
 import sys
 import time
 import urllib.request
 
-IP = "192.168.100.50"
+# SoftAP puro por defecto (ver docs/research/softap_app_escritorio.md).
+IP = os.environ.get("QUBE_IP", "192.168.4.1")
 
 
 def get_state():

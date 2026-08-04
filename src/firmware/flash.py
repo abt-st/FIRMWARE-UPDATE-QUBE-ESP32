@@ -2,8 +2,8 @@
 flash.py — Build & flash QUBE firmware via HTTP /update endpoint.
 
 Usage:
-    uv run python src/firmware/flash.py                          # auto-detect IP, build + upload
-    uv run python src/firmware/flash.py --ip 192.168.100.50      # explicit IP
+    uv run python src/firmware/flash.py                          # default IP, build + upload
+    uv run python src/firmware/flash.py --ip 192.168.100.50      # explicit IP (build AP+STA)
     uv run python src/firmware/flash.py --build-only              # build without upload
     uv run python src/firmware/flash.py --upload-only             # upload last build (skip compile)
 
@@ -13,6 +13,7 @@ firmware.bin locked, the ELF is still converted to a temp .bin for upload.
 """
 
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
@@ -25,7 +26,10 @@ FIRMWARE_DIR = Path(__file__).parent
 BUILD_DIR = FIRMWARE_DIR / ".pio" / "build" / "esp32dev"
 ELF_PATH = BUILD_DIR / "firmware.elf"
 BIN_PATH = BUILD_DIR / "firmware.bin"
-DEFAULT_IP = "192.168.100.50"
+# SoftAP puro por defecto: hay que estar ASOCIADO a la red QUBE-ESP32 para flashear.
+# Para una placa con firmware AP+STA, pasar --ip 192.168.100.50 o exportar QUBE_IP.
+# Recuperación siempre disponible por USB si un flasheo deja la placa inalcanzable.
+DEFAULT_IP = os.environ.get("QUBE_IP", "192.168.4.1")
 
 # esptool paths from platformio
 PLATFORMIO_HOME = Path.home() / ".platformio"

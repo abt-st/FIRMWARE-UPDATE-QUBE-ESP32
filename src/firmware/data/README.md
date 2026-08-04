@@ -57,8 +57,11 @@ hace falta `uploadfs` por separado.)
    - **SSID:** `QUBE-ESP32`  ·  **Pass:** `qube1234`  ·  canal 6, máx. 4 clientes.
 3. Abrir `http://192.168.4.1/` en el navegador.
 
-> En modo STA (si `ENABLE_STA`), el ESP32 también es accesible por su IP en la
-> red local (IP estática `192.168.100.50`).
+> El firmware opera como **SoftAP puro** por defecto: `192.168.4.1` es la única
+> dirección y no depende de ningún router. Compilando con `pio run -e esp32dev_apsta`
+> se reactiva el modo AP+STA y la placa vuelve a ser accesible además por su IP
+> estática en la red local (`192.168.100.50`). Ver
+> `docs/research/softap_app_escritorio.md`.
 
 ---
 
@@ -97,7 +100,7 @@ izquierda con su valor instantáneo en el encabezado.
 | **RL**                 | Mode 6/7, obs en vivo, **slider `scale`** (PWM sim2real), acción manual, reset, poll vivo de `/rl_state` |
 | **Ctrl**               | PID Servo, LQR, Swing-up (Ke/Thr/**PWMmax**), Gain Scheduling fino/grueso |
 | **Ajustes**            | Toggle Kalman + telemetría KF, feedforward `ff`, filtro velocidad `va`, período de telemetría `tp` |
-| **Calib**              | Lecturas raw/offset en vivo, offsets `o/op`, dirección `ed/edp`, counts-per-rev `cpr/cprp` |
+| **Calib**              | Lecturas raw/offset en vivo, **homing (`m3`)** con fase y geometría medida, offsets `o/op`, dirección `ed/edp`, counts-per-rev `cpr/cprp` |
 | **An&aacute;lisis**          | Retrato de fase α vs α̇, m&eacute;trica de balance (% upright / hold actual / hold m&aacute;x) |
 | **Sistema**            | OTA (`/update`), subir GUI a SPIFFS (`/fs`), WiFi STA, reiniciar / formatear |
 | **Datos**              | Grabar / Exportar CSV (base o extendido) / Borrar (muestras desde el WebSocket) |
@@ -114,11 +117,12 @@ ganancias PID/LQR/swing-up/gain-scheduling/RL-scale.
 
 ### Modos en el selector
 
-`0` STOP · `1` PWM · `2` PID Servo · `4` LQR · `5` Swing-up · `6` Deep RL (HTTP) · `7` Deep RL (chip).
+`0` STOP · `1` PWM · `2` PID Servo · `3` Homing · `4` LQR · `5` Swing-up · `6` Deep RL (HTTP) · `7` Deep RL (chip).
 
-> El firmware acepta `m=0..7` (con un hueco en `m3`). El modo `m3` (PID péndulo)
-> fue **removido** del firmware: el péndulo es un eslabón pasivo (sistema
-> subactuado), por lo que un PID de posición directa sobre él no es realizable.
+> El firmware acepta `m=0..7`, sin huecos. `m3` fue el PID de péndulo (removido:
+> el péndulo es un eslabón pasivo subactuado y un PID de posición directa sobre
+> él no es realizable) y **el ID quedó reasignado al homing por topes**. `m3`
+> mueve el brazo contra ambos extremos mecánicos: no es un modo inerte.
 
 ---
 
@@ -157,6 +161,7 @@ firmware que estaban sin exponer:
 | ---- | ------ |
 | **RL sim2real** | Slider `rl_pwm_scale` (`/rl_cmd?scale=`); badge + chequeo de `pv` contra `EXPECTED_PV`; poll en vivo de `/rl_state` (obs en convención sim) |
 | **Calibración** | Panel nuevo: offsets `o/op`, dirección `ed/edp`, counts-per-rev `cpr/cprp`, lecturas raw/offset en vivo |
+| **Homing** | Panel en Calib: botón de ejecución con confirmación, abortar (`m=0`), y fase / resultado / topes / recorrido / centro en vivo desde `/ws` |
 | **Kalman / tuning** | Toggle `kf` + telemetría KF, feedforward `ff`, filtro velocidad `va`, `gain_mode` en badge, período `tp` |
 | **Sistema** | `/restart`, subir GUI a SPIFFS (`/fs`), `/format` (con confirmación), WiFi STA (`wifi_ssid/pass/reconnect`) |
 | **Swing-up** | Añadido `sp` (PWM máx) que faltaba |
@@ -187,4 +192,4 @@ firmware que estaban sin exponer:
 | - | -------- | ---- | ----- |
 | 9 | Sin autenticación / `ws://` plano | 🟢 | Aceptable solo en LAN aislada (AP del ESP32). No exponer a redes no confiables. |
 | 10 | Handlers `onclick` inline (incompatibles con CSP estricta), sin `aria-label`/`<form>` | 🟢 | De-inlinar todos los handlers es un refactor amplio; diferido para no arriesgar la GUI compacta actual. |
-| — | `m3` (PID péndulo) removido del firmware | — | Intencional: péndulo subactuado; control vía LQR (m4), swing-up (m5) y RL (m6/m7). |
+| — | `m3` (PID péndulo) removido del firmware | — | Intencional: péndulo subactuado; control vía LQR (m4), swing-up (m5) y RL (m6/m7). El ID `m3` quedó reasignado al homing por topes en v1.53.0. |

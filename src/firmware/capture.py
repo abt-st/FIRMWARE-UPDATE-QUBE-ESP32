@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
@@ -70,7 +71,8 @@ CSV_FIELDS: tuple[str, ...] = (
     "i_ma",
 )
 
-DEFAULT_IP = "192.168.4.1"  # ESP32 SoftAP; pass --ip for the STA address.
+# ESP32 SoftAP (rol por defecto del firmware); QUBE_IP o --ip para una placa AP+STA.
+DEFAULT_IP = os.environ.get("QUBE_IP", "192.168.4.1")
 DEFAULT_MAX_PWM = 120  # safety clamp on |PWM| for actuator experiments.
 
 

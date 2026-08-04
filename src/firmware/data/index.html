@@ -143,11 +143,12 @@ button:disabled{opacity:.4;cursor:default;transform:none}
         <label for="mode">Modo:</label>
         <select id="mode" aria-label="Modo de control">
           <option value="0" selected>STOP</option><option value="1">PWM</option>
-          <option value="2">PID Servo</option><option value="4">LQR</option>
+          <option value="2">PID Servo</option><option value="3">Homing</option>
+          <option value="4">LQR</option>
           <option value="5">Swing-up</option><option value="6">Deep RL (HTTP)</option>
           <option value="7">Deep RL (chip)</option>
         </select>
-        <button onclick="cmd('m='+el('mode').value)">Aplicar</button>
+        <button onclick="applyMode()">Aplicar</button>
         <button class="danger" onclick="cmd('x=1')">STOP</button>
       </div>
       <div class="row">
@@ -313,6 +314,20 @@ button:disabled{opacity:.4;cursor:default;transform:none}
       <div class="kv"><span>dir / CPR servo</span><span id="cDirS">--</span></div>
     </div>
     <div class="panel">
+      <h2>Homing<span class="tag">modo 3</span></h2>
+      <div class="sub">Recupera el cero del brazo tocando ambos topes mec&aacute;nicos y tomando el punto medio.</div>
+      <div class="row">
+        <button onclick="startHoming()">Ejecutar homing</button>
+        <button class="danger" onclick="cmd('m=0')">Abortar</button>
+      </div>
+      <div class="kv"><span>fase</span><span id="hPhase">--</span></div>
+      <div class="kv"><span>resultado</span><span id="hRes">--</span></div>
+      <div class="kv"><span>tope +</span><span id="hSP">--</span></div>
+      <div class="kv"><span>tope &minus;</span><span id="hSN">--</span></div>
+      <div class="kv"><span>recorrido</span><span id="hRange">--</span></div>
+      <div class="kv"><span>centro</span><span id="hCenter">--</span></div>
+    </div>
+    <div class="panel">
       <h2>Offsets</h2>
       <div class="grow">
         <div class="gi"><label>o servo</label><input type="number" id="o" value="0" step="1"></div>
@@ -433,7 +448,7 @@ var el=function(id){return document.getElementById(id)};
 var st=el('status');
 var t0=Date.now(),rows=[],MAX=200;
 var EXPECTED_PV=3;          /* RL_PROTO_VERSION en el firmware */
-var MODE_NAMES={0:'STOP',1:'PWM',2:'PID',4:'LQR',5:'Swing',6:'RL HTTP',7:'RL chip'};
+var MODE_NAMES={0:'STOP',1:'PWM',2:'PID',3:'Homing',4:'LQR',5:'Swing',6:'RL HTTP',7:'RL chip'};
 
 /* ── Tabs ─────────────────────────────────────────────────── */
 el('tabs').addEventListener('click',function(e){
@@ -664,6 +679,7 @@ function connect(){
       el('cRawP').textContent=fmt(d.pend_raw_position_deg,2);
       el('cOffP').textContent=fmt(d.pend_offset_deg,2);
       if(d.encoder_dir!==undefined)el('cDirS').textContent=d.encoder_dir+' / '+fmt(d.counts_per_rev,0);
+      updateHoming(d);
       wsErrCount=0;
     }catch(ex){
       /* Un NaN/inf serializado por el firmware rompe JSON.parse y congela el feed con el
@@ -678,6 +694,44 @@ updateRecUI();
 fillPresetList();
 
 /* ── Commands ─────────────────────────────────────────────── */
+/* ── Homing (modo 3) ──────────────────────────────────────────
+   Se enruta TODO por startHoming(), incluido el "Aplicar" del selector, para que
+   el modo 3 no se pueda disparar sin aviso: es el unico modo que mueve el brazo
+   contra los topes a proposito. */
+var HOMING_FAIL={1:'recorrido fuera de tolerancia',2:'timeout tope +',3:'timeout tope −',4:'timeout al centrar'};
+function applyMode(){
+  var m=el('mode').value;
+  if(m==='3'){startHoming();return;}
+  cmd('m='+m);
+}
+function startHoming(){
+  if(!confirm('El homing mueve el brazo contra AMBOS topes mecánicos (~270°) y tarda ~10 s.\n\nVerifica que nada obstruya el recorrido.\n\n¿Ejecutar?'))return;
+  el('mode').value='3';
+  cmd('m=3');
+}
+function updateHoming(d){
+  if(d.homing_phase===undefined)return;
+  el('hPhase').textContent=d.homing_phase;
+  var res=el('hRes');
+  if(d.homing_phase==='FAIL'){
+    res.textContent='FALLO: '+(HOMING_FAIL[d.homing_fail]||('code '+d.homing_fail));
+    res.style.color='var(--err2)';
+  }else if(d.homing_ok){
+    res.textContent='OK — cero fijado';
+    res.style.color='var(--ok2)';
+  }else if(d.homing_phase!=='IDLE'){
+    res.textContent='en curso…';
+    res.style.color='var(--warn)';
+  }else{
+    res.textContent='sin ejecutar';
+    res.style.color='var(--muted)';
+  }
+  el('hSP').textContent=fmt(d.homing_stop_pos,2)+'°';
+  el('hSN').textContent=fmt(d.homing_stop_neg,2)+'°';
+  el('hRange').textContent=fmt(d.homing_range,2)+'°';
+  el('hCenter').textContent=fmt(d.homing_center,2)+'°';
+}
+
 function cmd(qs){
   modeUserOverride=false;clearTimeout(modeOverrideTimer);
   fetch('/cmd?'+qs).then(function(r){return r.json();}).then(function(d){
