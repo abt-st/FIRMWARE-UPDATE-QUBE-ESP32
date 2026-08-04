@@ -1,0 +1,67 @@
+[
+  {
+    "rep": 1,
+    "he": 179.0,
+    "homing_range": 270.18,
+    "reached": false,
+    "hold_s": 0.0,
+    "used_lqr": false,
+    "loop_dt_max_us": 23249,
+    "loop_overruns": 271,
+    "pend_wraps": 0,
+    "ceiling_hits": 0,
+    "ended_in_stop": false
+  },
+  {
+    "rep": 2,
+    "he": 179.0,
+    "homing_range": 270.35,
+    "reached": false,
+    "hold_s": 0.0,
+    "used_lqr": false,
+    "loop_dt_max_us": 21424,
+    "loop_overruns": 262,
+    "pend_wraps": 0,
+    "ceiling_hits": 0,
+    "ended_in_stop": false
+  },
+  {
+    "rep": 3,
+    "he": 179.0,
+    "homing_range": 270.53,
+    "reached": true,
+    "hold_s": 0.17,
+    "used_lqr": true,
+    "loop_dt_max_us": 21973,
+    "loop_overruns": 137,
+    "pend_wraps": 0,
+    "ceiling_hits": 0,
+    "ended_in_stop": true
+  },
+  {
+    "rep": 4,
+    "he": 179.0,
+    "homing_range": 270.35,
+    "reached": true,
+    "hold_s": 0.1,
+    "used_lqr": true,
+    "loop_dt_max_us": 20048,
+    "loop_overruns": 36,
+    "pend_wraps": 0,
+    "ceiling_hits": 0,
+    "ended_in_stop": true
+  },
+  {
+    "rep": 5,
+    "he": 179.0,
+    "homing_range": 270.53,
+    "reached": false,
+    "hold_s": 0.0,
+    "used_lqr": false,
+    "loop_dt_max_us": 21666,
+    "loop_overruns": 286,
+    "pend_wraps": 0,
+    "ceiling_hits": 0,
+    "ended_in_stop": false
+  }
+]

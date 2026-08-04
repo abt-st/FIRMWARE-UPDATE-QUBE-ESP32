@@ -1970,6 +1970,12 @@ String getStateJson() {
   json += "\"lqr_catch_ms\":" + String(lqr_catchDurMs) + ",";
   json += "\"lqr_centering_grace\":" + String(lqr_centeringGrace ? 1 : 0) + ",";
   json += "\"lqr_alive_ms\":" + String(lqr_aliveMs) + ",";
+  // Hibrido del modo 7: umbrales vigentes y en que rama esta corriendo. Sin `hybrid_lqr`
+  // no se puede saber si un intento de m7 lo balanceo la politica o el LQR — que es la
+  // diferencia entre medir la politica y volver a medir P4.
+  json += "\"hybrid_enter_deg\":" + String(hybrid_enter_deg, 1) + ",";
+  json += "\"hybrid_exit_deg\":" + String(hybrid_exit_deg, 1) + ",";
+  json += "\"hybrid_lqr\":" + String(hybrid_lqr ? 1 : 0) + ",";
   // Salud del lazo de control: periodo real peor caso y re-sincronizaciones desde
   // el ultimo reset (/cmd?rj=1). Con esto los "500 Hz" son un dato medido y no una
   // constante del codigo — y cada traza capturada lleva su propia evidencia de
@@ -2247,6 +2253,23 @@ void handleCmd(AsyncWebServerRequest *request) {
   }
   if (request->hasParam("cg")) {
     lqr_centeringGrace = (request->getParam("cg")->value().toInt() != 0);
+  }
+  // Umbrales del hibrido del modo 7. Existian desde hace tiempo pero SOLO por Serial
+  // (`H`/`X`), y abrir el serial reinicia la placa y tira al PC del SoftAP: en la
+  // practica eran inalcanzables. Mismo caso que `lc`/`cg`.
+  //
+  // Para que sirven: el modo 7 corre la politica RL hasta |alpha| >= he y ahi traspasa
+  // a la MISMA ley LQR del modo 4. O sea que el balanceo del m7 es el del m4, que hoy
+  // sostiene ~0,5 s (P4): medir el m7 tal cual mide el LQR, no la politica.
+  //
+  // Con `he=179` el traspaso practicamente no dispara y la politica balancea sola. Esa
+  // es la unica prueba honesta de una politica de 50 Hz sobre el hardware, porque el
+  // modo 7 corre en el chip y no arrastra los 14,3 Hz del enlace HTTP (P20).
+  if (request->hasParam("he")) {
+    hybrid_enter_deg = constrain(request->getParam("he")->value().toFloat(), 90.0f, 179.0f);
+  }
+  if (request->hasParam("hx")) {
+    hybrid_exit_deg = constrain(request->getParam("hx")->value().toFloat(), 60.0f, 175.0f);
   }
 
   if (request->hasParam("kf")) {

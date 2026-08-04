@@ -12,7 +12,7 @@ Estados: `ABIERTO` · `EN CURSO` · `RESUELTO` · `MITIGADO` · `NO ES DEFECTO`
 | [P3](#p3) | Homing se cala en un punto duro y acepta el cero corrido | alta | `RESUELTO` |
 | [P4](#p4) | El LQR no sostiene ni con una entrega perfecta (α=178,4°, α̇=0, E/E*=1,000) | **alta** | `EN CURSO` — **H2 refutada** (2026-08-04): quitar el catch empeora. La calidad de la entrega **no correlaciona** con la supervivencia (r≈−0,09, n=19) ⇒ el cuello es el controlador (H3/H5), no la entrada |
 | [P5](#p5) | Magnitud de α̇ dudosa → `E/E*` no confiable | alta | `RESUELTO` |
-| [P6](#p6) | ~~m2 PID: sobrepaso 68–77%~~ → **39–42%**; la cifra estaba inflada por la métrica | baja | `EN CURSO` — `kd=0,45` lo baja a **8,2%** (2026-08-03, n=2); falta confirmar y cambiar el default |
+| [P6](#p6) | ~~m2 PID: sobrepaso 68–77%~~ → **39–42%**; la cifra estaba inflada por la métrica | baja | `RESUELTO` (2026-08-04) — `kd=0,45` es el default desde v1.58.0 y se re-verificó en v1.58.5: **1,2%** de sobrepaso, 0 hunting |
 | [P7](#p7) | `sample_hz` inflado en modos multi-tramo (instrumentación) | baja | `RESUELTO` |
 | [P8](#p8) | Homing: el brazo no siempre queda centrado | baja | `MITIGADO` |
 | [P9](#p9) | El estimador de α̇ tiene ganancia 1,52, no 1 | media | `RESUELTO` |
@@ -27,6 +27,7 @@ Estados: `ABIERTO` · `EN CURSO` · `RESUELTO` · `MITIGADO` · `NO ES DEFECTO`
 | [P18](#p18) | **El bombeo no tenía techo de energía**: sin traspaso, el péndulo se embala sin límite | **alta** | `RESUELTO` (2026-08-04, v1.58.4) |
 | [P19](#p19) | **`/rl_state` se congela en silencio** al salir de los modos 6/7: repite el último valor en vez de fallar | **alta** | `ABIERTO` |
 | [P20](#p20) | **El lazo RL por HTTP corre a 14,3 Hz**, no a los 50 Hz para los que se entrena. El modo 6 no puede evaluar una política | **alta** | `ABIERTO` |
+| [P21](#p21) | **La inferencia en chip (m7) rompe el lazo de 500 Hz**: ~21% de los ticks atrasan >10 ms, unas 100× más lento de lo esperable | **alta** | `ABIERTO` |
 
 ---
 
@@ -1098,6 +1099,62 @@ corrió.
 
 ---
 
+## P21 {#p21}
+### La inferencia en chip (m7) rompe el lazo de 500 Hz
+
+**Estado:** `ABIERTO` · **Detectado:** 2026-08-04, en la primera campaña que midió m7
+contra un criterio (`experiments/2026-08-04_m7_chip/`).
+
+#### Lo medido
+
+`loop_dt_max_us` dio **17–23 ms en los diez intentos**, contra los 2000 µs nominales:
+paradas de **diez períodos**. Los `overruns` salieron bimodales — {22, 31, 32, 36} contra
+{262, 271, 284, 286, 287} — así que se midió el tiempo real pasado en cada rama del
+híbrido:
+
+```
+corr(segundos en rama política, overruns) = +0,996   (n = 10)
+```
+
+Prácticamente lineal: **~10,6 overruns por cada segundo de inferencia**. Los intentos
+dominados por el LQR se quedan en 22–32, que es la línea base por conmutación del motor ya
+documentada en [P15](#p15) (19–32). **La rama del LQR es barata; la de la política no.**
+
+A 50 Hz de tick, eso significa que **~21% de las inferencias atrasan el lazo más de
+10 ms**.
+
+#### Por qué es del orden de 100× de más
+
+La red es 36→64→64→1: unas **6.464 multiplicaciones-acumulaciones**. En un ESP32 a
+240 MHz con FPU de un ciclo eso son decenas de microsegundos, no diez milisegundos.
+No es el costo natural de la red — hay algo patológico en cómo se ejecuta.
+
+Candidatos, sin verificar: acceso a los pesos `constexpr` en flash sin caché, la función
+de activación, o el armado de la observación (`HistoryWrapper` de 4 pasos) en vez de la
+inferencia misma.
+
+#### Lo que bloquea
+
+**El sim2real sigue sin medirse.** Van dos caminos de despliegue y los dos fallan por
+frecuencia antes de llegar a la pregunta: el modo 6 por el enlace ([P20](#p20)) y el modo
+7 por la inferencia. Una política de 50 Hz cuyo lazo se atasca 10 ms en una de cada cinco
+decisiones no está corriendo a 50 Hz.
+
+**No se puede concluir que la política no transfiera.** La misma política da 5/5 al ápice
+y hold 9,14 s en la sim con el `Dp` medido.
+
+#### Cómo afrontarlo
+
+1. **Medir el tiempo de una inferencia** con un contador alrededor de la llamada. Es el
+   dato que decide si el problema es la red, los pesos en flash, o el armado de la
+   observación. Sin eso, optimizar es adivinar.
+2. Recién entonces: optimizar la inferencia, bajar la frecuencia **y re-entrenar a esa
+   frecuencia**, o achicar la red.
+3. **No re-exportar ni re-entrenar antes.** Cambiar la política no arregla un problema de
+   tiempo de ejecución.
+
+---
+
 ## Historial de cambios
 
 | fecha | problema | cambio | verificación |
@@ -1145,3 +1202,4 @@ corrió.
 | 2026-08-04 | P19/P20 | Primer `diagnose_real_vs_sim.py` de la historia del proyecto (`experiments/2026-08-04_sim2real/`) | **El cuello del sim2real es el enlace, no la física.** Un paso del modo 6 tarda 69,9 ms (dos viajes) ⇒ **14,3 Hz contra los 50 de entrenamiento**. La misma política: en sim acción media 0,111 y hold 9,43 s; en el hierro acción media 0,936, 93,6% saturada y 91,3% del tiempo contra la abrazadera de 80° |
 | 2026-08-04 | P19 | Descubierto que `/rl_state` **repite el último valor** al salir de los modos 6/7 en vez de fallar | Firma: `theta` exactamente constante en 1500 muestras. Un brazo trabado igual daría ruido de encoder, y el péndulo colgando no puede estar inmóvil con el motor al 95%. Convirtió un episodio muerto en un `reach=0%` que parecía brecha sim2real |
 | 2026-08-04 | infra | `make_real_env()` no exponía `homing_every`/`homing_on_start`: **por la factory el homing era inalcanzable** | Los episodios arrancaban donde hubiera quedado la corrida anterior — el 2026-08-04, en 91–94°, a 1° del corte duro. Corregido en la factory y `--homing-every` con default 1 en el script. Con homing, `min_dist` pasó de 176° a **68–89°** |
+| 2026-08-04 | P6 | Regresión de m2 sobre v1.58.5 (n=3 por nivel), con `kd=0,15` como control | **`kd=0,45` cumple con margen: 1,2% de sobrepaso** (0,0 · 1,2 · 3,0), 0 hunting, 500 Hz sin pérdidas. P6 pasa a `RESUELTO`. **Y se detectó deriva del banco**: contra el 3 de agosto el sobrepaso bajó en los DOS niveles (39,3→34,7 y 8,4→1,2) y el `sse` subió en los dos (≈2,7→3,36 y 3,4→4,01). Firma de más fricción; el control con `kd=0,15` es lo que descarta que sea `kd` o el firmware. **Las comparaciones absolutas de `sse` contra campañas de otro día no son válidas sin re-medir el control** |

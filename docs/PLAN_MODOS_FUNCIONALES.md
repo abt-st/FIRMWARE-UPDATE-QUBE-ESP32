@@ -35,20 +35,42 @@ que m7 anda parte de una lectura equivocada.
 
 ---
 
-## Etapa 1 — m2 PID: cerrar lo que ya está medido
+## Etapa 1 — m2 PID ✅ COMPLETADA (2026-08-04)
 
-Lo más barato del plan: la medición ya existe, falta consolidarla.
+> **Esta etapa estaba casi hecha cuando se escribió el plan.** Se redactó desde la fila
+> de P6 en el registro, que decía "falta confirmar y cambiar el default" y estaba
+> desactualizada. Lección para las etapas siguientes: **verificar el estado en el código
+> y en los datos, no en la tabla resumen.**
 
-- [ ] **1.1** Repetir el escalón +17 → −20 con `kd=0,45` hasta **n ≥ 4**, ventana de 14 s
-      (la ventana **se declara**: con 5 s el `sse` da 7,7–15,9° y con 14 s da 2,7°).
-      **Criterio:** sobrepaso < 20% sin hunting y sin degradar `sse`.
-- [ ] **1.2** Si 1.1 confirma, **cambiar el default de `kd` en el `.ino`** de 0,15 a 0,45.
-      Hoy el valor bueno sólo existe como parámetro HTTP: quien flashee limpio se lleva el
-      malo.
-- [ ] **1.3** Re-medir con el default nuevo para que el `CHANGELOG` diga "medido" y no
-      "compila".
+- [x] **1.1** Ya estaba medido con **n = 5** por nivel (`sweep_kd.json` +
+      `sweep_kd_confirm.json`): `kd=0,15` → 37,6–39,4%; `kd=0,45` → **7,9–8,8%**, cero
+      cruces, `sse` solapado. Criterio cumplido.
+- [x] **1.2** El default **ya era 0,45** desde v1.58.0 (`esp32_qube.ino:314`). Verificado
+      además que `Preferences` guarda **sólo credenciales WiFi**, así que NVS no pisa las
+      ganancias: el valor compilado es el que corre.
+- [x] **1.3** Regresión sobre v1.58.5, n=3: **sobrepaso 1,2%** (0,0 · 1,2 · 3,0), 0
+      hunting, 500 Hz sin pérdidas.
 
-**Criterio de etapa:** m2 pasa de "funciona mal sintonizado" a "funcional".
+**m2 es funcional.**
+
+### Hallazgo lateral: el banco derivó durante la sesión
+
+La regresión no reprodujo los números absolutos del 3 de agosto, así que se corrió el
+control con `kd=0,15`:
+
+| `kd` | sobrepaso 3-ago | hoy | `sse` 3-ago | hoy |
+|---|---|---|---|---|
+| 0,15 | 39,3% | 34,7% | 2,58–2,88° | 3,36° |
+| 0,45 | 8,4% | 1,2% | 2,65–3,03° | 4,01° |
+
+**Se movió toda la curva**, en los dos niveles y en el mismo sentido: menos sobrepaso,
+más error de régimen. Es la firma de **más fricción**, coherente con que el brazo trabajó
+mucho ese día (campaña de P4, spin-down, tres corridas sim2real). El efecto de `kd`
+sobrevive intacto.
+
+> **Consecuencia para todas las etapas siguientes:** las comparaciones **absolutas**
+> contra campañas de otro día no son válidas sin re-medir el control. El control barato
+> es correr el punto viejo junto al nuevo, no confiar en la tabla histórica.
 
 ---
 
