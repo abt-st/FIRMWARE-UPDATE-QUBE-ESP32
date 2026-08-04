@@ -19,8 +19,8 @@ Estados: `ABIERTO` · `EN CURSO` · `RESUELTO` · `MITIGADO` · `NO ES DEFECTO`
 | [P10](#p10) | Umbrales de traspaso cortaban el bombeo a mitad de subida | alta | `RESUELTO` |
 | [P11](#p11) | El bombeo satura contra `swingupPwmMax`, anulando `ke_gain` | alta | `RESUELTO` (no era el cuello) |
 | [P13](#p13) | `resetPendulumOffsetHere()` redefine el cero del péndulo en silencio | media | `RESUELTO` |
-| [P12](#p12) | ~~El límite del brazo trunca 5 de 8 swing-ups~~ → **mal atribuido**: en bombeo el brazo no pasa de 68° con el tope en 95 | alta | `NO ES DEFECTO` (2026-08-04) — el tope lo toca el LQR después del traspaso, no el bombeo |
-| [P22](#p22) | **El swing-up no bombea desde cero**: remata un péndulo que el homing dejó en movimiento, y esa condición inicial no se controla ni se registra | **alta** | `ABIERTO` |
+| [P12](#p12) | El límite del brazo trunca swing-ups | alta | `ABIERTO` — la "refutación" del 2026-08-04 se midió con la referencia de α corrida (P22). Con `zp=1` el brazo llega a **94,9°** en bombeo, contra un tope de 95 |
+| [P22](#p22) | **La referencia angular del péndulo deriva y nadie la re-establece**: colgando y quieto leía 82/97/91 y una vez −264°, debiendo leer 0 | **alta** | `MITIGADO` (2026-08-04) — `zp=1` tras reposo verificado elimina el fallo total (0/5 contra 1/4) |
 | [P14](#p14) | Las cuatro compuertas de traspaso comparaban un ángulo **sin acotar** | **alta** | `RESUELTO` (2026-08-03, v1.57.2) |
 | [P15](#p15) | Con el motor bombeando, el lazo produce **256–330 Hz**, no 500, con paradas de hasta 0,49 s | **alta** | `NO REPRODUCIBLE` (2026-08-03) — 18/18 corridas limpias tras reiniciar |
 | [P16](#p16) | ~~El encoder pierde cuentas por velocidad (filtro RC)~~ → **explicación refutada**; la deriva de α sólo aparece cuando el brazo golpea el tope | media | `ACOTADO` (2026-08-04) — sin deriva en 8 corridas hasta 1668 °/s |
@@ -1157,54 +1157,61 @@ y hold 9,14 s en la sim con el `Dp` medido.
 ---
 
 ## P22 {#p22}
-### El swing-up no bombea desde cero: remata lo que el homing dejó en movimiento
+### La referencia angular del péndulo deriva, y nadie la re-establece
 
-**Estado:** `ABIERTO` · **Detectado:** 2026-08-04, midiendo m5 a 500 Hz con el DAQ
+**Estado:** `MITIGADO` · **Detectado:** 2026-08-04, midiendo m5 a 500 Hz
 (`experiments/2026-08-04_m5_swingup/`).
 
 #### Lo medido
 
-Separando por modo dentro de cada intento:
+Con el péndulo **en reposo verificado** —la lectura no cambia en 1,2 s— y colgando, que
+es donde debe leer 0°:
 
-| rep | pico \|α\| | θ máx en bombeo | **tiempo en m5** | cortes por techo |
-|---|---|---|---|---|
-| 1 | 179,6° | 54,6° | **1,3 s** | 25 |
-| 2 | **107,4°** | **12,5°** | **17,9 s** | **0** |
-| 3 | 163,7° | 65,4° | 1,0 s | 0 |
-| 4 | 173,1° | 68,3° | 1,5 s | 39 |
+| rep | α inicial | resultado del swing-up |
+|---|---|---|
+| 1 | **82,62°** | pico 176,1°, traspasa en 1,3 s |
+| 2 | **97,38°** | pico 180,0°, traspasa en 1,3 s |
+| 3 | **−264,02°** | **pico 96,0°, bombea 18,1 s sin llegar** |
+| 4 | **91,06°** | pico 175,1°, traspasa en 1,6 s |
 
-**Los intentos exitosos resuelven el swing-up en 1,0–1,5 segundos.** Es demasiado rápido
-para partir del péndulo colgando en reposo: arrancan con energía residual, la que deja el
-homing al golpear el brazo contra los dos topes. El que falló bombeó los 17,9 s completos
-sin llegar.
+Como el reposo está verificado, eso no es movimiento: **es la referencia corrida, y
+corrida distinto en cada intento**. `pend_wraps` sube en cada intento (4 → 5 → 6 → 6) y
+la deriva lo acompaña; el −264° aparece justo después de una vuelta.
+`wrapPendulumTurns()` resta vueltas enteras pero el residuo queda.
 
 #### Por qué importa
 
-**La variable dominante del swing-up no es la potencia de bombeo sino la condición
-inicial**, y hoy es un efecto lateral no registrado del homing.
+El firmware usa α para **la energía, las cuatro compuertas de traspaso y el techo de
+[P18](#p18)**. Con la referencia corrida, el bombeo trabaja contra un ángulo que no es el
+real.
 
-Eso vuelve **no atribuibles** los barridos que se hicieron sobre `sp` y `ke`: la
-dispersión que se leyó como efecto del parámetro puede ser dispersión de la condición
-inicial. Es el mismo patrón que ya invalidó el barrido de `ke_gain` y la primera lectura
-de P16.
+#### La mitigación
 
-También explica sin invocar el PWM por qué `sp=70` dio dispersión enorme (picos de 93,5 a
-179,8°) donde `sp=60` es más estable.
+`zp=1` (`zeroPendulumHere()`) ya existía y **el protocolo nunca lo usaba**. Llamándolo
+tras reposo verificado, antes de cada intento:
 
-#### El detalle de protocolo
+| condición (`sp=60`) | picos \|α\| | θ en bombeo | fallos totales |
+|---|---|---|---|
+| protocolo actual | 107,4–179,6° | 12–68° | 1/4 |
+| + reposo tras homing | 96,0–180,0° | 12–67° | 1/4 |
+| **+ `zp=1`** | **159,4–179,6°** | **64,1–94,9°** | **0/5** |
 
-`wait_for_rest()` espera reposo **antes** del homing, no después. Entre el homing y el
-`m=5` no hay ninguna espera. **Todas las campañas de swing-up de este proyecto comparten
-ese protocolo**, así que todas arrastran la misma variable oculta.
+**Elimina el modo de fallo catastrófico.** Falta llevarlo al firmware o al protocolo
+canónico: hoy vive en el script del experimento.
 
-#### Cómo afrontarlo
+#### Una hipótesis previa que resultó FALSA, para que no se reponga
 
-1. **Registrar α y α̇ en el instante del `m=5`.** Sin eso ningún barrido es atribuible.
-2. **Decidir el protocolo a propósito y declararlo**: o esperar reposo *después* del
-   homing —swing-up honesto desde cero— o aceptar la energía residual como parte del
-   arranque y **controlarla**. Hoy es un accidente.
-3. Recién con la condición inicial fija tiene sentido volver a `sp`, `ke` o el techo de
-   energía.
+La primera lectura fue *"el swing-up no bombea desde cero: remata la energía residual que
+el homing deja al golpear los topes"*, apoyada en que los intentos exitosos resuelven en
+1,0–1,5 s. **La prueba la refuta:** esperando reposo después del homing, los exitosos
+siguen tardando 1,3–1,6 s y el fallo aparece igual (1 de 4 en las dos condiciones). La
+energía residual no era la variable.
+
+#### Consecuencia para P12
+
+**La "refutación" de [P12](#p12) del mismo día se midió con la referencia corrida**, o sea
+con el bombeo debilitado (θ 12–68°). Con `zp=1` el brazo llega a **94,9°** contra un tope
+de 95. P12 vuelve a `ABIERTO` y hay que re-medirlo con el protocolo corregido.
 
 ---
 

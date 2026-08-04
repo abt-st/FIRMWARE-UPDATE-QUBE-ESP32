@@ -1,5 +1,17 @@
 # m5 — swing-up medido a 500 Hz, separando bombeo de LQR
 
+> ## ⚠ CORRECCIÓN (misma sesión, más abajo en §4)
+>
+> Las secciones 1–3 están medidas **con la referencia angular del péndulo corrida**, un
+> defecto que se descubrió después (P22). Con la referencia corregida:
+>
+> - **El §1 no vale como refutación de P12**: el brazo llega a **94,9°** en bombeo, no a
+>   68°. P12 sigue abierto.
+> - **El §3 es una hipótesis FALSA**: la energía residual del homing no era la variable.
+>
+> Se conservan porque el recorrido importa: las dos lecturas equivocadas vinieron de
+> medir sobre una referencia rota, que es el patrón dominante de esta sesión.
+
 Dos resultados: **P12 estaba mal atribuido**, y el swing-up depende de una condición
 inicial que nadie estaba controlando.
 
@@ -96,3 +108,56 @@ controla y que depende de un efecto lateral del homing**.
 primera corrida de `sp=60` **fue pisada** por la de `sp=70`. Los resúmenes se conservan
 (quedaron en consola) pero las trazas crudas de esa tanda se perdieron. Corregido: los
 archivos llevan `sp` en el nombre.
+
+---
+
+## 4. Lo que realmente pasaba: la referencia del péndulo deriva
+
+Al agregar la espera de reposo **después** del homing (`--settle`) para probar la
+hipótesis del §3, apareció el dato que la refuta y explica todo:
+
+| rep | α inicial | resultado |
+|---|---|---|
+| 1 | **82,62°** | pico 176,1°, traspasa en 1,3 s |
+| 2 | **97,38°** | pico 180,0°, traspasa en 1,3 s |
+| 3 | **−264,02°** | **pico 96,0°, bombea 18,1 s sin llegar** |
+| 4 | **91,06°** | pico 175,1°, traspasa en 1,6 s |
+
+Un péndulo colgando y en reposo **verificado** —la lectura no cambia en 1,2 s— debe leer
+0°. Leía 82–97°, y una vez −264°, fuera del rango físico. **No es movimiento: es la
+referencia corrida, y corrida distinto en cada intento.** `pend_wraps` sube en cada
+intento (4 → 5 → 6 → 6) y la deriva lo acompaña.
+
+### El arreglo
+
+`zp=1` (`zeroPendulumHere()`) ya existía en el firmware y **el protocolo nunca lo
+llamaba**. Con reposo verificado antes, `--zero`:
+
+| condición (`sp=60`) | picos \|α\| | θ en bombeo | fallos totales |
+|---|---|---|---|
+| protocolo actual | 107,4–179,6° | 12–68° | 1/4 |
+| + reposo tras homing | 96,0–180,0° | 12–67° | 1/4 |
+| **+ `zp=1`** | **159,4–179,6°** | **64,1–94,9°** | **0/5** |
+
+**Elimina el modo de fallo catastrófico**: 5 de 5 traspasan, contra 1 de cada 4 que antes
+bombeaba 18 s sin llegar.
+
+### Las dos lecturas que esto corrige
+
+**§1 — P12 no queda refutado.** Aquella medición (θ ≤ 68° en bombeo) se hizo con la
+referencia corrida, o sea con el bombeo debilitado. Con la referencia sana el brazo usa
+**64–95°** y uno llegó a 94,9°, a una décima del tope. **P12 vuelve a `ABIERTO`.**
+
+**§3 — la energía residual no era la variable.** Esperando reposo tras el homing, los
+intentos exitosos siguen resolviendo en 1,3–1,6 s y el fallo aparece igual (1 de 4 en las
+dos condiciones). La hipótesis queda refutada.
+
+### Qué falta para dejar m5 listo
+
+1. **Llevar `zp=1` al protocolo canónico**, o mejor al firmware: que `setMode(5)`
+   exija reposo y re-establezca la referencia, en vez de depender de que cada script se
+   acuerde. Hoy el arreglo vive sólo en este experimento.
+2. **Re-medir P12 con el protocolo corregido.** Con el bombeo sano el brazo llega al
+   tope, y ésa es la pregunta original.
+3. Recién entonces barrer `sp` o `ke`. Todo barrido anterior a esta corrección se midió
+   sobre una referencia que derivaba, así que **no es atribuible**.

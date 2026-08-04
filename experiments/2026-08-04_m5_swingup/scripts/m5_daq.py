@@ -85,15 +85,35 @@ def homing(link: QubeLink, timeout: float = 30.0) -> dict:
     raise RuntimeError("homing timeout")
 
 
-def attempt(link: QubeLink, rep: int, max_s: float, sp: int | None) -> dict | None:
+def attempt(link: QubeLink, rep: int, max_s: float, sp: int | None,
+            settle: bool = False, zero: bool = False, settle_timeout: float = 20.0) -> dict | None:
     if not wait_for_rest(link):
         print("    (aviso: el pendulo no se aquieto; se mide igual y queda anotado)")
     h = homing(link)
+    # P22: entre el homing y el `m=5` NO habia ninguna espera. El homing golpea el brazo
+    # contra los dos topes y eso deja al pendulo oscilando; los intentos que resuelven el
+    # swing-up en 1,0-1,5 s estan rematando esa energia, no bombeando desde cero.
+    # `settle` la elimina para poder medir el swing-up honesto — y es el arreglo candidato.
+    alpha_at_start = None
+    if settle:
+        wait_for_rest(link, timeout=settle_timeout)
+    if zero:
+        # `zp=1` re-establece la referencia del pendulo AQUI. Solo es valido con el
+        # pendulo fisicamente colgando y quieto, que es lo que garantiza el settle de
+        # arriba. Sin esto la referencia deriva: medido el 2026-08-04, un pendulo en
+        # reposo verificado leia 82,62 / 97,38 / 91,06 y una vez -264,02 grados, cuando
+        # colgando tiene que leer 0. El firmware usa alpha para la energia, las cuatro
+        # compuertas de traspaso y el techo de P18: con la referencia corrida, el bombeo
+        # trabaja contra un angulo que no es el real.
+        link.send({"zp": 1})
+        time.sleep(0.2)
+    st0 = link.state()
+    alpha_at_start = float(st0.get("pend_position_deg", 0.0))
     if sp is not None:
         link.send({"sp": sp})
 
     stream = DaqStream(link.ip, decim=1, poll_interval=0.2)
-    rec = Recorder(DATA / f"m5_sp{sp if sp is not None else 0}_r{rep}.csv")
+    rec = Recorder(DATA / f"m5_sp{sp if sp is not None else 0}{'_zero' if zero else ('_settle' if settle else '')}_r{rep}.csv")
     rec.open()
     parts: list[tuple[np.ndarray, ...]] = []
 
@@ -147,6 +167,8 @@ def attempt(link: QubeLink, rep: int, max_s: float, sp: int | None) -> dict | No
         "rep": rep,
         "sp": sp if sp is not None else st.get("swingup_pwm_max"),
         "homing_range": round(float(h.get("homing_range", 0.0)), 2),
+        "settled_after_homing": bool(settle),
+        "alpha_at_start_deg": round(alpha_at_start, 2),
         "samples": int(t.size),
         "rate_hz": round(float(t.size / max(t[-1] - t[0], 1e-9)), 1),
         "t_in_m5_s": round(float(in5.sum()) / 500.0, 2),
@@ -171,7 +193,21 @@ def main() -> None:
     ap.add_argument("--reps", type=int, default=5)
     ap.add_argument("--max-s", type=float, default=18.0)
     ap.add_argument("--sp", type=int, default=None, help="swingupPwmMax (def: el del firmware)")
+    ap.add_argument(
+        "--zero",
+        action="store_true",
+        help="llamar zp=1 tras el settle para re-establecer la referencia del pendulo. "
+        "Implica --settle: solo es valido con el pendulo colgando y quieto",
+    )
+    ap.add_argument(
+        "--settle",
+        action="store_true",
+        help="esperar reposo del pendulo DESPUES del homing (P22). Sin esto, el swing-up "
+        "arranca con la energia residual que dejo el homing al golpear los topes",
+    )
     args = ap.parse_args()
+    if args.zero:
+        args.settle = True  # zp=1 sin reposo verificado fija un cero equivocado
 
     link = QubeLink(args.ip)
     d = link.state()
@@ -185,7 +221,7 @@ def main() -> None:
         for rep in range(1, args.reps + 1):
             print(f"\n--- intento {rep}/{args.reps} ---")
             try:
-                r = attempt(link, rep, args.max_s, args.sp)
+                r = attempt(link, rep, args.max_s, args.sp, settle=args.settle, zero=args.zero)
             except Exception as exc:
                 print(f"  ERROR: {exc}")
                 link.send({"m": 0})
@@ -207,7 +243,7 @@ def main() -> None:
     finally:
         link.send({"m": 0})
 
-    (DATA / f"m5_sp{args.sp if args.sp is not None else 0}.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    (DATA / f"m5_sp{args.sp if args.sp is not None else 0}{'_zero' if args.zero else ('_settle' if args.settle else '')}.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
 
     if not rows:
         return
