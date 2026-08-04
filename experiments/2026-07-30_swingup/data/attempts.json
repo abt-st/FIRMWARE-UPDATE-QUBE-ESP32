@@ -1,0 +1,76 @@
+[
+  {
+    "attempt": 1,
+    "samples": 49,
+    "sample_hz": 8.3,
+    "alpha_peak_deg": 153.28,
+    "deg_from_upright": 26.72,
+    "entered_trans_window": true,
+    "handoff_to_lqr_s": 5.11,
+    "lqr_time_s": 0.84,
+    "theta_abs_max_deg": 97.21,
+    "hit_servo_limit": true,
+    "modes_seen": [
+      0,
+      4,
+      5
+    ],
+    "ended_in_stop": true,
+    "transition": {
+      "reason_mask": 2,
+      "reason": "peak",
+      "alpha_deg": 156.97,
+      "vel_dps": 75.28,
+      "energy_ratio": 0.9611
+    }
+  },
+  {
+    "attempt": 2,
+    "samples": 58,
+    "sample_hz": 10.8,
+    "alpha_peak_deg": 158.03,
+    "deg_from_upright": 21.97,
+    "entered_trans_window": true,
+    "handoff_to_lqr_s": 4.77,
+    "lqr_time_s": 0.74,
+    "theta_abs_max_deg": 99.58,
+    "hit_servo_limit": true,
+    "modes_seen": [
+      0,
+      4,
+      5
+    ],
+    "ended_in_stop": true,
+    "transition": {
+      "reason_mask": 10,
+      "reason": "peak+energy",
+      "alpha_deg": -155.04,
+      "vel_dps": 34.98,
+      "energy_ratio": 0.9535
+    }
+  },
+  {
+    "attempt": 3,
+    "samples": 24,
+    "sample_hz": 4.6,
+    "alpha_peak_deg": 155.22,
+    "deg_from_upright": 24.78,
+    "entered_trans_window": true,
+    "handoff_to_lqr_s": null,
+    "lqr_time_s": 0.0,
+    "theta_abs_max_deg": 84.81,
+    "hit_servo_limit": false,
+    "modes_seen": [
+      0,
+      5
+    ],
+    "ended_in_stop": true,
+    "transition": {
+      "reason_mask": 10,
+      "reason": "peak+energy",
+      "alpha_deg": 155.04,
+      "vel_dps": 33.02,
+      "energy_ratio": 0.9535
+    }
+  }
+]

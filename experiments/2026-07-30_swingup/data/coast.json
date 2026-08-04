@@ -1,0 +1,62 @@
+[
+  {
+    "pwm": 40,
+    "pos_corte_deg": -52.56,
+    "pos_final_deg": -4.75,
+    "arrastre_deg": 47.81,
+    "rep": 1
+  },
+  {
+    "pwm": 40,
+    "pos_corte_deg": -56.34,
+    "pos_final_deg": -9.05,
+    "arrastre_deg": 47.28,
+    "rep": 2
+  },
+  {
+    "pwm": 50,
+    "pos_corte_deg": -80.86,
+    "pos_final_deg": -25.66,
+    "arrastre_deg": 55.19,
+    "rep": 1
+  },
+  {
+    "pwm": 50,
+    "pos_corte_deg": -72.16,
+    "pos_final_deg": -28.39,
+    "arrastre_deg": 43.77,
+    "rep": 2
+  },
+  {
+    "pwm": 60,
+    "pos_corte_deg": -92.02,
+    "pos_final_deg": -35.24,
+    "arrastre_deg": 56.78,
+    "rep": 1
+  },
+  {
+    "pwm": 60,
+    "descartado": "safeStop durante el pulso",
+    "rep": 2
+  },
+  {
+    "pwm": 70,
+    "descartado": "safeStop durante el pulso",
+    "rep": 1
+  },
+  {
+    "pwm": 70,
+    "descartado": "safeStop durante el pulso",
+    "rep": 2
+  },
+  {
+    "pwm": 90,
+    "descartado": "safeStop durante el pulso",
+    "rep": 1
+  },
+  {
+    "pwm": 90,
+    "descartado": "safeStop durante el pulso",
+    "rep": 2
+  }
+]

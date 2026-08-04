@@ -1,0 +1,34 @@
+{
+  "0": {
+    "pass": true,
+    "reason": "motor inerte, como debe"
+  },
+  "1": {
+    "pass": true,
+    "reason": "seguimiento de PWM err_max=1.0, movio en ambos sentidos=True"
+  },
+  "2": {
+    "pass": true,
+    "reason": "error en regimen max=2.06 deg (umbral 8)"
+  },
+  "3": {
+    "pass": true,
+    "reason": "recorrido 270.53\u2013270.53 (nom 269.65\u00b13.0)"
+  },
+  "4": {
+    "pass": true,
+    "reason": "acciona el motor 100%\u2013100% del tiempo en modo; sobrevive 0.3\u20130.3 s"
+  },
+  "5": {
+    "pass": false,
+    "reason": "traspaso a LQR en todas; criterio={'-'}"
+  },
+  "6": {
+    "pass": true,
+    "reason": "una accion no nula mueve el motor"
+  },
+  "7": {
+    "pass": true,
+    "reason": "acciona el motor 95%\u201399% del tiempo en modo; sobrevive 3.1\u201310.0 s"
+  }
+}

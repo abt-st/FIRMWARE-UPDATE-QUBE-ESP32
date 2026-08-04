@@ -1,0 +1,62 @@
+[
+  {
+    "picos": 54,
+    "meseta": 143.0,
+    "pico_max": 153.63,
+    "E_ratio": 0.8993,
+    "theta_max": 75.8,
+    "murio": false,
+    "cfg": "resonante",
+    "rep": 1
+  },
+  {
+    "picos": 54,
+    "meseta": 142.3,
+    "pico_max": 153.98,
+    "E_ratio": 0.8956,
+    "theta_max": 76.3,
+    "murio": false,
+    "cfg": "resonante",
+    "rep": 2
+  },
+  {
+    "picos": 76,
+    "meseta": 72.25,
+    "pico_max": 84.9,
+    "E_ratio": 0.3475,
+    "theta_max": 77.4,
+    "murio": false,
+    "cfg": "energia sp=50",
+    "rep": 1
+  },
+  {
+    "picos": 78,
+    "meseta": 72.77,
+    "pico_max": 83.67,
+    "E_ratio": 0.3519,
+    "theta_max": 82.8,
+    "murio": false,
+    "cfg": "energia sp=50",
+    "rep": 2
+  },
+  {
+    "picos": 7,
+    "meseta": 83.14,
+    "pico_max": 91.76,
+    "E_ratio": 0.4403,
+    "theta_max": 81.7,
+    "murio": true,
+    "cfg": "energia sp=70",
+    "rep": 1
+  },
+  {
+    "picos": 7,
+    "meseta": 83.67,
+    "pico_max": 90.18,
+    "E_ratio": 0.4449,
+    "theta_max": 83.5,
+    "murio": true,
+    "cfg": "energia sp=70",
+    "rep": 2
+  }
+]

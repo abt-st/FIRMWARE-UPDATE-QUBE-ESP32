@@ -172,13 +172,27 @@ def _envelope_half_life(t: np.ndarray, al: np.ndarray) -> tuple[float, int]:
     return float(math.log(2.0) / lam), int(t_f.size)
 
 
-def _sim_free_decay(dp_mult: float, al0: float, duration: float, dt: float = 5e-4):
+def _sim_free_decay(dp_mult: float, al0: float, duration: float, dt: float = 5e-4,
+                    lock_arm: bool = False):
     """Integrate the QUBE dynamics with zero action (free swing) at Dp×mult.
 
     All *_std set to 0 so QubeDynamics stays at deterministic nominal values
     (its __post_init__ randomize() then reproduces the means exactly).
     Semi-implicit (symplectic) Euler: viscous damping dominates, energy drift
     from the integrator is negligible at dt=5e-4.
+
+    `lock_arm` mantiene theta fijo en 0 (brazo sujeto), y existe porque el
+    docstring de este script afirmaba que en el real la accion 0 deja el motor en
+    *coast*. **En este hardware es falso**: `setMotorDirect` pone duty 0 en IN1 y
+    en IN2 a la vez, y un L298N con ENA en alto e IN1=IN2=LOW cortocircuita los
+    bornes — freno dinamico. O sea que el brazo real esta frenado mientras el
+    brazo simulado se mueve casi libre (Dr=5e-6), y el acoplamiento brazo-pendulo
+    es un canal de perdida: el Dp que salga del match absorbe esa diferencia en
+    vez de medir la friccion del pendulo.
+
+    La salida limpia es eliminar el canal en los DOS lados: sujetar el brazo con
+    la mano durante la captura y bloquear theta aca. Con el brazo sujeto deja de
+    importar si el motor frena o no.
     """
     from qube_rl.envs.qube_dynamics import QubeDynamics
 
@@ -192,11 +206,24 @@ def _sim_free_decay(dp_mult: float, al0: float, duration: float, dt: float = 5e-
     als = np.empty(n)
     t = 0.0
     for i in range(n):
-        thdd, aldd = dyn(state, 0.0)
-        state[2] += thdd * dt
-        state[3] += aldd * dt
-        state[0] += state[2] * dt
-        state[1] += state[3] * dt
+        if lock_arm:
+            # Brazo sujeto: una fuerza externa impone thdd = 0, asi que NO se puede
+            # usar el aldd de la matriz de masa acoplada — ese supone el brazo libre
+            # de acelerar. La ecuacion restringida sale de la segunda fila del sistema
+            # con thd = thdd = 0:  Jp*aldd = -Dp*ald - c4*sin(al).
+            #
+            # (Primera version de esto ponia theta/theta_dot en cero DESPUES de
+            # integrar pero seguia tomando aldd del modelo acoplado: daba 12,09 rad/s
+            # donde la analitica sqrt(c4/Jp) da 10,68. El real midio 10,46.)
+            aldd = (-dyn.Dp * state[3] - dyn._c[4] * math.sin(state[1])) / dyn._c[3]
+            state[3] += aldd * dt
+            state[1] += state[3] * dt
+        else:
+            thdd, aldd = dyn(state, 0.0)
+            state[3] += aldd * dt
+            state[1] += state[3] * dt
+            state[2] += thdd * dt
+            state[0] += state[2] * dt
         ts[i] = t
         als[i] = state[1]
         t += dt
@@ -228,8 +255,11 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     print(f"\n{'Dp mult':>8s} | {'sim t_half(s)':>13s} | {'|Δ| vs real':>11s}", flush=True)
     print("-" * 38, flush=True)
     results = []
+    if args.lock_arm:
+        log("Brazo BLOQUEADO en la sim (theta=0): comparar solo contra capturas "
+            "hechas sujetando el brazo con la mano.")
     for mult in args.dp_mults:
-        sts, sals = _sim_free_decay(mult, al0, duration)
+        sts, sals = _sim_free_decay(mult, al0, duration, lock_arm=args.lock_arm)
         sth, _ = _envelope_half_life(sts, sals)
         diff = abs(sth - real_th) if math.isfinite(sth) else math.inf
         results.append((mult, sth, diff))
@@ -274,6 +304,10 @@ def main() -> None:
     pa.add_argument("--dp-mults", type=float, nargs="+",
                     default=[1, 10, 20, 40, 70, 100, 130],
                     help="sim Dp multipliers to sweep")
+    pa.add_argument("--lock-arm", action="store_true",
+                    help="bloquea theta=0 en la sim; usar SOLO con capturas hechas "
+                         "sujetando el brazo (ver _sim_free_decay: con accion 0 el "
+                         "L298N FRENA el brazo real, no lo deja en coast)")
     pa.set_defaults(func=cmd_analyze)
 
     args = p.parse_args()

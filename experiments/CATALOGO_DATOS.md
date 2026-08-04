@@ -6,6 +6,15 @@
 
 > ⚠️ **Desactualizado (nota agregada 2026-07-28):** este catálogo cubre solo las sesiones hasta `2026-06-18_r2_balance` / `2026-06-18_r3_adaptive` / `2026-06-18_r3_curriculum`. `experiments/` ya tiene sesiones posteriores sin catalogar: `2026-06-19_r4_curriculum`, `2026-06-22_r4_finetune_s1`, `2026-06-22_r4_real`, `2026-06-22_r5_pbrs_curriculum`, `2026-06-22_r6_real_aligned`, `2026-06-23_r7_curriculum_sweep` (esta última sola pesa 58 MB). Falta una pasada de re-catalogación que inspeccione esas sesiones nuevas; no se hizo en esta tarea de higiene porque requiere revisar cada CSV, trabajo aparte de la limpieza estructural.
 
+> ⚠️ **La regla de régimen por fecha dejó de ser válida (nota agregada 2026-07-30).**
+> La tabla de más abajo asume que todo dato con fecha ≥ 2026-06-08 se tomó con
+> BTS7960. Eso **ya no se cumple**: el proyecto revirtió a **L298N**, así que las
+> sesiones nuevas vuelven al régimen legacy pese a ser posteriores. La fecha sola no
+> alcanza para clasificar el driver — hay que mirar la sesión.
+> Afecta a `2026-07-30_mode_sweep` (barrido funcional de los 8 modos, **L298N**,
+> `/state` a 20 Hz, ~8 s por modo). Esa sesión es de verificación funcional, no de
+> identificación: los tramos son cortos y sin excitación diseñada.
+
 > Generado en la **Fase 0** del `docs/research/ai_research/plan_gemelo_digital_drl.md`. Su propósito es que la identificación de parámetros (Fase 1) sepa **qué datos existen, bajo qué hardware se tomaron, y para qué sirven**.
 
 ---
