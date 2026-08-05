@@ -19,7 +19,7 @@ Estados: `ABIERTO` · `EN CURSO` · `RESUELTO` · `MITIGADO` · `NO ES DEFECTO`
 | [P10](#p10) | Umbrales de traspaso cortaban el bombeo a mitad de subida | alta | `RESUELTO` |
 | [P11](#p11) | El bombeo satura contra `swingupPwmMax`, anulando `ke_gain` | alta | `RESUELTO` (no era el cuello) |
 | [P13](#p13) | `resetPendulumOffsetHere()` redefine el cero del péndulo en silencio | media | `RESUELTO` |
-| [P12](#p12) | El límite del brazo trunca swing-ups | alta | `ABIERTO` — la "refutación" del 2026-08-04 se midió con la referencia de α corrida (P22). Con `zp=1` el brazo llega a **94,9°** en bombeo, contra un tope de 95 |
+| [P12](#p12) | ~~El límite del brazo trunca swing-ups~~ | alta | `NO ES DEFECTO` (2026-08-04, **re-medido** con el bombeo sano, n=10): θ en bombeo 49,2–80,1° contra un tope de 95 — **14,9° de margen**, 0/10 lo tocan. El tope lo alcanza el LQR (94,0–94,8°), que es [P4](#p4) |
 | [P22](#p22) | **La referencia angular del péndulo deriva y nadie la re-establece**: colgando y quieto leía 82/97/91 y una vez −264°, debiendo leer 0 | **alta** | `RESUELTO` (2026-08-04, v1.58.8) — el modo 5 exige quietud y re-establece el cero antes de bombear; 0/5 fallos y 5/5 con `E/E*` en rango |
 | [P14](#p14) | Las cuatro compuertas de traspaso comparaban un ángulo **sin acotar** | **alta** | `RESUELTO` (2026-08-03, v1.57.2) |
 | [P15](#p15) | Con el motor bombeando, el lazo produce **256–330 Hz**, no 500, con paradas de hasta 0,49 s | **alta** | `NO REPRODUCIBLE` (2026-08-03) — 18/18 corridas limpias tras reiniciar |
@@ -1254,6 +1254,8 @@ de 95. P12 vuelve a `ABIERTO` y hay que re-medirlo con el protocolo corregido.
 
 | fecha | problema | cambio | verificación |
 |---|---|---|---|
+| 2026-08-04 | P12 | **Re-medido con el bombeo sano** (v1.58.8, n=10, `experiments/2026-08-04_m5_swingup/`) | **θ en bombeo 49,2–80,1°** (mediana 70,0) contra un tope de 95: **14,9° de margen y 0/10 lo tocan**. Tras el traspaso, 94,0–94,8° en los diez — el tope lo alcanza el LQR, no el bombeo. P12 pasa a `NO ES DEFECTO`, esta vez con la referencia de α correcta y n=10 |
+| 2026-08-04 | método | El script de m5 daba `PASS` con 5/10 porque el umbral estaba escrito `>= 4` | El criterio era "4 de 5" = **80%**, y así escrito no escala con n. Corregido a proporción, y el umbral se imprime junto al veredicto para que sea auditable. **El criterio 1 de m5 es FAIL (5/10), no PASS** |
 | 2026-08-04 | P22 | Fase de quietud + re-cero del péndulo al entrar al modo 5 (v1.58.8), con el patrón de `H_WAIT_QUIET` | Con el cliente usando el protocolo **viejo**: **0/5 fallos** (antes 1/4), **5/5** con `E/E*` en rango y θ de bombeo 58–86°. Agotar el timeout es falla, no arranque a ciegas. `?sz=0` para el A/B |
 | 2026-08-04 | P20 | **Corrección de la cifra**: se había cronometrado `rl_cmd`+`rl_state` | `QubeRealEnv.step()` usa `/rl_step` desde proto v3 — un solo round-trip. **38,3 ms → 26,1 Hz**, no 14,3. El defecto se sostiene (26 < 50) pero el número estaba mal por 2×, y el arreglo propuesto **ya existía** |
 | 2026-08-04 | P12 | **Reabierto**: su "refutación" del mismo día se midió con la referencia de α corrida | Con el bombeo sano (`zp=1`) el brazo llega a **94,9°** contra un tope de 95, no a los 68° que se habían medido. Hay que re-medirlo con el protocolo corregido |

@@ -161,3 +161,44 @@ dos condiciones). La hipótesis queda refutada.
    tope, y ésa es la pregunta original.
 3. Recién entonces barrer `sp` o `ke`. Todo barrido anterior a esta corrección se midió
    sobre una referencia que derivaba, así que **no es atribuible**.
+
+---
+
+## 5. P12 re-medido con el bombeo sano (n=10) — cerrado
+
+Con la fase de re-cero ya en el firmware (v1.58.8) y el cliente usando el protocolo
+viejo, o sea sin que el script haga nada especial:
+
+| | mín | mediana | máx | margen al tope (95°) |
+|---|---|---|---|---|
+| **θ en bombeo (m5)** | 49,2° | 70,0° | **80,1°** | **14,9°** |
+| θ tras el traspaso (m4) | 94,0° | 94,7° | 94,8° | 0,2° |
+
+**0 de 10 tocan el tope durante el bombeo.** Los diez lo rozan después del traspaso.
+
+Esta vez la refutación de P12 se sostiene, y las tres objeciones que invalidaban la del
+§1 están cubiertas: n=10 en vez de 4, **la referencia de α correcta**, y la distribución
+entera lejos del tope en vez de un caso afortunado. **El tope es asunto del LQR (P4).**
+
+Además: **10/10 traspasan** y `E/E*` cae en 0,955–1,001 en los diez.
+
+### El veredicto que el script daba mal
+
+La corrida imprimió `1. entrega con |alpha| >= 165: 5/10 PASS`. **Es FAIL.** El criterio
+se había fijado como "4 de 5" = 80%, pero estaba escrito `c1 >= 4`, que no escala: con
+n=10, cinco éxitos (50%) pasaban la comparación. Corregido a proporción, y ahora el
+umbral se imprime junto al veredicto.
+
+Con el criterio bien evaluado, m5 queda:
+
+| criterio | n=10 | |
+|---|---|---|
+| 1. entrega con \|α\| ≥ 165 | 5/10 | **FAIL** |
+| 2. `E/E*` en [0,95, 1,05] | 10/10 | PASS |
+| 3. sin tocar el tope en bombeo | 10/10 | PASS |
+
+El criterio 1 sigue siendo **más estricto que el propio firmware** (`SWINGUP_TRANS_NEAR`
+= 155): las diez entregas están entre 156,4° y 179,8° con la energía correcta, y las diez
+traspasan. La lectura honesta es que **m5 entrega dentro de su diseño de forma
+repetible**, y que si se quiere el umbral de 165° hay que subir la energía — no que el
+modo esté roto.

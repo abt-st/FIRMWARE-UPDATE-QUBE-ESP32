@@ -251,10 +251,18 @@ def main() -> None:
     c1 = sum(r["handed_off"] and r["transition"] and abs(r["transition"]["alpha_deg"]) >= TRANS_ALPHA_MIN for r in rows)
     ok_e = [r for r in rows if r["transition"] and 0.95 <= r["transition"]["energy_ratio"] <= 1.05]
     c3 = sum(not r["limit_hit_in_m5"] for r in rows)
-    print(f"\n=== criterio de m5 (n={n}) ===")
-    print(f"  1. entrega con |alpha| >= {TRANS_ALPHA_MIN:.0f}: {c1}/{n}  {'PASS' if c1 >= 4 else 'FAIL'}")
-    print(f"  2. E/E* en [0,95, 1,05]:          {len(ok_e)}/{n}  {'PASS' if len(ok_e) >= 4 else 'FAIL'}")
-    print(f"  3. sin tocar el tope EN BOMBEO:   {c3}/{n}  {'PASS' if c3 >= 4 else 'FAIL'}")
+    # El criterio se fijo como "4 de 5", o sea 80%. Escrito como `>= 4` NO escala: con
+    # n=10, cinco exitos (50%) daban PASS. Se evalua la proporcion, que es lo que el
+    # criterio decia — y el umbral se imprime, para que el veredicto sea auditable.
+    bar = 0.8
+
+    def veredicto(k: int) -> str:
+        return "PASS" if k >= bar * n else "FAIL"
+
+    print(f"\n=== criterio de m5 (n={n}, barra {bar:.0%}) ===")
+    print(f"  1. entrega con |alpha| >= {TRANS_ALPHA_MIN:.0f}: {c1}/{n}  {veredicto(c1)}")
+    print(f"  2. E/E* en [0,95, 1,05]:          {len(ok_e)}/{n}  {veredicto(len(ok_e))}")
+    print(f"  3. sin tocar el tope EN BOMBEO:   {c3}/{n}  {veredicto(c3)}")
     print()
     print(f"  theta max en BOMBEO (m5): {sorted(r['theta_max_m5_deg'] for r in rows)}")
     print(f"  theta max tras traspaso : {sorted(r['theta_max_m4_deg'] for r in rows)}")
