@@ -1,0 +1,633 @@
+{
+  "session_date": "2026-06-17",
+  "total_models": 66,
+  "total_runs": 57,
+  "models": [
+    {
+      "file": "qube_sac_chunk1.zip",
+      "size_bytes": 3291794,
+      "size_kb": 3214.6,
+      "mtime": 1781626339.6018603
+    },
+    {
+      "file": "qube_sac_chunk2.zip",
+      "size_bytes": 3287780,
+      "size_kb": 3210.7,
+      "mtime": 1781627933.016508
+    },
+    {
+      "file": "qube_sac_sim.zip",
+      "size_bytes": 3287780,
+      "size_kb": 3210.7,
+      "mtime": 1781628450.3403208
+    },
+    {
+      "file": "qube_sac_finetuned_A.zip",
+      "size_bytes": 3287782,
+      "size_kb": 3210.7,
+      "mtime": 1781633274.0816908
+    },
+    {
+      "file": "qube_sac_exp4_chunk4.zip",
+      "size_bytes": 994616,
+      "size_kb": 971.3,
+      "mtime": 1781641687.655452
+    },
+    {
+      "file": "qube_sac_exp4_chunk5.zip",
+      "size_bytes": 994616,
+      "size_kb": 971.3,
+      "mtime": 1781641934.181473
+    },
+    {
+      "file": "qube_sac_exp4.zip",
+      "size_bytes": 994616,
+      "size_kb": 971.3,
+      "mtime": 1781641934.2024946
+    },
+    {
+      "file": "qube_sac_exp4_chunk1.zip",
+      "size_bytes": 994606,
+      "size_kb": 971.3,
+      "mtime": 1781643163.53663
+    },
+    {
+      "file": "qube_sac_exp4_chunk2.zip",
+      "size_bytes": 994611,
+      "size_kb": 971.3,
+      "mtime": 1781643682.7045434
+    },
+    {
+      "file": "qube_sac_exp4_chunk3.zip",
+      "size_bytes": 994615,
+      "size_kb": 971.3,
+      "mtime": 1781644300.107379
+    },
+    {
+      "file": "qube_sac_rltools_v1_c1.zip",
+      "size_bytes": 341290,
+      "size_kb": 333.3,
+      "mtime": 1781668308.3732684
+    },
+    {
+      "file": "qube_sac_rltools_v1_c2.zip",
+      "size_bytes": 341299,
+      "size_kb": 333.3,
+      "mtime": 1781668476.3793087
+    },
+    {
+      "file": "qube_sac_rltools_v1_c3.zip",
+      "size_bytes": 341303,
+      "size_kb": 333.3,
+      "mtime": 1781668623.3583713
+    },
+    {
+      "file": "qube_sac_rltools_v1_c4.zip",
+      "size_bytes": 341296,
+      "size_kb": 333.3,
+      "mtime": 1781668791.5116787
+    },
+    {
+      "file": "qube_sac_rltools_v1_c5.zip",
+      "size_bytes": 341296,
+      "size_kb": 333.3,
+      "mtime": 1781668954.7860627
+    },
+    {
+      "file": "qube_sac_rltools_v1.zip",
+      "size_bytes": 341296,
+      "size_kb": 333.3,
+      "mtime": 1781668954.8161397
+    },
+    {
+      "file": "qube_sac_cos_alpha_64_c1.zip",
+      "size_bytes": 341290,
+      "size_kb": 333.3,
+      "mtime": 1781669281.75727
+    },
+    {
+      "file": "qube_sac_cos_alpha_64_c2.zip",
+      "size_bytes": 341296,
+      "size_kb": 333.3,
+      "mtime": 1781669438.8618588
+    },
+    {
+      "file": "qube_sac_cos_alpha_64_c3.zip",
+      "size_bytes": 341296,
+      "size_kb": 333.3,
+      "mtime": 1781669596.9512618
+    },
+    {
+      "file": "qube_sac_cos_alpha_64_c4.zip",
+      "size_bytes": 341296,
+      "size_kb": 333.3,
+      "mtime": 1781669755.0430496
+    },
+    {
+      "file": "qube_sac_cos_alpha_64_c5.zip",
+      "size_bytes": 341296,
+      "size_kb": 333.3,
+      "mtime": 1781669898.6980143
+    },
+    {
+      "file": "qube_sac_cos_alpha_64.zip",
+      "size_bytes": 341296,
+      "size_kb": 333.3,
+      "mtime": 1781669898.722604
+    },
+    {
+      "file": "qube_sac_finetuned.zip",
+      "size_bytes": 341296,
+      "size_kb": 333.3,
+      "mtime": 1781672252.613786
+    },
+    {
+      "file": "qube_sac_linear_alpha_64_c1.zip",
+      "size_bytes": 341292,
+      "size_kb": 333.3,
+      "mtime": 1781677865.1987247
+    },
+    {
+      "file": "qube_sac_linear_alpha_64_c2.zip",
+      "size_bytes": 341298,
+      "size_kb": 333.3,
+      "mtime": 1781678522.102726
+    },
+    {
+      "file": "qube_sac_linear_alpha_64_c3.zip",
+      "size_bytes": 341300,
+      "size_kb": 333.3,
+      "mtime": 1781679203.1823318
+    },
+    {
+      "file": "qube_sac_linear_alpha_64_c4.zip",
+      "size_bytes": 341300,
+      "size_kb": 333.3,
+      "mtime": 1781679846.356508
+    },
+    {
+      "file": "qube_sac_linear_alpha_64_c5.zip",
+      "size_bytes": 341300,
+      "size_kb": 333.3,
+      "mtime": 1781680530.2615418
+    },
+    {
+      "file": "qube_sac_linear_alpha_64_c5_cont.zip",
+      "size_bytes": 341323,
+      "size_kb": 333.3,
+      "mtime": 1781684246.7984574
+    },
+    {
+      "file": "qube_sac_linear_alpha_64_750k.zip",
+      "size_bytes": 341299,
+      "size_kb": 333.3,
+      "mtime": 1781687638.656855
+    },
+    {
+      "file": "qube_sac_SAC_16_c1.zip",
+      "size_bytes": 341292,
+      "size_kb": 333.3,
+      "mtime": 1781710110.696959
+    },
+    {
+      "file": "qube_sac_SAC_16_c2.zip",
+      "size_bytes": 341298,
+      "size_kb": 333.3,
+      "mtime": 1781711036.9735665
+    },
+    {
+      "file": "qube_sac_SAC_16_c3.zip",
+      "size_bytes": 341300,
+      "size_kb": 333.3,
+      "mtime": 1781711941.2640502
+    },
+    {
+      "file": "qube_sac_SAC_16_c4.zip",
+      "size_bytes": 341300,
+      "size_kb": 333.3,
+      "mtime": 1781712627.537134
+    },
+    {
+      "file": "qube_sac_SAC_17_128_c1.zip",
+      "size_bytes": 994633,
+      "size_kb": 971.3,
+      "mtime": 1781714389.5559568
+    },
+    {
+      "file": "qube_sac_SAC_17_128_c2.zip",
+      "size_bytes": 994647,
+      "size_kb": 971.3,
+      "mtime": 1781715706.1386728
+    },
+    {
+      "file": "qube_sac_SAC_17_128_c3.zip",
+      "size_bytes": 994647,
+      "size_kb": 971.3,
+      "mtime": 1781717238.9738753
+    },
+    {
+      "file": "qube_sac_SAC_18_128_cont_c1.zip",
+      "size_bytes": 994096,
+      "size_kb": 970.8,
+      "mtime": 1781718216.250403
+    },
+    {
+      "file": "qube_sac_SAC_18_128_cont_c2.zip",
+      "size_bytes": 994102,
+      "size_kb": 970.8,
+      "mtime": 1781719542.6776593
+    },
+    {
+      "file": "qube_sac_SAC_18_128_cont_c3.zip",
+      "size_bytes": 994102,
+      "size_kb": 970.8,
+      "mtime": 1781721115.466727
+    },
+    {
+      "file": "qube_sac_SAC_18_128_cont.zip",
+      "size_bytes": 994102,
+      "size_kb": 970.8,
+      "mtime": 1781721115.487766
+    },
+    {
+      "file": "qube_sac_SAC_19_64_hr_c1.zip",
+      "size_bytes": 341329,
+      "size_kb": 333.3,
+      "mtime": 1781721825.923535
+    },
+    {
+      "file": "qube_sac_SAC_19_64_hr_c2.zip",
+      "size_bytes": 341335,
+      "size_kb": 333.3,
+      "mtime": 1781723017.2895055
+    },
+    {
+      "file": "qube_sac_SAC_19_64_hr_c3.zip",
+      "size_bytes": 341339,
+      "size_kb": 333.3,
+      "mtime": 1781724299.302707
+    },
+    {
+      "file": "qube_sac_SAC_20_64_hr2_c1.zip",
+      "size_bytes": 341298,
+      "size_kb": 333.3,
+      "mtime": 1781725531.2549295
+    },
+    {
+      "file": "qube_sac_SAC_20_64_hr2_c2.zip",
+      "size_bytes": 341320,
+      "size_kb": 333.3,
+      "mtime": 1781726789.5995486
+    },
+    {
+      "file": "qube_sac_distilled_64_c1.zip",
+      "size_bytes": 341306,
+      "size_kb": 333.3,
+      "mtime": 1781732445.2003405
+    },
+    {
+      "file": "qube_sac_distilled_64_c2.zip",
+      "size_bytes": 341302,
+      "size_kb": 333.3,
+      "mtime": 1781733055.2270608
+    },
+    {
+      "file": "qube_sac_distilled_64_c3.zip",
+      "size_bytes": 341299,
+      "size_kb": 333.3,
+      "mtime": 1781733667.6834075
+    },
+    {
+      "file": "qube_sac_distilled_64_c4.zip",
+      "size_bytes": 341292,
+      "size_kb": 333.3,
+      "mtime": 1781734292.7568784
+    },
+    {
+      "file": "qube_sac_distilled_64.zip",
+      "size_bytes": 341292,
+      "size_kb": 333.3,
+      "mtime": 1781734292.77492
+    },
+    {
+      "file": "qube_sac_SAC_21_96_c1.zip",
+      "size_bytes": 622917,
+      "size_kb": 608.3,
+      "mtime": 1781735610.0308154
+    },
+    {
+      "file": "qube_sac_SAC_21_96_c2.zip",
+      "size_bytes": 622904,
+      "size_kb": 608.3,
+      "mtime": 1781736868.593922
+    },
+    {
+      "file": "qube_sac_SAC_21_96.zip",
+      "size_bytes": 622904,
+      "size_kb": 608.3,
+      "mtime": 1781736868.6139588
+    },
+    {
+      "file": "qube_sac_SAC_22_hist2_c1.zip",
+      "size_bytes": 289617,
+      "size_kb": 282.8,
+      "mtime": 1781737666.640715
+    },
+    {
+      "file": "qube_sac_SAC_22_hist2_c2.zip",
+      "size_bytes": 289568,
+      "size_kb": 282.8,
+      "mtime": 1781738300.5925472
+    },
+    {
+      "file": "qube_sac_SAC_22_hist2_c3.zip",
+      "size_bytes": 289570,
+      "size_kb": 282.8,
+      "mtime": 1781739039.2864096
+    },
+    {
+      "file": "qube_sac_SAC_22_hist2_c4.zip",
+      "size_bytes": 289570,
+      "size_kb": 282.8,
+      "mtime": 1781739810.520615
+    },
+    {
+      "file": "qube_sac_SAC_22_hist2_c5.zip",
+      "size_bytes": 289586,
+      "size_kb": 282.8,
+      "mtime": 1781740529.2845354
+    },
+    {
+      "file": "qube_sac_SAC_23_raw8_c1.zip",
+      "size_bytes": 260843,
+      "size_kb": 254.7,
+      "mtime": 1781741298.9785037
+    },
+    {
+      "file": "qube_sac_SAC_23_raw8_c2.zip",
+      "size_bytes": 256817,
+      "size_kb": 250.8,
+      "mtime": 1781741967.7493632
+    },
+    {
+      "file": "qube_sac_SAC_23_raw8_c3.zip",
+      "size_bytes": 257439,
+      "size_kb": 251.4,
+      "mtime": 1781742643.0681145
+    },
+    {
+      "file": "qube_sac_SAC_23_raw8_c4.zip",
+      "size_bytes": 256818,
+      "size_kb": 250.8,
+      "mtime": 1781743302.890065
+    },
+    {
+      "file": "qube_sac_SAC_23_raw8_c5.zip",
+      "size_bytes": 256866,
+      "size_kb": 250.8,
+      "mtime": 1781743979.7008514
+    },
+    {
+      "file": "qube_sac_SAC_24_c2cont_c1.zip",
+      "size_bytes": 260834,
+      "size_kb": 254.7,
+      "mtime": 1781745396.5957437
+    },
+    {
+      "file": "qube_sac_SAC_24_c2cont_c2.zip",
+      "size_bytes": 256988,
+      "size_kb": 251.0,
+      "mtime": 1781746896.2496524
+    }
+  ],
+  "runs": [
+    {
+      "dir": "SAC_1",
+      "events_size_kb": 17.6
+    },
+    {
+      "dir": "SAC_2",
+      "events_size_kb": 8.2
+    },
+    {
+      "dir": "SAC_3",
+      "events_size_kb": 0.9
+    },
+    {
+      "dir": "SAC_4",
+      "events_size_kb": 9.2
+    },
+    {
+      "dir": "SAC_5",
+      "events_size_kb": 8.3
+    },
+    {
+      "dir": "SAC_6",
+      "events_size_kb": 7.5
+    },
+    {
+      "dir": "SAC_7",
+      "events_size_kb": 7.4
+    },
+    {
+      "dir": "SAC_8",
+      "events_size_kb": 44.4
+    },
+    {
+      "dir": "SAC_chunk1_1",
+      "events_size_kb": 16.3
+    },
+    {
+      "dir": "SAC_chunk2_1",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_chunk3_1",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_9",
+      "events_size_kb": 1.0
+    },
+    {
+      "dir": "SAC_exp4_5_0",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_exp4_1_0",
+      "events_size_kb": 6.0
+    },
+    {
+      "dir": "SAC_exp4_2_0",
+      "events_size_kb": 0.6
+    },
+    {
+      "dir": "SAC_exp4_3_0",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_exp4_4_0",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_10",
+      "events_size_kb": 0.6
+    },
+    {
+      "dir": "SAC_11",
+      "events_size_kb": 682.4
+    },
+    {
+      "dir": "SAC_12",
+      "events_size_kb": 165.0
+    },
+    {
+      "dir": "SAC_13",
+      "events_size_kb": 348.5
+    },
+    {
+      "dir": "SAC_14",
+      "events_size_kb": 539.9
+    },
+    {
+      "dir": "SAC_15",
+      "events_size_kb": 355.7
+    },
+    {
+      "dir": "SAC_16_c1_0",
+      "events_size_kb": 156.3
+    },
+    {
+      "dir": "SAC_16_c2_0",
+      "events_size_kb": 239.3
+    },
+    {
+      "dir": "SAC_16_c3_0",
+      "events_size_kb": 342.4
+    },
+    {
+      "dir": "SAC_16_c4_0",
+      "events_size_kb": 168.5
+    },
+    {
+      "dir": "SAC_16_c5_0",
+      "events_size_kb": 30.8
+    },
+    {
+      "dir": "SAC_17_128_c1_0",
+      "events_size_kb": 87.9
+    },
+    {
+      "dir": "SAC_17_128_c2_0",
+      "events_size_kb": 1.6
+    },
+    {
+      "dir": "SAC_17_128_c3_0",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_18_128_cont_c1_0",
+      "events_size_kb": 9.1
+    },
+    {
+      "dir": "SAC_18_128_cont_c2_0",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_18_128_cont_c3_0",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_19_64_hr_c1_0",
+      "events_size_kb": 84.1
+    },
+    {
+      "dir": "SAC_19_64_hr_c2_0",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_19_64_hr_c3_0",
+      "events_size_kb": 0.6
+    },
+    {
+      "dir": "SAC_20_64_hr2_c1_0",
+      "events_size_kb": 592.7
+    },
+    {
+      "dir": "SAC_20_64_hr2_c2_0",
+      "events_size_kb": 181.7
+    },
+    {
+      "dir": "SAC_20_64_hr2_c3_0",
+      "events_size_kb": 204.2
+    },
+    {
+      "dir": "SAC_21_96_c1_0",
+      "events_size_kb": 102.7
+    },
+    {
+      "dir": "SAC_21_96_c2_0",
+      "events_size_kb": 59.2
+    },
+    {
+      "dir": "SAC_22_hist2_c1_1",
+      "events_size_kb": 121.9
+    },
+    {
+      "dir": "SAC_22_hist2_c2_1",
+      "events_size_kb": 70.4
+    },
+    {
+      "dir": "SAC_22_hist2_c3_1",
+      "events_size_kb": 195.5
+    },
+    {
+      "dir": "SAC_22_hist2_c4_1",
+      "events_size_kb": 308.5
+    },
+    {
+      "dir": "SAC_22_hist2_c5_1",
+      "events_size_kb": 152.9
+    },
+    {
+      "dir": "SAC_22_hist2_c6_1",
+      "events_size_kb": 6.0
+    },
+    {
+      "dir": "SAC_23_raw8_c1_1",
+      "events_size_kb": 17.3
+    },
+    {
+      "dir": "SAC_23_raw8_c2_1",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_23_raw8_c3_1",
+      "events_size_kb": 1.6
+    },
+    {
+      "dir": "SAC_23_raw8_c4_1",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_23_raw8_c5_1",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_24_c2cont_c1_1",
+      "events_size_kb": 17.8
+    },
+    {
+      "dir": "SAC_24_c2cont_c2_1",
+      "events_size_kb": 0.3
+    },
+    {
+      "dir": "SAC_24_c2cont_c3_1",
+      "events_size_kb": 0.1
+    },
+    {
+      "dir": "SAC_25_120_c1_1",
+      "events_size_kb": 78.3
+    }
+  ]
+}

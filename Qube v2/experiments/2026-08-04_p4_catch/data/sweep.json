@@ -1,0 +1,402 @@
+[
+  {
+    "rep": 1,
+    "lc": 400,
+    "cg": 0,
+    "homing_range": 270.53,
+    "handoff": true,
+    "handoff_t_s": 3.03,
+    "alive_ms": 369,
+    "alive_s": 0.369,
+    "lost_t_s": 3.82,
+    "theta_abs_max_deg": 113.99,
+    "pend_wraps": 0,
+    "ceiling_hits": 50,
+    "transition": {
+      "reason": "forced",
+      "alpha_deg": 174.38,
+      "vel_dps": 91.02,
+      "energy_ratio": 0.9989
+    }
+  },
+  {
+    "rep": 1,
+    "lc": 400,
+    "cg": 1,
+    "homing_range": 270.35,
+    "handoff": true,
+    "handoff_t_s": 2.81,
+    "alive_ms": 1335,
+    "alive_s": 1.335,
+    "lost_t_s": 4.55,
+    "theta_abs_max_deg": 118.65,
+    "pend_wraps": 1,
+    "ceiling_hits": 22,
+    "transition": {
+      "reason": "energy",
+      "alpha_deg": 157.15,
+      "vel_dps": 34.12,
+      "energy_ratio": 0.9609
+    }
+  },
+  {
+    "rep": 1,
+    "lc": 100,
+    "cg": 0,
+    "homing_range": 270.53,
+    "handoff": false,
+    "handoff_t_s": null,
+    "alive_ms": 0,
+    "alive_s": 0.0,
+    "lost_t_s": null,
+    "theta_abs_max_deg": 12.04,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "-",
+      "alpha_deg": 0.0,
+      "vel_dps": 0.0,
+      "energy_ratio": 0.0
+    }
+  },
+  {
+    "rep": 1,
+    "lc": 0,
+    "cg": 0,
+    "homing_range": 270.35,
+    "handoff": true,
+    "handoff_t_s": 0.68,
+    "alive_ms": 338,
+    "alive_s": 0.338,
+    "lost_t_s": 1.06,
+    "theta_abs_max_deg": 117.95,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "near+slow+forced+energy",
+      "alpha_deg": 167.17,
+      "vel_dps": 2.33,
+      "energy_ratio": 0.9875
+    }
+  },
+  {
+    "rep": 1,
+    "lc": 0,
+    "cg": 1,
+    "homing_range": 270.35,
+    "handoff": true,
+    "handoff_t_s": 0.73,
+    "alive_ms": 318,
+    "alive_s": 0.318,
+    "lost_t_s": 1.03,
+    "theta_abs_max_deg": 102.83,
+    "pend_wraps": 2,
+    "ceiling_hits": 1,
+    "transition": {
+      "reason": "forced",
+      "alpha_deg": 167.7,
+      "vel_dps": 105.48,
+      "energy_ratio": 0.9903
+    }
+  },
+  {
+    "rep": 2,
+    "lc": 400,
+    "cg": 0,
+    "homing_range": 270.35,
+    "handoff": true,
+    "handoff_t_s": 0.7,
+    "alive_ms": 750,
+    "alive_s": 0.75,
+    "lost_t_s": 1.83,
+    "theta_abs_max_deg": 100.55,
+    "pend_wraps": 2,
+    "ceiling_hits": 1,
+    "transition": {
+      "reason": "forced",
+      "alpha_deg": 167.87,
+      "vel_dps": 137.21,
+      "energy_ratio": 0.9919
+    }
+  },
+  {
+    "rep": 2,
+    "lc": 400,
+    "cg": 1,
+    "homing_range": 270.0,
+    "handoff": true,
+    "handoff_t_s": 0.0,
+    "alive_ms": 740,
+    "alive_s": 0.74,
+    "lost_t_s": 1.19,
+    "theta_abs_max_deg": 110.57,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "near+slow+forced+energy",
+      "alpha_deg": 172.44,
+      "vel_dps": 0.0,
+      "energy_ratio": 0.9957
+    }
+  },
+  {
+    "rep": 2,
+    "lc": 100,
+    "cg": 0,
+    "homing_range": 270.35,
+    "handoff": true,
+    "handoff_t_s": 0.0,
+    "alive_ms": 800,
+    "alive_s": 0.8,
+    "lost_t_s": 0.9,
+    "theta_abs_max_deg": 98.79,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "near+slow+forced+energy",
+      "alpha_deg": 167.7,
+      "vel_dps": 0.0,
+      "energy_ratio": 0.9885
+    }
+  },
+  {
+    "rep": 2,
+    "lc": 0,
+    "cg": 0,
+    "homing_range": 270.18,
+    "handoff": true,
+    "handoff_t_s": 0.0,
+    "alive_ms": 645,
+    "alive_s": 0.645,
+    "lost_t_s": 0.65,
+    "theta_abs_max_deg": 103.1,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "near+slow+forced+energy",
+      "alpha_deg": 169.1,
+      "vel_dps": 0.0,
+      "energy_ratio": 0.991
+    }
+  },
+  {
+    "rep": 2,
+    "lc": 0,
+    "cg": 1,
+    "homing_range": 270.18,
+    "handoff": true,
+    "handoff_t_s": 0.0,
+    "alive_ms": 572,
+    "alive_s": 0.572,
+    "lost_t_s": 0.59,
+    "theta_abs_max_deg": 106.26,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "near+slow+energy",
+      "alpha_deg": 164.36,
+      "vel_dps": 0.0,
+      "energy_ratio": 0.9815
+    }
+  },
+  {
+    "rep": 3,
+    "lc": 400,
+    "cg": 0,
+    "homing_range": 270.53,
+    "handoff": true,
+    "handoff_t_s": 0.08,
+    "alive_ms": 567,
+    "alive_s": 0.567,
+    "lost_t_s": 1.03,
+    "theta_abs_max_deg": 107.84,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "near+slow+energy",
+      "alpha_deg": 155.04,
+      "vel_dps": 8.79,
+      "energy_ratio": 0.9533
+    }
+  },
+  {
+    "rep": 3,
+    "lc": 400,
+    "cg": 1,
+    "homing_range": 270.53,
+    "handoff": true,
+    "handoff_t_s": 0.47,
+    "alive_ms": 567,
+    "alive_s": 0.567,
+    "lost_t_s": 0.59,
+    "theta_abs_max_deg": 106.96,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "near+slow+forced+energy",
+      "alpha_deg": 178.59,
+      "vel_dps": 21.96,
+      "energy_ratio": 0.9999
+    }
+  },
+  {
+    "rep": 3,
+    "lc": 100,
+    "cg": 0,
+    "homing_range": 270.35,
+    "handoff": true,
+    "handoff_t_s": 0.41,
+    "alive_ms": 40,
+    "alive_s": 0.04,
+    "lost_t_s": 0.54,
+    "theta_abs_max_deg": 99.67,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "forced",
+      "alpha_deg": 174.9,
+      "vel_dps": 60.07,
+      "energy_ratio": 0.9986
+    }
+  },
+  {
+    "rep": 3,
+    "lc": 0,
+    "cg": 0,
+    "homing_range": 270.53,
+    "handoff": true,
+    "handoff_t_s": 0.26,
+    "alive_ms": 222,
+    "alive_s": 0.222,
+    "lost_t_s": 0.48,
+    "theta_abs_max_deg": 113.11,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "near+slow+energy",
+      "alpha_deg": 159.79,
+      "vel_dps": 11.03,
+      "energy_ratio": 0.9692
+    }
+  },
+  {
+    "rep": 3,
+    "lc": 0,
+    "cg": 1,
+    "homing_range": 270.35,
+    "handoff": true,
+    "handoff_t_s": 0.7,
+    "alive_ms": 1214,
+    "alive_s": 1.214,
+    "lost_t_s": 1.95,
+    "theta_abs_max_deg": 108.98,
+    "pend_wraps": 2,
+    "ceiling_hits": 10,
+    "transition": {
+      "reason": "peak+forced",
+      "alpha_deg": 174.55,
+      "vel_dps": 127.32,
+      "energy_ratio": 1.0003
+    }
+  },
+  {
+    "rep": 4,
+    "lc": 400,
+    "cg": 0,
+    "homing_range": 270.18,
+    "handoff": true,
+    "handoff_t_s": 0.0,
+    "alive_ms": 582,
+    "alive_s": 0.582,
+    "lost_t_s": 0.98,
+    "theta_abs_max_deg": 99.58,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "near+slow+energy",
+      "alpha_deg": 163.65,
+      "vel_dps": 0.0,
+      "energy_ratio": 0.9798
+    }
+  },
+  {
+    "rep": 4,
+    "lc": 400,
+    "cg": 1,
+    "homing_range": 270.35,
+    "handoff": true,
+    "handoff_t_s": 0.44,
+    "alive_ms": 582,
+    "alive_s": 0.582,
+    "lost_t_s": 0.64,
+    "theta_abs_max_deg": 95.8,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "forced",
+      "alpha_deg": 179.12,
+      "vel_dps": 127.56,
+      "energy_ratio": 1.0025
+    }
+  },
+  {
+    "rep": 4,
+    "lc": 100,
+    "cg": 0,
+    "homing_range": 270.53,
+    "handoff": true,
+    "handoff_t_s": 0.75,
+    "alive_ms": 543,
+    "alive_s": 0.543,
+    "lost_t_s": 1.37,
+    "theta_abs_max_deg": 103.27,
+    "pend_wraps": 2,
+    "ceiling_hits": 0,
+    "transition": {
+      "reason": "near+slow+peak+forced+energy",
+      "alpha_deg": 169.63,
+      "vel_dps": 7.48,
+      "energy_ratio": 0.9918
+    }
+  },
+  {
+    "rep": 4,
+    "lc": 0,
+    "cg": 0,
+    "homing_range": 270.0,
+    "handoff": true,
+    "handoff_t_s": 1.56,
+    "alive_ms": 419,
+    "alive_s": 0.419,
+    "lost_t_s": 1.95,
+    "theta_abs_max_deg": 96.86,
+    "pend_wraps": 2,
+    "ceiling_hits": 35,
+    "transition": {
+      "reason": "peak+forced+energy",
+      "alpha_deg": 174.73,
+      "vel_dps": 47.79,
+      "energy_ratio": 0.9982
+    }
+  },
+  {
+    "rep": 4,
+    "lc": 0,
+    "cg": 1,
+    "homing_range": 270.35,
+    "handoff": true,
+    "handoff_t_s": 1.55,
+    "alive_ms": 329,
+    "alive_s": 0.329,
+    "lost_t_s": 1.92,
+    "theta_abs_max_deg": 129.2,
+    "pend_wraps": 2,
+    "ceiling_hits": 27,
+    "transition": {
+      "reason": "peak",
+      "alpha_deg": 157.32,
+      "vel_dps": 171.39,
+      "energy_ratio": 0.9661
+    }
+  }
+]

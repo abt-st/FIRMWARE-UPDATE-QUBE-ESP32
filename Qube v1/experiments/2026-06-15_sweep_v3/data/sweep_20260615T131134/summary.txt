@@ -1,0 +1,16 @@
+=== Swing-Up PWM Sweep v3 Results ===
+
+Date: 2026-06-15T13:26:25.521433
+Firmware: catch gain=0.25, centering=0.5, trans >155°
+Duration: 30s per attempt, 5 attempts per SP
+Poll rate: 10Hz configured
+
+  SP | Catch |  Chat | Trans | Miss | Clean% | Total% |  AvgMax | AvgCatch
+--------------------------------------------------------------------------------
+  45 |     0 |     0 |     0 |    5 |     0% |     0% |     99° |     0.0s
+  50 |     3 |     1 |     0 |    1 |    60% |    80% |    165° |    16.1s
+  55 |     2 |     2 |     0 |    1 |    40% |    80% |    183° |     7.7s
+  60 |     4 |     0 |     0 |    1 |    80% |    80% |    144° |     3.0s
+  65 |     3 |     2 |     0 |    0 |    60% |   100% |    254° |     2.6s
+
+Sweet spot (clean catches): sp=60 (80%)

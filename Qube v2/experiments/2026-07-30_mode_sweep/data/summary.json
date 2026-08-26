@@ -1,0 +1,144 @@
+[
+  {
+    "samples": 92,
+    "entered_mode": true,
+    "dropped_to_stop": false,
+    "modes_seen": [
+      0
+    ],
+    "pwm_nonzero_frac": 0.0,
+    "pwm_abs_max": 0.0,
+    "theta_min_deg": -4.92,
+    "theta_max_deg": -4.92,
+    "theta_abs_max_deg": 4.92,
+    "hit_soft_limit": false,
+    "alpha_abs_max_deg": 0.0,
+    "mode": 0,
+    "name": "STOP"
+  },
+  {
+    "samples": 61,
+    "entered_mode": true,
+    "dropped_to_stop": true,
+    "modes_seen": [
+      0,
+      1
+    ],
+    "pwm_nonzero_frac": 0.098,
+    "pwm_abs_max": 59.0,
+    "theta_min_deg": -129.38,
+    "theta_max_deg": 2.46,
+    "theta_abs_max_deg": 129.38,
+    "hit_soft_limit": true,
+    "alpha_abs_max_deg": 18.81,
+    "mode": 1,
+    "name": "PWM manual"
+  },
+  {
+    "samples": 95,
+    "entered_mode": true,
+    "dropped_to_stop": false,
+    "modes_seen": [
+      2
+    ],
+    "pwm_nonzero_frac": 0.579,
+    "pwm_abs_max": 62.0,
+    "theta_min_deg": -8.0,
+    "theta_max_deg": 31.2,
+    "theta_abs_max_deg": 31.2,
+    "hit_soft_limit": false,
+    "alpha_abs_max_deg": 9.32,
+    "mode": 2,
+    "name": "PID servo"
+  },
+  {
+    "samples": 205,
+    "entered_mode": true,
+    "modes_seen": [
+      0,
+      3
+    ],
+    "pwm_nonzero_frac": 0.385,
+    "pwm_abs_max": 55.0,
+    "theta_min_deg": -135.09,
+    "theta_max_deg": 134.56,
+    "theta_abs_max_deg": 135.09,
+    "hit_soft_limit": false,
+    "alpha_abs_max_deg": 29.18,
+    "mode": 3,
+    "name": "Homing",
+    "limit_exempt_by_design": true,
+    "self_terminated": true
+  },
+  {
+    "samples": 62,
+    "entered_mode": true,
+    "dropped_to_stop": true,
+    "modes_seen": [
+      0,
+      4
+    ],
+    "pwm_nonzero_frac": 0.081,
+    "pwm_abs_max": 69.0,
+    "theta_min_deg": 5.8,
+    "theta_max_deg": 122.69,
+    "theta_abs_max_deg": 122.69,
+    "hit_soft_limit": true,
+    "alpha_abs_max_deg": 20.57,
+    "mode": 4,
+    "name": "LQR"
+  },
+  {
+    "samples": 94,
+    "entered_mode": true,
+    "dropped_to_stop": true,
+    "modes_seen": [
+      0,
+      4,
+      5
+    ],
+    "pwm_nonzero_frac": 0.755,
+    "pwm_abs_max": 65.0,
+    "theta_min_deg": -62.93,
+    "theta_max_deg": 121.47,
+    "theta_abs_max_deg": 121.47,
+    "hit_soft_limit": true,
+    "alpha_abs_max_deg": 117.42,
+    "mode": 5,
+    "name": "Swing-up"
+  },
+  {
+    "samples": 95,
+    "entered_mode": true,
+    "dropped_to_stop": false,
+    "modes_seen": [
+      6
+    ],
+    "pwm_nonzero_frac": 0.0,
+    "pwm_abs_max": 0.0,
+    "theta_min_deg": 2.81,
+    "theta_max_deg": 6.68,
+    "theta_abs_max_deg": 6.68,
+    "hit_soft_limit": false,
+    "alpha_abs_max_deg": 2.64,
+    "mode": 6,
+    "name": "Deep RL (HTTP)"
+  },
+  {
+    "samples": 92,
+    "entered_mode": true,
+    "dropped_to_stop": false,
+    "modes_seen": [
+      7
+    ],
+    "pwm_nonzero_frac": 0.957,
+    "pwm_abs_max": 186.0,
+    "theta_min_deg": -70.4,
+    "theta_max_deg": 58.27,
+    "theta_abs_max_deg": 70.4,
+    "hit_soft_limit": false,
+    "alpha_abs_max_deg": 40.25,
+    "mode": 7,
+    "name": "Deep RL (on-chip)"
+  }
+]

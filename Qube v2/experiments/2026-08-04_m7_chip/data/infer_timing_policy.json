@@ -1,0 +1,15 @@
+[
+  {
+    "t_s": 20.04,
+    "hybrid_lqr": 0,
+    "rl_infer_count": 932,
+    "rl_fwd_us_last": 282,
+    "rl_fwd_us_max": 420,
+    "rl_fwd_us_mean": 248,
+    "rl_step_us_last": 428,
+    "rl_step_us_max": 702,
+    "rl_step_us_mean": 332,
+    "loop_dt_max_us": 19184,
+    "loop_overruns": 2
+  }
+]

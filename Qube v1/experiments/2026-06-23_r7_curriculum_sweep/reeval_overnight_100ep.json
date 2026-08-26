@@ -1,0 +1,210 @@
+[
+  {
+    "model": "fr100_s0",
+    "friction_mult": 100,
+    "seed": 0,
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr100_s0_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 0.96,
+      "balance_rate": 0.62,
+      "upright_fraction": 0.6839999999999999,
+      "max_hold_s": 3.4038,
+      "max_hold_s_best": 9.14,
+      "return_mean": 451.27735229240847
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.73,
+      "upright_fraction": 0.8091200000000001,
+      "max_hold_s": 3.5644000000000005,
+      "max_hold_s_best": 9.700000000000001,
+      "return_mean": 491.1896139500616
+    }
+  },
+  {
+    "model": "fr100_s1",
+    "friction_mult": 100,
+    "seed": 1,
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr100_s1_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 0.96,
+      "balance_rate": 0.24,
+      "upright_fraction": 0.5047999999999999,
+      "max_hold_s": 1.5195999999999998,
+      "max_hold_s_best": 8.82,
+      "return_mean": 444.7308441641557
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.36,
+      "upright_fraction": 0.6634,
+      "max_hold_s": 2.3968000000000003,
+      "max_hold_s_best": 9.22,
+      "return_mean": 485.7695060658851
+    }
+  },
+  {
+    "model": "fr20_s0",
+    "friction_mult": 20,
+    "seed": 0,
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr20_s0_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.55,
+      "upright_fraction": 0.64244,
+      "max_hold_s": 1.5309999999999997,
+      "max_hold_s_best": 9.18,
+      "return_mean": 475.8103261251631
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.51,
+      "upright_fraction": 0.6846599999999998,
+      "max_hold_s": 1.6735999999999998,
+      "max_hold_s_best": 9.66,
+      "return_mean": 493.39523390857505
+    }
+  },
+  {
+    "model": "fr20_s1",
+    "friction_mult": 20,
+    "seed": 1,
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr20_s1_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.47,
+      "upright_fraction": 0.6688,
+      "max_hold_s": 2.7536,
+      "max_hold_s_best": 9.38,
+      "return_mean": 472.4121985828108
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.43,
+      "upright_fraction": 0.67266,
+      "max_hold_s": 2.9219999999999997,
+      "max_hold_s_best": 9.82,
+      "return_mean": 486.74229578866857
+    }
+  },
+  {
+    "model": "fr40_s0",
+    "friction_mult": 40,
+    "seed": 0,
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr40_s0_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.56,
+      "upright_fraction": 0.6519399999999999,
+      "max_hold_s": 2.7722,
+      "max_hold_s_best": 9.48,
+      "return_mean": 473.08369399190883
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.58,
+      "upright_fraction": 0.6819400000000002,
+      "max_hold_s": 2.3360000000000003,
+      "max_hold_s_best": 9.700000000000001,
+      "return_mean": 495.48614010877907
+    }
+  },
+  {
+    "model": "fr40_s1",
+    "friction_mult": 40,
+    "seed": 1,
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr40_s1_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 0.99,
+      "balance_rate": 0.49,
+      "upright_fraction": 0.6572999999999999,
+      "max_hold_s": 2.7140000000000004,
+      "max_hold_s_best": 9.34,
+      "return_mean": 468.915937820496
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.48,
+      "upright_fraction": 0.73206,
+      "max_hold_s": 3.0668,
+      "max_hold_s_best": 9.84,
+      "return_mean": 496.1409076780081
+    }
+  },
+  {
+    "model": "fr70_s0",
+    "friction_mult": 70,
+    "seed": 0,
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr70_s0_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 0.96,
+      "balance_rate": 0.6,
+      "upright_fraction": 0.69688,
+      "max_hold_s": 2.7112,
+      "max_hold_s_best": 9.42,
+      "return_mean": 460.01454486294824
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.66,
+      "upright_fraction": 0.7647123076923077,
+      "max_hold_s": 2.5114,
+      "max_hold_s_best": 9.78,
+      "return_mean": 489.8238219875985
+    }
+  },
+  {
+    "model": "fr70_s1",
+    "friction_mult": 70,
+    "seed": 1,
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr70_s1_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.45,
+      "upright_fraction": 0.6111,
+      "max_hold_s": 1.258,
+      "max_hold_s_best": 9.08,
+      "return_mean": 472.7095848411508
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.51,
+      "upright_fraction": 0.70892,
+      "max_hold_s": 1.4957999999999998,
+      "max_hold_s_best": 9.700000000000001,
+      "return_mean": 494.7642875654297
+    }
+  }
+]

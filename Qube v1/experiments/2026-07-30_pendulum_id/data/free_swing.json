@@ -1,0 +1,41 @@
+[
+  {
+    "run": 1,
+    "kick_pwm": 70,
+    "kick_ms": 180,
+    "samples": 292,
+    "sample_hz": 14.6,
+    "bias_deg": 0.0,
+    "amp_inicial_deg": 56.07,
+    "cruces": 195,
+    "periodo_s": 0.2008,
+    "freq_hz": 4.9813,
+    "semiperiodos_sd": 0.0723
+  },
+  {
+    "run": 2,
+    "kick_pwm": 70,
+    "kick_ms": 180,
+    "samples": 286,
+    "sample_hz": 14.3,
+    "bias_deg": 0.0,
+    "amp_inicial_deg": 54.49,
+    "cruces": 190,
+    "periodo_s": 0.2063,
+    "freq_hz": 4.8482,
+    "semiperiodos_sd": 0.0744
+  },
+  {
+    "run": 3,
+    "kick_pwm": 110,
+    "kick_ms": 220,
+    "samples": 295,
+    "sample_hz": 14.8,
+    "bias_deg": -0.176,
+    "amp_inicial_deg": 0.88,
+    "cruces": 277,
+    "periodo_s": 0.1418,
+    "freq_hz": 7.054,
+    "semiperiodos_sd": 0.0287
+  }
+]

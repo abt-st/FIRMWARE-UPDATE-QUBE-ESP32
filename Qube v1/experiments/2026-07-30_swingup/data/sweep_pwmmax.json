@@ -1,0 +1,74 @@
+[
+  {
+    "sp": 0,
+    "rep": 2,
+    "picos": 55,
+    "meseta_deg": 143.09,
+    "pico_max_deg": 148.36,
+    "E_ratio_meseta": 0.8998,
+    "pwm_max": 50.0,
+    "frac_saturado": 1.0,
+    "theta_max": 78.6,
+    "corto_por_limite": false
+  },
+  {
+    "sp": 5,
+    "rep": 1,
+    "picos": 55,
+    "meseta_deg": 143.61,
+    "pico_max_deg": 146.07,
+    "E_ratio_meseta": 0.9025,
+    "pwm_max": 49.0,
+    "frac_saturado": 1.0,
+    "theta_max": 75.8,
+    "corto_por_limite": false
+  },
+  {
+    "sp": 5,
+    "rep": 2,
+    "picos": 55,
+    "meseta_deg": 143.09,
+    "pico_max_deg": 146.25,
+    "E_ratio_meseta": 0.8998,
+    "pwm_max": 49.0,
+    "frac_saturado": 1.0,
+    "theta_max": 79.1,
+    "corto_por_limite": false
+  },
+  {
+    "sp": 10,
+    "rep": 1,
+    "picos": 55,
+    "meseta_deg": 143.26,
+    "pico_max_deg": 146.25,
+    "E_ratio_meseta": 0.9007,
+    "pwm_max": 49.0,
+    "frac_saturado": 1.0,
+    "theta_max": 78.3,
+    "corto_por_limite": false
+  },
+  {
+    "sp": 10,
+    "rep": 2,
+    "picos": 54,
+    "meseta_deg": 142.82,
+    "pico_max_deg": 146.6,
+    "E_ratio_meseta": 0.8984,
+    "pwm_max": 49.0,
+    "frac_saturado": 1.0,
+    "theta_max": 77.5,
+    "corto_por_limite": false
+  },
+  {
+    "sp": 20,
+    "rep": 2,
+    "picos": 55,
+    "meseta_deg": 142.73,
+    "pico_max_deg": 147.13,
+    "E_ratio_meseta": 0.8979,
+    "pwm_max": 49.0,
+    "frac_saturado": 0.997,
+    "theta_max": 77.4,
+    "corto_por_limite": false
+  }
+]

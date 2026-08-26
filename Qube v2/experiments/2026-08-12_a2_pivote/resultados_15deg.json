@@ -1,0 +1,14 @@
+{
+  "angulo_inicial": 65.391,
+  "n_cruces": 0,
+  "n_ciclos": 0,
+  "picos": [],
+  "amp_inicial": 65.391,
+  "amp_final_prom": 0,
+  "t_oscilacion": 0,
+  "periodo_obs": 0,
+  "freq_obs": 0,
+  "tipo_friccion": "Fricci\u00f3n seca bloqueante",
+  "detalle": "El p\u00e9ndulo no cruza la vertical. Fricci\u00f3n seca \u2265 el valor reportado en \u00a75.8. Requiere A3.",
+  "ok": false
+}

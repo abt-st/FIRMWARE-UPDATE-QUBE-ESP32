@@ -1,0 +1,38 @@
+[
+  {
+    "sp": 60,
+    "picos": 23,
+    "meseta": 141.9,
+    "E_meseta": 0.8937,
+    "pico_max": 179.8,
+    "wraps": 1,
+    "theta_max": 86.8,
+    "t_bombeo": 9.6,
+    "murio": true,
+    "rep": 1
+  },
+  {
+    "sp": 60,
+    "picos": 41,
+    "meseta": 147.7,
+    "E_meseta": 0.9228,
+    "pico_max": 179.8,
+    "wraps": 1,
+    "theta_max": 93.5,
+    "t_bombeo": 17.7,
+    "murio": true,
+    "rep": 2
+  },
+  {
+    "sp": 60,
+    "picos": 32,
+    "meseta": 154.0,
+    "E_meseta": 0.9493,
+    "pico_max": 158.9,
+    "wraps": 0,
+    "theta_max": 91.0,
+    "t_bombeo": 14.3,
+    "murio": true,
+    "rep": 3
+  }
+]

@@ -1,0 +1,814 @@
+{
+  "agregado": {
+    "n_total": 8,
+    "n_descartadas": 5,
+    "n_trabadas": 0,
+    "n_usables": 3,
+    "por_amplitud": {
+      "20.0": {
+        "n": 1,
+        "lambda_mediana": 0.06470654212082148,
+        "lambda_std": NaN,
+        "dp": 1.7228505078921448e-05
+      },
+      "30.0": {
+        "n": 1,
+        "lambda_mediana": 0.07062320894045053,
+        "lambda_std": NaN,
+        "dp": 1.8803853119648597e-05
+      },
+      "40.0": {
+        "n": 1,
+        "lambda_mediana": 0.04088722137346128,
+        "lambda_std": NaN,
+        "dp": 1.0886468014012307e-05
+      }
+    },
+    "veredicto": "INDETERMINADO",
+    "notas": [
+      "sin replicas por amplitud no hay dispersion contra la cual comparar; la razon 1.58 no se puede juzgar."
+    ],
+    "tau_c_cota_inferior": 2.3297323812176302e-05,
+    "n_reposos": 2,
+    "lambda_baja": 0.06470654212082148,
+    "lambda_alta": 0.04088722137346128,
+    "razon": 1.582561493474845,
+    "dispersion_relativa": NaN
+  },
+  "corridas": [
+    {
+      "amplitud_objetivo": 35.0,
+      "verdict": "VISCOSO",
+      "guards": [
+        {
+          "name": "tasa_envolvente",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz = 147.1 muestras/ciclo (minimo 10.2 Hz). Por debajo, los picos no se pueden ubicar."
+        },
+        {
+          "name": "tasa_discriminador",
+          "ok": true,
+          "fatal": false,
+          "detail": "250.0 Hz (minimo 68.0 Hz). Por debajo, la perdida por semiciclo queda enterrada en el error de muestreo de cada pico."
+        },
+        {
+          "name": "huecos",
+          "ok": true,
+          "fatal": false,
+          "detail": "0 intervalos > 3x la mediana (mayor = 10 ms, semiperiodo = 294 ms)"
+        },
+        {
+          "name": "tasa_nominal",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz vs 250.0 Hz nominales"
+        },
+        {
+          "name": "brazo_quieto",
+          "ok": false,
+          "fatal": false,
+          "detail": "excursion 5.8 deg (aviso sobre 4, fatal sobre 10). Con el brazo suelto el acoplamiento de 2 GDL arruina la envolvente; comprobar el R2 y `centro_estable`."
+        },
+        {
+          "name": "vertical",
+          "ok": true,
+          "fatal": true,
+          "detail": "metodo = puntos_medios, equilibrio = -990.62 deg"
+        },
+        {
+          "name": "centro_estable",
+          "ok": true,
+          "fatal": true,
+          "detail": "el centro de oscilacion se desplaza 0.0 deg entre el principio y el final (maximo 3)."
+        },
+        {
+          "name": "amplitud_minima",
+          "ok": true,
+          "fatal": true,
+          "detail": "28.7 deg (minimo 8)"
+        },
+        {
+          "name": "amplitud_objetivo",
+          "ok": true,
+          "fatal": false,
+          "detail": "partio de 28.7 deg y se pidio 35 (+-25%). Se agrupa por la amplitud medida."
+        },
+        {
+          "name": "periodo_plausible",
+          "ok": true,
+          "fatal": true,
+          "detail": "semiperiodo observado 288 ms vs 294 ms esperados (+-40%). Lo que oscila a esa frecuencia no es este pendulo."
+        }
+      ],
+      "notes": [],
+      "n": 17575,
+      "duration_s": 70.2936,
+      "rate_hz": 250.00853562771007,
+      "samples_per_cycle": 147.07857945138372,
+      "arm_span_deg": 5.800699999999999,
+      "equilibrium_deg": -990.6152,
+      "equilibrium_method": "puntos_medios",
+      "release_idx": 2702,
+      "release_t_s": 10.805655,
+      "amp0_deg": 28.74019999999996,
+      "rest_after_deg": 0.08789999999999054,
+      "n_releases": 1,
+      "center_drift_deg": 0.04394999999999527,
+      "n_valores_alpha": 325,
+      "n_peaks": 92,
+      "n_peaks_expected_viscous": 238,
+      "half_period_s": 0.2880400000000023,
+      "lam_exp": 0.07062320894045053,
+      "r2_exp": 0.9984205292410245,
+      "slope_lin": 0.8900847064742301,
+      "r2_lin": 0.9604857712234826,
+      "tau_c_fit": 1.2470940865942123e-05,
+      "dp_fit": 1.1474061937410552e-05,
+      "se_tau_c": 7.459475415024432e-06,
+      "se_dp": 2.4072454694422817e-06,
+      "t_tau_c": 1.6718254531443184,
+      "t_dp": 4.766469428673969,
+      "lam_from_dp": 0.04309409717493897,
+      "cross_amp_deg": 7.269720446872176,
+      "tau_c_from_rest": 2.3297323812176302e-05,
+      "dp": 1.8803853119648597e-05
+    },
+    {
+      "amplitud_objetivo": 15.0,
+      "verdict": "VISCOSO",
+      "guards": [
+        {
+          "name": "tasa_envolvente",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz = 147.1 muestras/ciclo (minimo 10.2 Hz). Por debajo, los picos no se pueden ubicar."
+        },
+        {
+          "name": "tasa_discriminador",
+          "ok": true,
+          "fatal": false,
+          "detail": "250.0 Hz (minimo 68.0 Hz). Por debajo, la perdida por semiciclo queda enterrada en el error de muestreo de cada pico."
+        },
+        {
+          "name": "huecos",
+          "ok": true,
+          "fatal": false,
+          "detail": "0 intervalos > 3x la mediana (mayor = 10 ms, semiperiodo = 294 ms)"
+        },
+        {
+          "name": "tasa_nominal",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz vs 250.0 Hz nominales"
+        },
+        {
+          "name": "brazo_quieto",
+          "ok": true,
+          "fatal": false,
+          "detail": "excursion 2.1 deg (aviso sobre 4, fatal sobre 10). Con el brazo suelto el acoplamiento de 2 GDL arruina la envolvente; comprobar el R2 y `centro_estable`."
+        },
+        {
+          "name": "vertical",
+          "ok": true,
+          "fatal": true,
+          "detail": "metodo = puntos_medios, equilibrio = -991.32 deg"
+        },
+        {
+          "name": "centro_estable",
+          "ok": true,
+          "fatal": true,
+          "detail": "el centro de oscilacion se desplaza 0.2 deg entre el principio y el final (maximo 3)."
+        },
+        {
+          "name": "amplitud_minima",
+          "ok": true,
+          "fatal": true,
+          "detail": "23.3 deg (minimo 8)"
+        },
+        {
+          "name": "amplitud_objetivo",
+          "ok": false,
+          "fatal": false,
+          "detail": "partio de 23.3 deg y se pidio 15 (+-25%). Se agrupa por la amplitud medida."
+        },
+        {
+          "name": "periodo_plausible",
+          "ok": true,
+          "fatal": true,
+          "detail": "semiperiodo observado 288 ms vs 294 ms esperados (+-40%). Lo que oscila a esa frecuencia no es este pendulo."
+        }
+      ],
+      "notes": [
+        "la grabacion contiene 5 tramos de caida libre separados por aportes de energia (otra suelta, un golpe, una mano). Se analiza el mas largo, t = 12.8 a 70.3 s.",
+        "1 de 80 pares de picos no estan separados por un semiciclo (huecos de transporte o picos perdidos): se excluyen del discriminador."
+      ],
+      "n": 17565,
+      "duration_s": 70.253176,
+      "rate_hz": 250.0100493677325,
+      "samples_per_cycle": 147.0794699759076,
+      "arm_span_deg": 2.109400000000001,
+      "equilibrium_deg": -991.3184,
+      "equilibrium_method": "puntos_medios",
+      "release_idx": 3204,
+      "release_t_s": 12.813082,
+      "amp0_deg": 23.29110000000003,
+      "rest_after_deg": -0.08780000000001564,
+      "n_releases": 5,
+      "center_drift_deg": 0.1757249999999999,
+      "n_valores_alpha": 262,
+      "n_peaks": 81,
+      "n_peaks_expected_viscous": 238,
+      "half_period_s": 0.2879865000000006,
+      "lam_exp": 0.06470654212082148,
+      "r2_exp": 0.9949535928461443,
+      "slope_lin": 0.5403238869349769,
+      "r2_lin": 0.9739257659788899,
+      "tau_c_fit": 5.837999318103887e-06,
+      "dp_fit": 1.1101336499985854e-05,
+      "se_tau_c": 7.4205834468193545e-06,
+      "se_dp": 4.254665686400565e-06,
+      "t_tau_c": 0.7867304990157071,
+      "t_dp": 2.60921475815825,
+      "lam_from_dp": 0.04169422097524883,
+      "cross_amp_deg": 3.5167685017266432,
+      "tau_c_from_rest": 2.3270819482756524e-05,
+      "dp": 1.7228505078921448e-05
+    },
+    {
+      "amplitud_objetivo": 60.0,
+      "verdict": "DESCARTADA",
+      "guards": [
+        {
+          "name": "tasa_envolvente",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz = 147.1 muestras/ciclo (minimo 10.2 Hz). Por debajo, los picos no se pueden ubicar."
+        },
+        {
+          "name": "tasa_discriminador",
+          "ok": true,
+          "fatal": false,
+          "detail": "250.0 Hz (minimo 68.0 Hz). Por debajo, la perdida por semiciclo queda enterrada en el error de muestreo de cada pico."
+        },
+        {
+          "name": "huecos",
+          "ok": true,
+          "fatal": false,
+          "detail": "0 intervalos > 3x la mediana (mayor = 10 ms, semiperiodo = 294 ms)"
+        },
+        {
+          "name": "tasa_nominal",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz vs 250.0 Hz nominales"
+        },
+        {
+          "name": "brazo_quieto",
+          "ok": true,
+          "fatal": false,
+          "detail": "excursion 1.8 deg (aviso sobre 4, fatal sobre 10). Con el brazo suelto el acoplamiento de 2 GDL arruina la envolvente; comprobar el R2 y `centro_estable`."
+        },
+        {
+          "name": "angulo_cambia",
+          "ok": false,
+          "fatal": true,
+          "detail": "el angulo del pendulo tomo 1 valor(es) distinto(s) en toda la captura (17583 muestras). O el pendulo no se movio, o el canal del encoder no esta leyendo. Comprobar moviendo el pendulo a mano y mirando /state."
+        },
+        {
+          "name": "vertical",
+          "ok": true,
+          "fatal": true,
+          "detail": "metodo = pre_lectura, equilibrio = -996.50 deg"
+        },
+        {
+          "name": "amplitud_minima",
+          "ok": false,
+          "fatal": true,
+          "detail": "0.0 deg (minimo 8)"
+        },
+        {
+          "name": "amplitud_objetivo",
+          "ok": false,
+          "fatal": false,
+          "detail": "partio de 0.0 deg y se pidio 60 (+-25%). Se agrupa por la amplitud medida."
+        }
+      ],
+      "notes": [
+        "no hay extremos suficientes para ubicar la vertical por puntos medios; se usa la pre-lectura con el pendulo colgando. El resultado depende de que esa pre-lectura se haya hecho de verdad.",
+        "el pendulo todavia se movia al final: no hay angulo de reposo que medir"
+      ],
+      "n": 17583,
+      "duration_s": 70.326609,
+      "rate_hz": 250.0049447855505,
+      "samples_per_cycle": 147.07646697965336,
+      "arm_span_deg": 1.7577999999999996,
+      "equilibrium_deg": -996.5039,
+      "equilibrium_method": "pre_lectura",
+      "release_idx": 17570,
+      "release_t_s": 70.277341,
+      "amp0_deg": 0.0,
+      "rest_after_deg": NaN,
+      "n_releases": 1,
+      "center_drift_deg": NaN,
+      "n_valores_alpha": 1,
+      "n_peaks": 0,
+      "n_peaks_expected_viscous": 0,
+      "half_period_s": NaN,
+      "lam_exp": NaN,
+      "r2_exp": NaN,
+      "slope_lin": NaN,
+      "r2_lin": NaN,
+      "tau_c_fit": NaN,
+      "dp_fit": NaN,
+      "se_tau_c": NaN,
+      "se_dp": NaN,
+      "t_tau_c": NaN,
+      "t_dp": NaN,
+      "lam_from_dp": NaN,
+      "cross_amp_deg": NaN,
+      "tau_c_from_rest": NaN,
+      "dp": NaN
+    },
+    {
+      "amplitud_objetivo": 35.0,
+      "verdict": "DESCARTADA",
+      "guards": [
+        {
+          "name": "tasa_envolvente",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz = 147.1 muestras/ciclo (minimo 10.2 Hz). Por debajo, los picos no se pueden ubicar."
+        },
+        {
+          "name": "tasa_discriminador",
+          "ok": true,
+          "fatal": false,
+          "detail": "250.0 Hz (minimo 68.0 Hz). Por debajo, la perdida por semiciclo queda enterrada en el error de muestreo de cada pico."
+        },
+        {
+          "name": "huecos",
+          "ok": true,
+          "fatal": false,
+          "detail": "0 intervalos > 3x la mediana (mayor = 10 ms, semiperiodo = 294 ms)"
+        },
+        {
+          "name": "tasa_nominal",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz vs 250.0 Hz nominales"
+        },
+        {
+          "name": "brazo_quieto",
+          "ok": true,
+          "fatal": false,
+          "detail": "excursion 2.8 deg (aviso sobre 4, fatal sobre 10). Con el brazo suelto el acoplamiento de 2 GDL arruina la envolvente; comprobar el R2 y `centro_estable`."
+        },
+        {
+          "name": "angulo_cambia",
+          "ok": false,
+          "fatal": true,
+          "detail": "el angulo del pendulo tomo 1 valor(es) distinto(s) en toda la captura (17557 muestras). O el pendulo no se movio, o el canal del encoder no esta leyendo. Comprobar moviendo el pendulo a mano y mirando /state."
+        },
+        {
+          "name": "vertical",
+          "ok": true,
+          "fatal": true,
+          "detail": "metodo = pre_lectura, equilibrio = -996.50 deg"
+        },
+        {
+          "name": "amplitud_minima",
+          "ok": false,
+          "fatal": true,
+          "detail": "0.0 deg (minimo 8)"
+        },
+        {
+          "name": "amplitud_objetivo",
+          "ok": false,
+          "fatal": false,
+          "detail": "partio de 0.0 deg y se pidio 35 (+-25%). Se agrupa por la amplitud medida."
+        }
+      ],
+      "notes": [
+        "no hay extremos suficientes para ubicar la vertical por puntos medios; se usa la pre-lectura con el pendulo colgando. El resultado depende de que esa pre-lectura se haya hecho de verdad.",
+        "el pendulo todavia se movia al final: no hay angulo de reposo que medir"
+      ],
+      "n": 17557,
+      "duration_s": 70.220988,
+      "rate_hz": 250.0107232897378,
+      "samples_per_cycle": 147.0798664403361,
+      "arm_span_deg": 2.8125,
+      "equilibrium_deg": -996.5039,
+      "equilibrium_method": "pre_lectura",
+      "release_idx": 17544,
+      "release_t_s": 70.173056,
+      "amp0_deg": 0.0,
+      "rest_after_deg": NaN,
+      "n_releases": 1,
+      "center_drift_deg": NaN,
+      "n_valores_alpha": 1,
+      "n_peaks": 0,
+      "n_peaks_expected_viscous": 0,
+      "half_period_s": NaN,
+      "lam_exp": NaN,
+      "r2_exp": NaN,
+      "slope_lin": NaN,
+      "r2_lin": NaN,
+      "tau_c_fit": NaN,
+      "dp_fit": NaN,
+      "se_tau_c": NaN,
+      "se_dp": NaN,
+      "t_tau_c": NaN,
+      "t_dp": NaN,
+      "lam_from_dp": NaN,
+      "cross_amp_deg": NaN,
+      "tau_c_from_rest": NaN,
+      "dp": NaN
+    },
+    {
+      "amplitud_objetivo": 15.0,
+      "verdict": "DESCARTADA",
+      "guards": [
+        {
+          "name": "tasa_envolvente",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz = 147.1 muestras/ciclo (minimo 10.2 Hz). Por debajo, los picos no se pueden ubicar."
+        },
+        {
+          "name": "tasa_discriminador",
+          "ok": true,
+          "fatal": false,
+          "detail": "250.0 Hz (minimo 68.0 Hz). Por debajo, la perdida por semiciclo queda enterrada en el error de muestreo de cada pico."
+        },
+        {
+          "name": "huecos",
+          "ok": true,
+          "fatal": false,
+          "detail": "0 intervalos > 3x la mediana (mayor = 10 ms, semiperiodo = 294 ms)"
+        },
+        {
+          "name": "tasa_nominal",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz vs 250.0 Hz nominales"
+        },
+        {
+          "name": "brazo_quieto",
+          "ok": true,
+          "fatal": false,
+          "detail": "excursion 1.8 deg (aviso sobre 4, fatal sobre 10). Con el brazo suelto el acoplamiento de 2 GDL arruina la envolvente; comprobar el R2 y `centro_estable`."
+        },
+        {
+          "name": "angulo_cambia",
+          "ok": false,
+          "fatal": true,
+          "detail": "el angulo del pendulo tomo 1 valor(es) distinto(s) en toda la captura (17510 muestras). O el pendulo no se movio, o el canal del encoder no esta leyendo. Comprobar moviendo el pendulo a mano y mirando /state."
+        },
+        {
+          "name": "vertical",
+          "ok": true,
+          "fatal": true,
+          "detail": "metodo = pre_lectura, equilibrio = -996.50 deg"
+        },
+        {
+          "name": "amplitud_minima",
+          "ok": false,
+          "fatal": true,
+          "detail": "0.0 deg (minimo 8)"
+        },
+        {
+          "name": "amplitud_objetivo",
+          "ok": false,
+          "fatal": false,
+          "detail": "partio de 0.0 deg y se pidio 15 (+-25%). Se agrupa por la amplitud medida."
+        }
+      ],
+      "notes": [
+        "no hay extremos suficientes para ubicar la vertical por puntos medios; se usa la pre-lectura con el pendulo colgando. El resultado depende de que esa pre-lectura se haya hecho de verdad.",
+        "el pendulo todavia se movia al final: no hay angulo de reposo que medir"
+      ],
+      "n": 17510,
+      "duration_s": 70.034444,
+      "rate_hz": 250.00555440977016,
+      "samples_per_cycle": 147.07682561806544,
+      "arm_span_deg": 1.7578000000000014,
+      "equilibrium_deg": -996.5039,
+      "equilibrium_method": "pre_lectura",
+      "release_idx": 17497,
+      "release_t_s": 69.986373,
+      "amp0_deg": 0.0,
+      "rest_after_deg": NaN,
+      "n_releases": 1,
+      "center_drift_deg": NaN,
+      "n_valores_alpha": 1,
+      "n_peaks": 0,
+      "n_peaks_expected_viscous": 0,
+      "half_period_s": NaN,
+      "lam_exp": NaN,
+      "r2_exp": NaN,
+      "slope_lin": NaN,
+      "r2_lin": NaN,
+      "tau_c_fit": NaN,
+      "dp_fit": NaN,
+      "se_tau_c": NaN,
+      "se_dp": NaN,
+      "t_tau_c": NaN,
+      "t_dp": NaN,
+      "lam_from_dp": NaN,
+      "cross_amp_deg": NaN,
+      "tau_c_from_rest": NaN,
+      "dp": NaN
+    },
+    {
+      "amplitud_objetivo": 60.0,
+      "verdict": "DESCARTADA",
+      "guards": [
+        {
+          "name": "tasa_envolvente",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz = 147.1 muestras/ciclo (minimo 10.2 Hz). Por debajo, los picos no se pueden ubicar."
+        },
+        {
+          "name": "tasa_discriminador",
+          "ok": true,
+          "fatal": false,
+          "detail": "250.0 Hz (minimo 68.0 Hz). Por debajo, la perdida por semiciclo queda enterrada en el error de muestreo de cada pico."
+        },
+        {
+          "name": "huecos",
+          "ok": true,
+          "fatal": false,
+          "detail": "0 intervalos > 3x la mediana (mayor = 10 ms, semiperiodo = 294 ms)"
+        },
+        {
+          "name": "tasa_nominal",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz vs 250.0 Hz nominales"
+        },
+        {
+          "name": "brazo_quieto",
+          "ok": true,
+          "fatal": false,
+          "detail": "excursion 1.9 deg (aviso sobre 4, fatal sobre 10). Con el brazo suelto el acoplamiento de 2 GDL arruina la envolvente; comprobar el R2 y `centro_estable`."
+        },
+        {
+          "name": "angulo_cambia",
+          "ok": false,
+          "fatal": true,
+          "detail": "el angulo del pendulo tomo 1 valor(es) distinto(s) en toda la captura (17523 muestras). O el pendulo no se movio, o el canal del encoder no esta leyendo. Comprobar moviendo el pendulo a mano y mirando /state."
+        },
+        {
+          "name": "vertical",
+          "ok": true,
+          "fatal": true,
+          "detail": "metodo = pre_lectura, equilibrio = -996.50 deg"
+        },
+        {
+          "name": "amplitud_minima",
+          "ok": false,
+          "fatal": true,
+          "detail": "0.0 deg (minimo 8)"
+        },
+        {
+          "name": "amplitud_objetivo",
+          "ok": false,
+          "fatal": false,
+          "detail": "partio de 0.0 deg y se pidio 60 (+-25%). Se agrupa por la amplitud medida."
+        }
+      ],
+      "notes": [
+        "no hay extremos suficientes para ubicar la vertical por puntos medios; se usa la pre-lectura con el pendulo colgando. El resultado depende de que esa pre-lectura se haya hecho de verdad.",
+        "el pendulo todavia se movia al final: no hay angulo de reposo que medir"
+      ],
+      "n": 17523,
+      "duration_s": 70.084696,
+      "rate_hz": 250.01178573992817,
+      "samples_per_cycle": 147.08049147365486,
+      "arm_span_deg": 1.9335999999999984,
+      "equilibrium_deg": -996.5039,
+      "equilibrium_method": "pre_lectura",
+      "release_idx": 17510,
+      "release_t_s": 70.036735,
+      "amp0_deg": 0.0,
+      "rest_after_deg": NaN,
+      "n_releases": 1,
+      "center_drift_deg": NaN,
+      "n_valores_alpha": 1,
+      "n_peaks": 0,
+      "n_peaks_expected_viscous": 0,
+      "half_period_s": NaN,
+      "lam_exp": NaN,
+      "r2_exp": NaN,
+      "slope_lin": NaN,
+      "r2_lin": NaN,
+      "tau_c_fit": NaN,
+      "dp_fit": NaN,
+      "se_tau_c": NaN,
+      "se_dp": NaN,
+      "t_tau_c": NaN,
+      "t_dp": NaN,
+      "lam_from_dp": NaN,
+      "cross_amp_deg": NaN,
+      "tau_c_from_rest": NaN,
+      "dp": NaN
+    },
+    {
+      "amplitud_objetivo": 35.0,
+      "verdict": "DESCARTADA",
+      "guards": [
+        {
+          "name": "tasa_envolvente",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz = 147.1 muestras/ciclo (minimo 10.2 Hz). Por debajo, los picos no se pueden ubicar."
+        },
+        {
+          "name": "tasa_discriminador",
+          "ok": true,
+          "fatal": false,
+          "detail": "250.0 Hz (minimo 68.0 Hz). Por debajo, la perdida por semiciclo queda enterrada en el error de muestreo de cada pico."
+        },
+        {
+          "name": "huecos",
+          "ok": true,
+          "fatal": false,
+          "detail": "0 intervalos > 3x la mediana (mayor = 10 ms, semiperiodo = 294 ms)"
+        },
+        {
+          "name": "tasa_nominal",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz vs 250.0 Hz nominales"
+        },
+        {
+          "name": "brazo_quieto",
+          "ok": true,
+          "fatal": false,
+          "detail": "excursion 2.1 deg (aviso sobre 4, fatal sobre 10). Con el brazo suelto el acoplamiento de 2 GDL arruina la envolvente; comprobar el R2 y `centro_estable`."
+        },
+        {
+          "name": "angulo_cambia",
+          "ok": false,
+          "fatal": true,
+          "detail": "el angulo del pendulo tomo 1 valor(es) distinto(s) en toda la captura (17566 muestras). O el pendulo no se movio, o el canal del encoder no esta leyendo. Comprobar moviendo el pendulo a mano y mirando /state."
+        },
+        {
+          "name": "vertical",
+          "ok": true,
+          "fatal": true,
+          "detail": "metodo = pre_lectura, equilibrio = -996.50 deg"
+        },
+        {
+          "name": "amplitud_minima",
+          "ok": false,
+          "fatal": true,
+          "detail": "0.0 deg (minimo 8)"
+        },
+        {
+          "name": "amplitud_objetivo",
+          "ok": false,
+          "fatal": false,
+          "detail": "partio de 0.0 deg y se pidio 35 (+-25%). Se agrupa por la amplitud medida."
+        }
+      ],
+      "notes": [
+        "no hay extremos suficientes para ubicar la vertical por puntos medios; se usa la pre-lectura con el pendulo colgando. El resultado depende de que esa pre-lectura se haya hecho de verdad.",
+        "el pendulo todavia se movia al final: no hay angulo de reposo que medir"
+      ],
+      "n": 17566,
+      "duration_s": 70.256993,
+      "rate_hz": 250.01070000248944,
+      "samples_per_cycle": 147.07985274058223,
+      "arm_span_deg": 2.109399999999999,
+      "equilibrium_deg": -996.5039,
+      "equilibrium_method": "pre_lectura",
+      "release_idx": 17553,
+      "release_t_s": 70.208942,
+      "amp0_deg": 0.0,
+      "rest_after_deg": NaN,
+      "n_releases": 1,
+      "center_drift_deg": NaN,
+      "n_valores_alpha": 1,
+      "n_peaks": 0,
+      "n_peaks_expected_viscous": 0,
+      "half_period_s": NaN,
+      "lam_exp": NaN,
+      "r2_exp": NaN,
+      "slope_lin": NaN,
+      "r2_lin": NaN,
+      "tau_c_fit": NaN,
+      "dp_fit": NaN,
+      "se_tau_c": NaN,
+      "se_dp": NaN,
+      "t_tau_c": NaN,
+      "t_dp": NaN,
+      "lam_from_dp": NaN,
+      "cross_amp_deg": NaN,
+      "tau_c_from_rest": NaN,
+      "dp": NaN
+    },
+    {
+      "amplitud_objetivo": 35.0,
+      "verdict": "VISCOSO",
+      "guards": [
+        {
+          "name": "tasa_envolvente",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz = 147.1 muestras/ciclo (minimo 10.2 Hz). Por debajo, los picos no se pueden ubicar."
+        },
+        {
+          "name": "tasa_discriminador",
+          "ok": true,
+          "fatal": false,
+          "detail": "250.0 Hz (minimo 68.0 Hz). Por debajo, la perdida por semiciclo queda enterrada en el error de muestreo de cada pico."
+        },
+        {
+          "name": "huecos",
+          "ok": true,
+          "fatal": false,
+          "detail": "0 intervalos > 3x la mediana (mayor = 10 ms, semiperiodo = 294 ms)"
+        },
+        {
+          "name": "tasa_nominal",
+          "ok": true,
+          "fatal": true,
+          "detail": "250.0 Hz vs 250.0 Hz nominales"
+        },
+        {
+          "name": "brazo_quieto",
+          "ok": true,
+          "fatal": false,
+          "detail": "excursion 2.5 deg (aviso sobre 4, fatal sobre 10). Con el brazo suelto el acoplamiento de 2 GDL arruina la envolvente; comprobar el R2 y `centro_estable`."
+        },
+        {
+          "name": "vertical",
+          "ok": true,
+          "fatal": true,
+          "detail": "metodo = puntos_medios, equilibrio = -995.62 deg"
+        },
+        {
+          "name": "centro_estable",
+          "ok": true,
+          "fatal": true,
+          "detail": "el centro de oscilacion se desplaza 0.0 deg entre el principio y el final (maximo 3)."
+        },
+        {
+          "name": "amplitud_minima",
+          "ok": true,
+          "fatal": true,
+          "detail": "43.2 deg (minimo 8)"
+        },
+        {
+          "name": "amplitud_objetivo",
+          "ok": true,
+          "fatal": false,
+          "detail": "partio de 43.2 deg y se pidio 35 (+-25%). Se agrupa por la amplitud medida."
+        },
+        {
+          "name": "periodo_plausible",
+          "ok": true,
+          "fatal": true,
+          "detail": "semiperiodo observado 288 ms vs 294 ms esperados (+-40%). Lo que oscila a esa frecuencia no es este pendulo."
+        }
+      ],
+      "notes": [
+        "el pendulo todavia se movia al final: no hay angulo de reposo que medir"
+      ],
+      "n": 17531,
+      "duration_s": 70.116787,
+      "rate_hz": 250.0114558871615,
+      "samples_per_cycle": 147.08029742317484,
+      "arm_span_deg": 2.4609000000000005,
+      "equilibrium_deg": -995.625,
+      "equilibrium_method": "puntos_medios",
+      "release_idx": 3585,
+      "release_t_s": 14.336715,
+      "amp0_deg": 43.242200000000025,
+      "rest_after_deg": NaN,
+      "n_releases": 1,
+      "center_drift_deg": 0.0,
+      "n_valores_alpha": 479,
+      "n_peaks": 152,
+      "n_peaks_expected_viscous": 238,
+      "half_period_s": 0.28803299999999865,
+      "lam_exp": 0.04088722137346128,
+      "r2_exp": 0.9965499169076273,
+      "slope_lin": 0.738770561590229,
+      "r2_lin": 0.9679811276553711,
+      "tau_c_fit": -2.978267650859694e-06,
+      "dp_fit": 1.0514108087747894e-05,
+      "se_tau_c": 3.769024283349293e-06,
+      "se_dp": 8.698956516690685e-07,
+      "t_tau_c": -0.7901959305534366,
+      "t_dp": 12.086631387999788,
+      "lam_from_dp": 0.03948871795470484,
+      "cross_amp_deg": NaN,
+      "tau_c_from_rest": NaN,
+      "dp": 1.0886468014012307e-05
+    }
+  ]
+}

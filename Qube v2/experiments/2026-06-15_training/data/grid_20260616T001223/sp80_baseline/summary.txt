@@ -1,0 +1,13 @@
+=== Grid Config: sp80_baseline ===
+
+Date: 2026-06-16T00:15:00.459040
+sp=80, ke=default
+Attempts: 10
+
+CATCH:   0/10 (0%)
+ESCAPE:  9/10 (90%)
+CHATTER: 0/10 (0%)
+MISS:    0/10 (0%)
+TRANS:   1/10 (10%)
+
+Avg stable time (catches only): 0.3s

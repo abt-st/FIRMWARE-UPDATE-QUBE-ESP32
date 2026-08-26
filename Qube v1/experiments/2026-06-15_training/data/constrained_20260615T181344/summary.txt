@@ -1,0 +1,12 @@
+=== Constrained Test sp=90 (±90.0°) ===
+
+Date: 2026-06-15T18:24:21.913806
+Attempts: 16
+
+CATCH (dentro ±90.0°): 0/16 (0%)
+CHATTER: 0/16
+ESCAPE (salió de ±90.0°): 0/16 (0%)
+TRANSIENT: 0/16
+MISS: 16/16
+
+Avg LQR stable time (within ±90.0°): 0.0s

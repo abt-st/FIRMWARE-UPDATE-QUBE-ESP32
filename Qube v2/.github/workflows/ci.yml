@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main, DRL_IMP]
+  pull_request:
+
+jobs:
+  python:
+    name: Lint & Test (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # PySide6 arranca con el backend `offscreen` (los tests fijan QT_QPA_PLATFORM),
+      # pero igual enlaza contra estas bibliotecas al importarse.
+      - name: System libs for headless Qt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon0 libdbus-1-3 libglib2.0-0
+
+      # `--extra app` no estaba, y eso dejaba fuera de CI los tests que parsean el
+      # `.ino` — o sea la unica barrera automatica entre la GUI y el firmware, que
+      # nunca llego a ejecutarse. El selector de modos mandando siempre `m=0` y los
+      # defaults de ganancias divergidos vivieron detras de ese skip.
+      - name: Install dependencies
+        run: uv sync --extra test --extra tracking --extra app
+
+      # Scoped to the packages cleaned in this pass. mcp/ still carries pre-existing
+      # lint debt; widen this once it is cleaned.
+      - name: Ruff lint
+        run: uv run ruff check src tests
+
+      - name: Ruff format check
+        run: uv run ruff format --check src tests
+
+      - name: Pytest
+        run: uv run pytest -q
+
+  firmware:
+    name: Build (ESP32 firmware)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      # Cache the toolchain + Arduino core (~500 MB); without this every run
+      # re-downloads espressif32@5.4.0.
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ hashFiles('src/firmware/platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      # credentials.h is gitignored (real WiFi secrets). The build needs it to
+      # exist, so CI compiles against the placeholder template.
+      - name: Provide placeholder credentials.h
+        run: cp src/firmware/esp32_qube/credentials.h.example src/firmware/esp32_qube/credentials.h
+
+      - name: Build firmware
+        run: pio run -e esp32dev
+        working-directory: src/firmware

@@ -1,0 +1,162 @@
+[
+  {
+    "status": "ok",
+    "run_name": "fr20_s0",
+    "seed": 0,
+    "friction_mult": 20,
+    "timesteps": 180000,
+    "elapsed_s": 1879.6014986038208,
+    "best_step": 180000,
+    "best_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr20_s0_best.zip",
+    "final_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr20_s0_final.zip",
+    "best": {
+      "episodes": 20.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.65,
+      "upright_fraction": 0.6702,
+      "max_hold_s": 2.1670000000000003,
+      "max_hold_s_best": 9.28,
+      "return_mean": 472.1534887414658
+    }
+  },
+  {
+    "status": "ok",
+    "run_name": "fr40_s0",
+    "seed": 0,
+    "friction_mult": 40,
+    "timesteps": 180000,
+    "elapsed_s": 1861.4129385948181,
+    "best_step": 480000,
+    "best_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr40_s0_best.zip",
+    "final_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr40_s0_final.zip",
+    "best": {
+      "episodes": 20.0,
+      "reach_rate": 0.95,
+      "balance_rate": 0.5,
+      "upright_fraction": 0.6064999999999999,
+      "max_hold_s": 2.3950000000000005,
+      "max_hold_s_best": 9.22,
+      "return_mean": 451.06009222172435
+    }
+  },
+  {
+    "status": "ok",
+    "run_name": "fr70_s0",
+    "seed": 0,
+    "friction_mult": 70,
+    "timesteps": 180000,
+    "elapsed_s": 1857.5959231853485,
+    "best_step": 180000,
+    "best_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr70_s0_best.zip",
+    "final_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr70_s0_final.zip",
+    "best": {
+      "episodes": 20.0,
+      "reach_rate": 0.95,
+      "balance_rate": 0.8,
+      "upright_fraction": 0.7574000000000001,
+      "max_hold_s": 3.3300000000000005,
+      "max_hold_s_best": 9.46,
+      "return_mean": 464.1256732008813
+    }
+  },
+  {
+    "status": "ok",
+    "run_name": "fr100_s0",
+    "seed": 0,
+    "friction_mult": 100,
+    "timesteps": 180000,
+    "elapsed_s": 1876.1340851783752,
+    "best_step": 435000,
+    "best_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr100_s0_best.zip",
+    "final_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr100_s0_final.zip",
+    "best": {
+      "episodes": 20.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.7,
+      "upright_fraction": 0.7184999999999999,
+      "max_hold_s": 3.3899999999999997,
+      "max_hold_s_best": 9.32,
+      "return_mean": 474.4528678963194
+    }
+  },
+  {
+    "status": "ok",
+    "run_name": "fr20_s1",
+    "seed": 1,
+    "friction_mult": 20,
+    "timesteps": 180000,
+    "elapsed_s": 1860.9243688583374,
+    "best_step": 345000,
+    "best_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr20_s1_best.zip",
+    "final_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr20_s1_final.zip",
+    "best": {
+      "episodes": 20.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.7,
+      "upright_fraction": 0.7767999999999999,
+      "max_hold_s": 5.016000000000001,
+      "max_hold_s_best": 9.28,
+      "return_mean": 474.732180538238
+    }
+  },
+  {
+    "status": "ok",
+    "run_name": "fr40_s1",
+    "seed": 1,
+    "friction_mult": 40,
+    "timesteps": 180000,
+    "elapsed_s": 1857.5822336673737,
+    "best_step": 480000,
+    "best_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr40_s1_best.zip",
+    "final_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr40_s1_final.zip",
+    "best": {
+      "episodes": 20.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.5,
+      "upright_fraction": 0.6373000000000001,
+      "max_hold_s": 2.0360000000000005,
+      "max_hold_s_best": 9.18,
+      "return_mean": 475.42748619406484
+    }
+  },
+  {
+    "status": "ok",
+    "run_name": "fr70_s1",
+    "seed": 1,
+    "friction_mult": 70,
+    "timesteps": 180000,
+    "elapsed_s": 1855.4553163051605,
+    "best_step": 435000,
+    "best_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr70_s1_best.zip",
+    "final_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr70_s1_final.zip",
+    "best": {
+      "episodes": 20.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.3,
+      "upright_fraction": 0.5803,
+      "max_hold_s": 1.317,
+      "max_hold_s_best": 8.84,
+      "return_mean": 473.34481734086296
+    }
+  },
+  {
+    "status": "ok",
+    "run_name": "fr100_s1",
+    "seed": 1,
+    "friction_mult": 100,
+    "timesteps": 180000,
+    "elapsed_s": 1860.4240300655365,
+    "best_step": 345000,
+    "best_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr100_s1_best.zip",
+    "final_model_path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_ft_fr100_s1_final.zip",
+    "best": {
+      "episodes": 20.0,
+      "reach_rate": 0.95,
+      "balance_rate": 0.25,
+      "upright_fraction": 0.5524,
+      "max_hold_s": 2.094,
+      "max_hold_s_best": 9.24,
+      "return_mean": 439.93759298445656
+    }
+  }
+]

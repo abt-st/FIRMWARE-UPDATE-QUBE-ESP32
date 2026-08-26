@@ -1,0 +1,290 @@
+[
+  {
+    "model": "cur0.3_s0",
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_cur0.3_s0_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.95,
+      "upright_fraction": 0.8486,
+      "max_hold_s": 6.6331999999999995,
+      "max_hold_s_best": 9.28,
+      "return_mean": 446.23174174642156
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.88,
+      "upright_fraction": 0.8899799999999999,
+      "max_hold_s": 6.902399999999999,
+      "max_hold_s_best": 9.86,
+      "return_mean": 470.9524822590618
+    }
+  },
+  {
+    "model": "cur0.3_s1",
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_cur0.3_s1_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 0.98,
+      "balance_rate": 0.59,
+      "upright_fraction": 0.74942,
+      "max_hold_s": 3.5682000000000005,
+      "max_hold_s_best": 9.3,
+      "return_mean": 451.51782406411354
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.63,
+      "upright_fraction": 0.84488,
+      "max_hold_s": 4.3312,
+      "max_hold_s_best": 9.88,
+      "return_mean": 482.0187825193281
+    }
+  },
+  {
+    "model": "cur0.3_s2",
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_cur0.3_s2_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.62,
+      "upright_fraction": 0.73596,
+      "max_hold_s": 3.9686000000000003,
+      "max_hold_s_best": 9.200000000000001,
+      "return_mean": 451.25264977507817
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.64,
+      "upright_fraction": 0.82844,
+      "max_hold_s": 4.2882,
+      "max_hold_s_best": 9.88,
+      "return_mean": 483.7006522099694
+    }
+  },
+  {
+    "model": "cur0.3_s3",
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_cur0.3_s3_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.0,
+      "upright_fraction": 0.01348,
+      "max_hold_s": 0.0286,
+      "max_hold_s_best": 0.26,
+      "return_mean": 304.1085454087356
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.0,
+      "upright_fraction": 0.015700000000000002,
+      "max_hold_s": 0.038000000000000006,
+      "max_hold_s_best": 0.24,
+      "return_mean": 310.76897580003407
+    }
+  },
+  {
+    "model": "cur0.4_s0",
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_cur0.4_s0_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.02,
+      "upright_fraction": 0.5025600000000001,
+      "max_hold_s": 0.40700000000000003,
+      "max_hold_s_best": 1.1,
+      "return_mean": 442.1455799287694
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.05,
+      "upright_fraction": 0.61538,
+      "max_hold_s": 0.6642,
+      "max_hold_s_best": 9.28,
+      "return_mean": 459.2171252597377
+    }
+  },
+  {
+    "model": "cur0.4_s1",
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_cur0.4_s1_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.0,
+      "upright_fraction": 0.55536,
+      "max_hold_s": 0.2846,
+      "max_hold_s_best": 0.54,
+      "return_mean": 431.2396853988566
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.0,
+      "upright_fraction": 0.5928800000000001,
+      "max_hold_s": 0.31420000000000003,
+      "max_hold_s_best": 0.7000000000000001,
+      "return_mean": 450.28813429531465
+    }
+  },
+  {
+    "model": "cur0.4_s2",
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_cur0.4_s2_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.08,
+      "upright_fraction": 0.42635999999999996,
+      "max_hold_s": 0.6648000000000001,
+      "max_hold_s_best": 8.1,
+      "return_mean": 454.5920522417562
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.08,
+      "upright_fraction": 0.43389999999999995,
+      "max_hold_s": 0.8558000000000001,
+      "max_hold_s_best": 9.78,
+      "return_mean": 474.06072907022667
+    }
+  },
+  {
+    "model": "cur0.4_s3",
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_cur0.4_s3_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.0,
+      "upright_fraction": 0.14332,
+      "max_hold_s": 0.1734,
+      "max_hold_s_best": 0.62,
+      "return_mean": 358.07935962248047
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.0,
+      "upright_fraction": 0.17876,
+      "max_hold_s": 0.1968,
+      "max_hold_s_best": 0.58,
+      "return_mean": 383.1692353920151
+    }
+  },
+  {
+    "model": "cur0.5_s0",
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_cur0.5_s0_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 0.99,
+      "balance_rate": 0.89,
+      "upright_fraction": 0.8011800000000001,
+      "max_hold_s": 4.863600000000001,
+      "max_hold_s_best": 9.36,
+      "return_mean": 463.41379150896637
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.89,
+      "upright_fraction": 0.8943739726027397,
+      "max_hold_s": 6.489000000000001,
+      "max_hold_s_best": 9.9,
+      "return_mean": 483.06046370002144
+    }
+  },
+  {
+    "model": "cur0.5_s1",
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_cur0.5_s1_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.29,
+      "upright_fraction": 0.298,
+      "max_hold_s": 0.6587999999999999,
+      "max_hold_s_best": 1.46,
+      "return_mean": 423.30240688459924
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.13,
+      "upright_fraction": 0.3262,
+      "max_hold_s": 0.507,
+      "max_hold_s_best": 1.6,
+      "return_mean": 452.37722016162877
+    }
+  },
+  {
+    "model": "cur0.5_s2",
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_cur0.5_s2_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.9,
+      "upright_fraction": 0.8346600000000001,
+      "max_hold_s": 5.850599999999999,
+      "max_hold_s_best": 9.18,
+      "return_mean": 462.7850291258915
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.93,
+      "upright_fraction": 0.91742,
+      "max_hold_s": 6.486200000000001,
+      "max_hold_s_best": 9.88,
+      "return_mean": 488.79244918584044
+    }
+  },
+  {
+    "model": "cur0.5_s3",
+    "path": "C:\\Users\\Anton\\OneDrive\\Desktop\\Uni\\~TESIS\\QUBE\\experiments\\2026-06-23_r7_curriculum_sweep\\models\\r7_cur0.5_s3_best.zip",
+    "status": "ok",
+    "episodes": 100,
+    "std": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.54,
+      "upright_fraction": 0.78748,
+      "max_hold_s": 3.0902000000000003,
+      "max_hold_s_best": 9.18,
+      "return_mean": 435.78635882271226
+    },
+    "apex": {
+      "episodes": 100.0,
+      "reach_rate": 1.0,
+      "balance_rate": 0.52,
+      "upright_fraction": 0.88094,
+      "max_hold_s": 3.4723999999999995,
+      "max_hold_s_best": 9.82,
+      "return_mean": 452.6972457553157
+    }
+  }
+]

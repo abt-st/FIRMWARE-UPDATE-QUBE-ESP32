@@ -1,0 +1,58 @@
+[
+  {
+    "ciclo": 1,
+    "count_antes": 1420,
+    "count_despues": 1422,
+    "wraps": 0,
+    "deriva_cuentas": 2,
+    "deriva_deg": 0.35,
+    "alpha_colgando_despues": 0.35,
+    "vel_max_dps": 492.0,
+    "trans_reason": 0,
+    "trans_alpha": 0.0,
+    "trans_energy": 0.0,
+    "muestras": 6367
+  },
+  {
+    "ciclo": 2,
+    "count_antes": 1422,
+    "count_despues": 1422,
+    "wraps": 0,
+    "deriva_cuentas": 0,
+    "deriva_deg": 0.0,
+    "alpha_colgando_despues": 0.0,
+    "vel_max_dps": 260.0,
+    "trans_reason": 0,
+    "trans_alpha": 0.0,
+    "trans_energy": 0.0,
+    "muestras": 6372
+  },
+  {
+    "ciclo": 3,
+    "count_antes": 1422,
+    "count_despues": 1426,
+    "wraps": 0,
+    "deriva_cuentas": 4,
+    "deriva_deg": 0.7,
+    "alpha_colgando_despues": 0.7,
+    "vel_max_dps": 269.0,
+    "trans_reason": 0,
+    "trans_alpha": 0.0,
+    "trans_energy": 0.0,
+    "muestras": 6340
+  },
+  {
+    "ciclo": 4,
+    "count_antes": 1426,
+    "count_despues": 1430,
+    "wraps": 0,
+    "deriva_cuentas": 4,
+    "deriva_deg": 0.7,
+    "alpha_colgando_despues": 0.7,
+    "vel_max_dps": 223.0,
+    "trans_reason": 0,
+    "trans_alpha": 0.0,
+    "trans_energy": 0.0,
+    "muestras": 6384
+  }
+]

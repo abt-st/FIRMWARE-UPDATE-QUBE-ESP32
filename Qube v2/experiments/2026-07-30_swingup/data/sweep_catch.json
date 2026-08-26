@@ -1,0 +1,54 @@
+[
+  {
+    "tn": 175,
+    "traspaso": false,
+    "t_en_lqr_s": 0.0,
+    "t_arriba_s": 0.0,
+    "alpha_al_traspasar": 0.0,
+    "vel_al_traspasar": 0.0,
+    "E_al_traspasar": 0.0,
+    "alpha_max": 159.1,
+    "theta_max": 103.4,
+    "murio": true,
+    "rep": 1
+  },
+  {
+    "tn": 175,
+    "traspaso": false,
+    "t_en_lqr_s": 0.0,
+    "t_arriba_s": 0.0,
+    "alpha_al_traspasar": 0.0,
+    "vel_al_traspasar": 0.0,
+    "E_al_traspasar": 0.0,
+    "alpha_max": 160.3,
+    "theta_max": 123.0,
+    "murio": true,
+    "rep": 2
+  },
+  {
+    "tn": 175,
+    "traspaso": false,
+    "t_en_lqr_s": 0.0,
+    "t_arriba_s": 0.0,
+    "alpha_al_traspasar": 0.0,
+    "vel_al_traspasar": 0.0,
+    "E_al_traspasar": 0.0,
+    "alpha_max": 159.1,
+    "theta_max": 106.7,
+    "murio": true,
+    "rep": 3
+  },
+  {
+    "tn": 175,
+    "traspaso": false,
+    "t_en_lqr_s": 0.0,
+    "t_arriba_s": 0.0,
+    "alpha_al_traspasar": 0.0,
+    "vel_al_traspasar": 0.0,
+    "E_al_traspasar": 0.0,
+    "alpha_max": 160.5,
+    "theta_max": 104.3,
+    "murio": true,
+    "rep": 4
+  }
+]

@@ -1,0 +1,788 @@
+"""
+MCP Server para el proyecto QUBE Servo ESP32.
+Proporciona herramientas para:
+  - Flash/firmware: compilar, subir, monitor serial
+  - Control HTTP: interactuar con el ESP32 en vivo (get state, send cmd, set PID)
+  - Análisis: leer y analizar archivos CSV de datos experimentales
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import requests
+
+try:
+    from mcp.server.fastmcp import FastMCP
+except ImportError as e:
+    print(
+        f"Dependencia faltante: {e}. Instale con: uv add mcp[cli] requests",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+# ── Configuración global ──────────────────────────────────────────────────────
+
+FIRMWARE_DIR = Path(__file__).resolve().parent.parent / "firmware"
+EXPERIMENTS_DIR = Path(__file__).resolve().parent.parent / "experiments"
+INOTEO_FILE = FIRMWARE_DIR / "esp32_qube" / "esp32_qube.ino"
+PLATFORMIO_INI = FIRMWARE_DIR / "platformio.ini"
+
+# ── Servidor MCP ──────────────────────────────────────────────────────────────
+
+mcp = FastMCP(
+    "qube-esp32",
+)
+
+# Estado global del cliente HTTP
+_client_state: dict[str, Any] = {
+    "ip": "192.168.4.1",
+    "timeout": 2.0,
+    "connected": False,
+}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  HERRAMIENTAS — Firmware / PlatformIO
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _run_pio(args: list[str]) -> str:
+    """Ejecuta un comando PlatformIO y retorna la salida."""
+    cmd = ["pio", *args]
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(FIRMWARE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        output = result.stdout
+        if result.stderr:
+            output += "\n--- STDERR ---\n" + result.stderr
+        return f"[Exit code: {result.returncode}]\n{output}"
+    except FileNotFoundError:
+        return "Error: 'pio' (PlatformIO) no encontrado. Verifique que está en PATH."
+    except subprocess.TimeoutExpired:
+        return "Error: El comando PlatformIO excedió 5 minutos de timeout."
+
+
+@mcp.tool()
+def pio_compile(environment: str = "esp32dev") -> str:
+    """Compila el firmware del QUBE ESP32 usando PlatformIO.
+
+    Args:
+        environment: Entorno de PlatformIO (por defecto 'esp32dev').
+
+    Returns:
+        Salida de la compilación con estado de éxito/error.
+    """
+    return _run_pio(["run", "-e", environment])
+
+
+@mcp.tool()
+def pio_upload(environment: str = "esp32dev") -> str:
+    """Compila y sube el firmware al ESP32 conectado.
+
+    Args:
+        environment: Entorno de PlatformIO (por defecto 'esp32dev').
+
+    Returns:
+        Salida del upload con estado de éxito/error.
+    """
+    return _run_pio(["run", "-e", environment, "--target", "upload"])
+
+
+@mcp.tool()
+def pio_clean(environment: str = "esp32dev") -> str:
+    """Limpia los archivos de build del firmware.
+
+    Args:
+        environment: Entorno de PlatformIO (por defecto 'esp32dev').
+
+    Returns:
+        Salida de la limpieza.
+    """
+    return _run_pio(["run", "-e", environment, "--target", "clean"])
+
+
+@mcp.tool()
+def pio_ota_flash(
+    ip: str = "192.168.4.1",
+) -> str:
+    """Compila y flashea el firmware al ESP32 por WiFi (OTA).
+
+    Requiere que el ESP32 esté encendido y ejecutando un firmware con ArduinoOTA
+    habilitado. Con el firmware en SoftAP puro (rol por defecto), el PC debe estar
+    ASOCIADO a la red QUBE-ESP32; para una placa AP+STA, pasar 192.168.100.50.
+
+    Args:
+        ip: Dirección IP del ESP32 (default: 192.168.4.1, SoftAP).
+
+    Returns:
+        Salida de la compilación y upload OTA con estado de éxito/error.
+    """
+    cmd = [
+        "pio",
+        "run",
+        "-e",
+        "esp32dev_ota",
+        "--target",
+        "upload",
+        "--upload-port",
+        ip,
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(FIRMWARE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        output = result.stdout
+        if result.stderr:
+            output += "\n--- STDERR ---\n" + result.stderr
+        return f"[Exit code: {result.returncode}]\n{output}"
+    except FileNotFoundError:
+        return "Error: 'pio' (PlatformIO) no encontrado en PATH."
+    except subprocess.TimeoutExpired:
+        return "Error: Upload OTA excedió 3 minutos de timeout."
+
+
+@mcp.tool()
+def pio_serial_monitor(baud: int = 115200, _lines: int = 50) -> str:
+    """Lee las últimas líneas del monitor serial del ESP32.
+
+    Abre una conexión serial breve y captura las líneas disponibles.
+
+    Args:
+        baud: Velocidad del baud rate (por defecto 115200).
+        lines: Número de líneas a capturar.
+
+    Returns:
+        Las últimas líneas leídas del serial, o un error si no hay conexión.
+    """
+    # Primero intentamos encontrar el puerto serial del ESP32
+    try:
+        result = subprocess.run(
+            ["pio", "device", "list"],
+            cwd=str(FIRMWARE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        serial_ports = result.stdout.strip()
+    except Exception as e:
+        serial_ports = f"No se pudieron listar puertos: {e}"
+
+    return (
+        f"Puertos seriales detectados:\n{serial_ports}\n\n"
+        "Nota: Para lectura continua del monitor serial, use:\n"
+        f"  pio device monitor -b {baud} --echo\n"
+        f"  (en la terminal de PlatformIO)\n\n"
+        "Opcionalmente puede usar herramientas externas como:\n"
+        f"  python -m serial.tools.miniterm {serial_ports.split(chr(10))[0] if serial_ports and chr(10) in serial_ports else 'COM3'} {baud}"
+    )
+
+
+@mcp.tool()
+def read_firmware_source() -> str:
+    """Lee el código fuente completo del firmware principal (esp32_qube.ino).
+
+    Returns:
+        Contenido del archivo .ino con su ruta absoluta.
+    """
+    if not INOTEO_FILE.exists():
+        return f"Error: No se encontró {INOTEO_FILE}"
+    content = INOTEO_FILE.read_text(encoding="utf-8")
+    return f"📄 {INOTEO_FILE.name} ({len(content)} caracteres)\n\n{content}"
+
+
+@mcp.tool()
+def get_firmware_info() -> str:
+    """Obtiene información del proyecto PlatformIO: entornos, dependencias, config.
+
+    Returns:
+        Resumen de la configuración del proyecto firmware.
+    """
+    info_parts: list[str] = []
+
+    # platformio.ini
+    if PLATFORMIO_INI.exists():
+        info_parts.append(f"=== platformio.ini ===\n{PLATFORMIO_INI.read_text(encoding='utf-8')}")
+
+    # Estructura del directorio firmware
+    info_parts.append("\n=== Estructura del firmware ===")
+    for item in sorted(FIRMWARE_DIR.rglob("*")):
+        if item.is_file() and not any(d in str(item) for d in [".pio", "__pycache__"]):
+            rel = item.relative_to(FIRMWARE_DIR)
+            info_parts.append(f"  {rel}")
+
+    return "\n".join(info_parts)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  HERRAMIENTAS — Control HTTP del ESP32 en vivo
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _http_get(endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Realiza una petición HTTP GET al ESP32."""
+    url = f"http://{_client_state['ip']}/{endpoint}"
+    resp = requests.get(url, params=params, timeout=_client_state["timeout"])
+    resp.raise_for_status()
+    return (
+        resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"response": resp.text}
+    )
+
+
+@mcp.tool()
+def qube_connect(ip: str = "192.168.4.1", timeout: float = 2.0) -> str:
+    """Configura la conexión al ESP32 y verifica que esté disponible.
+
+    Args:
+        ip: Dirección IP del ESP32 (default: 192.168.4.1, modo AP).
+        timeout: Timeout HTTP en segundos.
+
+    Returns:
+        Estado de la conexión y datos iniciales del dispositivo.
+    """
+    _client_state["ip"] = ip
+    _client_state["timeout"] = timeout
+
+    try:
+        data = _http_get("state")
+        _client_state["connected"] = True
+        return f"✅ Conectado a ESP32 en {ip}\n\nEstado actual:\n{_format_state(data)}"
+    except requests.exceptions.ConnectionError:
+        _client_state["connected"] = False
+        return f"❌ Sin conexión a {ip} — Verifique que el ESP32 está encendido y en modo AP"
+    except requests.exceptions.Timeout:
+        _client_state["connected"] = False
+        return f"❌ Timeout conectando a {ip}"
+    except Exception as e:
+        _client_state["connected"] = False
+        return f"❌ Error: {e}"
+
+
+@mcp.tool()
+def qube_get_state() -> str:
+    """Obtiene el estado actual del sistema QUBE (posicion, modo, PWM, potencia).
+
+    Returns:
+        Estado actual formateado del ESP32.
+    """
+    try:
+        data = _http_get("state")
+        return _format_state(data)
+    except Exception as e:
+        return f"❌ Error obteniendo estado: {e}"
+
+
+@mcp.tool()
+def qube_send_command(
+    m: int | None = None,
+    s: float | None = None,
+    p: int | None = None,
+    x: int | None = None,
+    z: int | None = None,
+    kp: float | None = None,
+    ki: float | None = None,
+    kd: float | None = None,
+    cpr: float | None = None,
+    ed: int | None = None,
+) -> str:
+    """Envía un comando al ESP32 a través de /cmd.
+
+    Todos los parámetros son opcionales; solo se envían los no-nulos.
+
+    Args:
+        m: Modo de operación (0=idle, 1=open-loop, 2=closed-loop, 3=open-loop-voltage).
+        s: Setpoint en grados.
+        p: Valor PWM directo (-255 a 255).
+        x: Kill switch (1=detener motor).
+        z: Zero encoder (1=poner origen).
+        kp: Ganancia Kp del PID.
+        ki: Ganancia Ki del PID.
+        kd: Ganancia Kd del PID.
+        cpr: Cuentas por revolución del encoder.
+        ed: Dirección del encoder (1 o -1).
+
+    Returns:
+        Respuesta del ESP32 al comando.
+    """
+    params: dict[str, Any] = {}
+    if m is not None:
+        params["m"] = m
+    if s is not None:
+        params["s"] = round(s, 2)
+    if p is not None:
+        params["p"] = int(p)
+    if x is not None:
+        params["x"] = int(x)
+    if z is not None:
+        params["z"] = int(z)
+    if kp is not None:
+        params["kp"] = kp
+    if ki is not None:
+        params["ki"] = ki
+    if kd is not None:
+        params["kd"] = kd
+    if cpr is not None:
+        params["cpr"] = round(cpr, 1)
+    if ed is not None:
+        params["ed"] = int(ed)
+
+    if not params:
+        return "⚠️ No se especificó ningún parámetro. Use al menos uno (m, s, p, x, z, kp, ki, kd, cpr, ed)."
+
+    cmd_str = ", ".join(f"{k}={v}" for k, v in params.items())
+    try:
+        _http_get("cmd", params=params)
+        return f"✅ Comando enviado: {cmd_str}"
+    except Exception as e:
+        return f"❌ Error enviando comando ({cmd_str}): {e}"
+
+
+@mcp.tool()
+def qube_set_pid(kp: float, ki: float, kd: float) -> str:
+    """Configura los parámetros PID del controlador QUBE.
+
+    Args:
+        kp: Ganancia proporcional.
+        ki: Ganancia integral.
+        kd: Ganancia derivativa.
+
+    Returns:
+        Confirmación del envío.
+    """
+    try:
+        _http_get("cmd", params={"kp": kp, "ki": ki, "kd": kd})
+        return f"✅ PID configurado: Kp={kp}, Ki={ki}, Kd={kd}"
+    except Exception as e:
+        return f"❌ Error configurando PID: {e}"
+
+
+@mcp.tool()
+def qube_stop_motor() -> str:
+    """Detiene el motor inmediatamente (kill switch).
+
+    Returns:
+        Confirmación de la acción.
+    """
+    try:
+        _http_get("cmd", params={"x": 1})
+        return "✅ Motor detenido"
+    except Exception as e:
+        return f"❌ Error deteniendo motor: {e}"
+
+
+@mcp.tool()
+def qube_set_wifi(ssid: str, password: str) -> str:
+    """Guarda credenciales WiFi en NVS del ESP32 (no se suben al repo).
+
+    Args:
+        ssid: Nombre de la red WiFi (1-32 caracteres).
+        password: Contraseña de la red (mínimo 8 caracteres).
+
+    Returns:
+        Confirmación de que las credenciales fueron guardadas.
+    """
+    if len(ssid) == 0 or len(ssid) > 32:
+        return "❌ SSID debe tener 1-32 caracteres"
+    if len(password) < 8:
+        return "❌ Password debe tener al menos 8 caracteres"
+    try:
+        _http_get("cmd", params={"wifi_ssid": ssid, "wifi_pass": password})
+        return f"✅ Credenciales WiFi guardadas para '{ssid}'. Reinicie el ESP32 para conectar."
+    except Exception as e:
+        return f"❌ Error guardando WiFi: {e}"
+
+
+@mcp.tool()
+def qube_wifi_reconnect() -> str:
+    """Reconecta el ESP32 a la red WiFi (usa credenciales previamente guardadas).
+
+    Returns:
+        Estado de la reconexión.
+    """
+    try:
+        _http_get("cmd", params={"wifi_reconnect": 1})
+        return "✅ Reconexión WiFi iniciada"
+    except Exception as e:
+        return f"❌ Error reconectando: {e}"
+
+
+@mcp.tool()
+def qube_set_mode(mode: int) -> str:
+    """Cambia el modo de operación del QUBE.
+
+    Args:
+        mode: 0=STOP, 1=PWM Manual, 2=PID Servo, 4=LQR Invertido,
+              5=Swing-up, 6=Deep RL (control por agente Python).
+
+    Returns:
+        Confirmación del cambio de modo.
+
+    Warning:
+        Si un agente RL está activo en modo 6, cambiar a otro modo
+        interrumpirá el entrenamiento/inferencia en curso.
+    """
+    mode_names = {
+        0: "STOP",
+        1: "PWM Manual",
+        2: "PID Servo",
+        4: "LQR Invertido",
+        5: "Swing-up",
+        6: "Deep RL",
+    }
+    try:
+        _http_get("cmd", params={"m": mode})
+        return f"✅ Modo cambiado a: {mode_names.get(mode, f'Modo {mode}')}"
+    except Exception as e:
+        return f"❌ Error cambiando modo: {e}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  HERRAMIENTAS — Deep RL (modo 6)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+#  CONCURRENCIA: Estas herramientas y el agente RL (QubeRealEnv) hablan al
+#  mismo ESP32 por HTTP.  La lectura (/rl_state) es segura simultáneamente.
+#  La escritura (/rl_cmd) NO lo es — el agente RL debe ser el único escritor
+#  cuando está activo.  Usa estas herramientas para inspeccionar o depurar,
+#  no para enviar acciones mientras el agente entrena.
+
+
+@mcp.tool()
+def qube_rl_get_state() -> str:
+    """Lee el estado compacto del agente RL (modo 6).
+
+    Retorna theta, alpha (rad) y velocidades angulares (rad/s) desde
+    el endpoint /rl_state del ESP32.  Útil para monitorear el agente RL
+    sin interferir con su control.
+
+    Returns:
+        Estado del sistema en formato legible.
+    """
+    try:
+        data = _http_get("rl_state")
+        th_deg = data.get("th", 0) * 57.2958
+        al_deg = data.get("al", 0) * 57.2958
+        return (
+            f"RL State (modo 6):\n"
+            f"  theta (servo):    {th_deg:+.1f} deg ({data.get('th', 0):.4f} rad)\n"
+            f"  alpha (pendulum): {al_deg:+.1f} deg ({data.get('al', 0):.4f} rad)\n"
+            f"  theta_dot: {data.get('thd', 0):.4f} rad/s\n"
+            f"  alpha_dot: {data.get('ald', 0):.4f} rad/s"
+        )
+    except Exception as e:
+        return f"❌ Error leyendo estado RL: {e}"
+
+
+@mcp.tool()
+def qube_rl_send_action(action: float) -> str:
+    """Envía una acción al agente RL (modo 6).
+
+    ⚠️  USAR SOLO PARA DEPURACIÓN.  No enviar acciones mientras el agente
+    RL está entrenando — causa conflicto de escritura (last-write-wins).
+
+    Args:
+        action: Valor en [-1.0, 1.0].  0 = sin movimiento.
+
+    Returns:
+        Confirmación de la acción enviada.
+    """
+    action = max(-1.0, min(1.0, action))
+    try:
+        _http_get("rl_cmd", params={"a": f"{action:.4f}"})
+        pwm_pct = abs(action) * 100
+        direction = "CW" if action >= 0 else "CCW"
+        return f"✅ Acción RL: {action:.4f} ({pwm_pct:.0f}% {direction})"
+    except Exception as e:
+        return f"❌ Error enviando acción RL: {e}"
+
+
+@mcp.tool()
+def qube_rl_reset() -> str:
+    """Resetea encoders y estado del agente RL (modo 6).
+
+    Equivale a /rl_cmd?r=1.  Detiene el motor, resetea encoders a cero
+    y limpia los filtros de velocidad.
+
+    Returns:
+        Confirmación del reset.
+    """
+    try:
+        _http_get("rl_cmd", params={"r": "1"})
+        return "✅ RL reset completo: encoders en 0, motor detenido."
+    except Exception as e:
+        return f"❌ Error en reset RL: {e}"
+
+
+@mcp.tool()
+def qube_zero(servo: bool = True, pendulum: bool = False) -> str:
+    """Zeroa el encoder del servo y/o péndulo en modo RL (sin resetear PID).
+
+    Equivale a /rl_cmd?z=1 (servo) y/o /rl_cmd?zp=1 (péndulo).
+    Setea el offset para que la posición actual sea el origen.
+    NO resetea el PID ni detiene el motor — seguro durante operación RL.
+
+    Args:
+        servo: Zeroear encoder del servo (θ). Default True.
+        pendulum: Zeroear encoder del péndulo (α). Default False.
+
+    Returns:
+        Confirmación del zero.
+    """
+    results: list[str] = []
+    try:
+        if servo:
+            _http_get("rl_cmd", params={"z": "1"})
+            results.append("servo θ=0")
+        if pendulum:
+            _http_get("rl_cmd", params={"zp": "1"})
+            results.append("péndulo α=0")
+        if not results:
+            return "⚠️ Selecciona al menos servo=True o pendulum=True."
+        return f"✅ Zero aplicado: {', '.join(results)}."
+    except Exception as e:
+        return f"❌ Error en zero ({', '.join(results)}): {e}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  HERRAMIENTAS — Análisis de datos CSV
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@mcp.tool()
+def qube_list_experiments() -> str:
+    """Lista todos los archivos CSV de datos experimentales disponibles.
+
+    Returns:
+        Lista de archivos CSV con su fecha, experimento y tamaño.
+    """
+    if not EXPERIMENTS_DIR.exists():
+        return f"Directorio de experimentos no encontrado: {EXPERIMENTS_DIR}"
+
+    csv_files = sorted(EXPERIMENTS_DIR.rglob("*.csv"), key=lambda f: f.stat().st_mtime, reverse=True)
+    if not csv_files:
+        return f"No hay archivos CSV en {EXPERIMENTS_DIR}"
+
+    lines: list[str] = [f"📁 {EXPERIMENTS_DIR}\n"]
+    for f in csv_files:
+        rel = f.relative_to(EXPERIMENTS_DIR)
+        size_kb = f.stat().st_size / 1024
+        mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        lines.append(f"  📊 {rel} ({size_kb:.1f} KB) — {mtime}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def qube_read_csv(filename: str, max_rows: int = 100) -> str:
+    """Lee un archivo CSV de experimento QUBE y muestra su contenido.
+
+    Args:
+        filename: Nombre del archivo CSV (solo nombre, sin ruta completa).
+        max_rows: Máximo de filas a mostrar (default: 100).
+
+    Returns:
+        Contenido del CSV con header y primeras filas, o resumen si es muy grande.
+    """
+    csv_path = EXPERIMENTS_DIR / filename
+    if not csv_path.exists():
+        # Buscar parcialmente en todos los subdirectorios
+        matches = sorted(EXPERIMENTS_DIR.rglob(f"*{filename}*"), key=lambda f: f.stat().st_mtime, reverse=True)
+        if matches:
+            csv_path = matches[0]
+        else:
+            return f"❌ No se encontró '{filename}' en {EXPERIMENTS_DIR}"
+
+    content = csv_path.read_text(encoding="utf-8")
+    lines = content.strip().split("\n")
+    total_rows = len(lines) - 1  # Excluir header
+
+    if total_rows <= max_rows:
+        return f"📄 {csv_path.name} ({total_rows} filas)\n\n{content}"
+    else:
+        header = lines[0]
+        preview = "\n".join(lines[1 : max_rows + 1])
+        return f"📄 {csv_path.name} ({total_rows} filas, mostrando primeras {max_rows})\n\n{header}\n{preview}\n..."
+
+
+@mcp.tool()
+def qube_analyze_csv(filename: str) -> str:
+    """Analiza un archivo CSV de experimento QUBE y extrae métricas clave.
+
+    Calcula: overshoot, tiempo de establecimiento, error estacionario,
+    rango de PWM, corriente máxima, etc.
+
+    Args:
+        filename: Nombre del archivo CSV (solo nombre, sin ruta completa).
+
+    Returns:
+        Resumen analítico con métricas clave del experimento.
+    """
+    csv_path = EXPERIMENTS_DIR / filename
+    if not csv_path.exists():
+        matches = sorted(EXPERIMENTS_DIR.rglob(f"*{filename}*"), key=lambda f: f.stat().st_mtime, reverse=True)
+        if matches:
+            csv_path = matches[0]
+        else:
+            return f"❌ No se encontró '{filename}' en {EXPERIMENTS_DIR}"
+
+    content = csv_path.read_text(encoding="utf-8")
+    lines = content.strip().split("\n")
+    if len(lines) < 2:
+        return "❌ CSV vacío o sin datos"
+
+    header = lines[0].split(",")
+    data_rows: list[list[float]] = []
+    for line in lines[1:]:
+        try:
+            vals = [float(x.strip()) for x in line.split(",")]
+            data_rows.append(vals)
+        except ValueError:
+            continue
+
+    if not data_rows:
+        return "❌ No se pudieron parsear los datos"
+
+    # Mapear columnas por nombre conocido
+    col_map = {h.strip().lower(): i for i, h in enumerate(header)}
+
+    report: list[str] = [f"📊 Análisis de {csv_path.name}", f"   Filas de datos: {len(data_rows)}", ""]
+
+    # Posición (position_deg o similar)
+    pos_key = next(
+        (k for k in col_map if "position" in k and "deg" in k),
+        next((k for k in col_map if "pos" in k), None),
+    )
+    if pos_key is not None and pos_key in col_map:
+        positions = [row[col_map[pos_key]] for row in data_rows if col_map[pos_key] < len(row)]
+        if positions:
+            report.append("📍 Posición (grados):")
+            report.append(f"   Mín: {min(positions):.2f}°")
+            report.append(f"   Máx: {max(positions):.2f}°")
+            report.append(f"   Media: {sum(positions) / len(positions):.2f}°")
+            report.append(f"   Final: {positions[-1]:.2f}°")
+
+    # Error
+    error_key = next(
+        (k for k in col_map if "error" in k),
+        None,
+    )
+    if error_key is not None and error_key in col_map:
+        errors = [row[col_map[error_key]] for row in data_rows if col_map[error_key] < len(row)]
+        if errors:
+            abs_errors = [abs(e) for e in errors]
+            report.append("\n🎯 Error:")
+            report.append(f"   |Error| final: {abs_errors[-1]:.2f}°")
+            report.append(f"   |Error| max: {max(abs_errors):.2f}°")
+            report.append(f"   |Error| medio: {sum(abs_errors) / len(abs_errors):.2f}°")
+
+    # PWM
+    pwm_key = next((k for k in col_map if "pwm" in k), None)
+    if pwm_key is not None and pwm_key in col_map:
+        pwms = [row[col_map[pwm_key]] for row in data_rows if col_map[pwm_key] < len(row)]
+        if pwms:
+            report.append("\n⚡ PWM:")
+            report.append(f"   Rango: [{min(pwms):.0f}, {max(pwms):.0f}]")
+            report.append(f"   |PWM| final: {abs(pwms[-1]):.0f}")
+
+    # Potencia / corriente
+    i_key = next((k for k in col_map if "i_ma" in k or "current" in k), None)
+    v_key = next((k for k in col_map if "v_bus" in k or "voltage" in k), None)
+
+    if i_key is not None and i_key in col_map:
+        currents = [row[col_map[i_key]] for row in data_rows if col_map[i_key] < len(row)]
+        if currents:
+            report.append("\n🔋 Corriente:")
+            report.append(f"   Máx: {max(currents):.1f} mA")
+            report.append(f"   Media: {sum(currents) / len(currents):.1f} mA")
+            report.append(f"   Final: {currents[-1]:.1f} mA")
+
+    if v_key is not None and v_key in col_map:
+        voltages = [row[col_map[v_key]] for row in data_rows if col_map[v_key] < len(row)]
+        if voltages:
+            report.append("\n🔌 Voltaje:")
+            report.append(f"   Rango: [{min(voltages):.2f}, {max(voltages):.2f}] V")
+
+    # Columnas disponibles
+    report.append(f"\n📋 Columnas disponibles: {', '.join(header)}")
+
+    return "\n".join(report)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  UTILIDADES
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _format_state(data: dict[str, Any]) -> str:
+    """Formatea el estado del ESP32 de forma legible."""
+    mode_names = {0: "Idle", 1: "Open-loop", 2: "Closed-loop (PID)", 3: "Open-loop voltage"}
+    mode = int(data.get("mode", 0))
+    return (
+        f"🔄 Modo: {mode_names.get(mode, f'Modo {mode}')} ({mode})\n"
+        f"📐 Posición: {data.get('position_deg', 0):.2f}° "
+        f"(raw: {data.get('raw_position_deg', 0):.2f}°)\n"
+        f"🎯 Setpoint: {data.get('setpoint_deg', 0):.2f}°\n"
+        f"📉 Error: {data.get('error_deg', 0):.2f}°\n"
+        f"⚙️ PWM: {data.get('pwm', 0)}\n"
+        f"🔢 Encoder: {data.get('count', 0)} counts\n"
+        f"🔌 INA219: {'OK' if data.get('ina_ok') else 'N/A'}"
+        + (
+            f"\n   V={data.get('v_bus', 0):.2f}V  I={data.get('i_ma', 0):.1f}mA  P={data.get('p_mw', 0):.1f}mW"
+            if data.get("ina_ok")
+            else ""
+        )
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  RECURSOS
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@mcp.resource("qube://project/structure")
+def project_structure() -> str:
+    """Retorna la estructura general del proyecto QUBE ESP32."""
+    lines: list[str] = ["# Estructura del Proyecto QUBE ESP32\n"]
+    root = Path(__file__).resolve().parent.parent
+    for item in sorted(root.iterdir()):
+        if item.is_dir() and not item.name.startswith(".") and item.name not in ("__pycache__", "node_modules"):
+            files = list(item.glob("*"))
+            lines.append(f"📁 {item.name}/")
+            for f in sorted(files)[:10]:
+                if f.is_file():
+                    lines.append(f"   📄 {f.name}")
+            if len(files) > 10:
+                lines.append(f"   ... y {len(files) - 10} más")
+        elif item.is_file():
+            lines.append(f"📄 {item.name}")
+    return "\n".join(lines)
+
+
+@mcp.resource("qube://firmware/changelog")
+def firmware_changelog() -> str:
+    """Retorna el CHANGELOG del firmware."""
+    changelog = Path(__file__).resolve().parent.parent / "CHANGELOG.md"
+    if changelog.exists():
+        return changelog.read_text(encoding="utf-8")
+    return "CHANGELOG.md no encontrado."
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  MAIN
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")
