@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, DRL_IMP]
+    branches: [main, master, DRL_IMP]
   pull_request:
 
 jobs:
