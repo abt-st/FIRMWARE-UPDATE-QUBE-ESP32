@@ -79,7 +79,7 @@ jobs:
             ~/.platformio/.cache
             ~/.platformio/packages
             ~/.platformio/platforms
-          key: pio-${{ runner.os }}-${{ matrix.qube }}-${{ hashFiles(matrix.qube ~ '/src/firmware/platformio.ini') }}
+          key: pio-${{ runner.os }}-${{ matrix.qube }}-${{ hashFiles('**/platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-${{ matrix.qube }}-
 
       - name: Provide placeholder credentials.h
