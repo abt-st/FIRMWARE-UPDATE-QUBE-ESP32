@@ -372,8 +372,7 @@ class QubeRealEnv(gym.Env):
         # el tope 19° antes del real. El firmware ahora falla con código 5 en vez de
         # arrancar a ciegas, así que sin esta espera el homing simplemente no corre.
         if self.homing_settle_time > 0:
-            logger.info("Homing: esperando %.1fs a que se asiente el mecanismo...",
-                        self.homing_settle_time)
+            logger.info("Homing: esperando %.1fs a que se asiente el mecanismo...", self.homing_settle_time)
             self._send_rl_action(0.0)
             time.sleep(self.homing_settle_time)
 

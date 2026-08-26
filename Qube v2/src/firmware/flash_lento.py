@@ -21,49 +21,61 @@ Compilar primero:  pio run -e esp32dev
 Después de flashear la placa reinicia sola; `homing_ok` vuelve a `false`, así que
 hay que rehacer el homing (`/cmd?m=3`) antes de cualquier modo con par.
 """
-import socket, sys, time
+
+import socket
+import sys
+import time
 from pathlib import Path
 
-BIN   = Path(sys.argv[1])
-HOST  = sys.argv[2] if len(sys.argv) > 2 else "192.168.4.1"
+BIN = Path(sys.argv[1])
+HOST = sys.argv[2] if len(sys.argv) > 2 else "192.168.4.1"
 CHUNK = int(sys.argv[3]) if len(sys.argv) > 3 else 1460
 PAUSA = float(sys.argv[4]) if len(sys.argv) > 4 else 0.004
 
 data = BIN.read_bytes()
 B = "----------------------------qubeflash"
-pre = (f"--{B}\r\n"
-       f'Content-Disposition: form-data; name="update"; filename="firmware.bin"\r\n'
-       f"Content-Type: application/octet-stream\r\n\r\n").encode()
+pre = (
+    f"--{B}\r\n"
+    f'Content-Disposition: form-data; name="update"; filename="firmware.bin"\r\n'
+    f"Content-Type: application/octet-stream\r\n\r\n"
+).encode()
 post = f"\r\n--{B}--\r\n".encode()
 body_len = len(pre) + len(data) + len(post)
-head = (f"POST /update HTTP/1.1\r\nHost: {HOST}\r\n"
-        f"Content-Type: multipart/form-data; boundary={B}\r\n"
-        f"Content-Length: {body_len}\r\nConnection: close\r\n\r\n").encode()
+head = (
+    f"POST /update HTTP/1.1\r\nHost: {HOST}\r\n"
+    f"Content-Type: multipart/form-data; boundary={B}\r\n"
+    f"Content-Length: {body_len}\r\nConnection: close\r\n\r\n"
+).encode()
 
 s = socket.create_connection((HOST, 80), timeout=30)
 s.settimeout(30)
-s.sendall(head); s.sendall(pre)
-t0 = time.time(); enviado = 0; ultimo = 0
+s.sendall(head)
+s.sendall(pre)
+t0 = time.time()
+enviado = 0
+ultimo = 0
 try:
     while enviado < len(data):
-        n = s.send(data[enviado:enviado + CHUNK])
+        n = s.send(data[enviado : enviado + CHUNK])
         enviado += n
-        if PAUSA: time.sleep(PAUSA)
+        if PAUSA:
+            time.sleep(PAUSA)
         if enviado - ultimo >= 128 * 1024:
             ultimo = enviado
             v = enviado / 1024 / (time.time() - t0)
-            print(f"  {enviado/1024:7.0f} KB / {len(data)/1024:.0f} KB   {v:5.1f} KB/s", flush=True)
+            print(f"  {enviado / 1024:7.0f} KB / {len(data) / 1024:.0f} KB   {v:5.1f} KB/s", flush=True)
     s.sendall(post)
-    print(f"  cuerpo completo: {enviado/1024:.0f} KB en {time.time()-t0:.1f}s", flush=True)
+    print(f"  cuerpo completo: {enviado / 1024:.0f} KB en {time.time() - t0:.1f}s", flush=True)
 except Exception as e:
-    print(f"  FALLO a los {enviado/1024:.1f} KB ({100*enviado/len(data):.1f}%): {e!r}")
+    print(f"  FALLO a los {enviado / 1024:.1f} KB ({100 * enviado / len(data):.1f}%): {e!r}")
     sys.exit(1)
 s.settimeout(120)
 resp = b""
 try:
     while True:
         b = s.recv(4096)
-        if not b: break
+        if not b:
+            break
         resp += b
 except Exception as e:
     print("  (sin respuesta:", repr(e), ")")

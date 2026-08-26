@@ -79,7 +79,7 @@ jobs:
             ~/.platformio/.cache
             ~/.platformio/packages
             ~/.platformio/platforms
-          key: pio-${{ runner.os }}-${{ matrix.qube }}-${{ hashFiles('src/firmware/platformio.ini') }}
+          key: pio-${{ runner.os }}-${{ matrix.qube }}-${{ hashFiles(matrix.qube ~ '/src/firmware/platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-${{ matrix.qube }}-
 
       - name: Provide placeholder credentials.h
@@ -87,4 +87,4 @@ jobs:
 
       - name: Build firmware
         run: pio run -e esp32dev
-        working-directory: src/firmware
+        working-directory: ${{ matrix.qube }}/src/firmware
