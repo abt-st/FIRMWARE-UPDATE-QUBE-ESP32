@@ -81,6 +81,30 @@ defecto; tras corridas, sí) reproducido dentro de una sola sesión, y con
 [P24](../../docs/REGISTRO_PROBLEMAS.md#p24) como candidato de fondo. **Causa no identificada
 en esta campaña.**
 
+### El reposo no lo recupera
+
+Seis minutos sin energizar el motor, y después la misma línea base: **0/3 otra vez**
+(α máx 175,3 / 133,4 / 167,0; `ceil` 0/0/23; θ máx 122–135). El reposo corto **no**
+restituye el comportamiento, lo que argumenta en contra de una causa térmica en esa escala
+de tiempo y a favor de algo persistente dentro de la sesión.
+
+### Intento de aislar el pivote, y por qué no concluye
+
+Se repitió la medición de caída libre al final de la sesión para comparar la disipación del
+pivote contra la de las 13:1x. El decremento de amplitud por medio ciclo —que para fricción
+de Coulomb es constante y proporcional al par seco— dio:
+
+| tanda | segmentos | decremento mediano | dispersión |
+|---|---|---|---|
+| temprano 13:1x | 10 | 36,7° | 4,7 – 131,8 |
+| tarde 13:4x | 6 | 10,4° | 0,0 – 63,5 |
+
+**Esta comparación no vale y no se usa.** Las sueltas tempranas se hicieron desde amplitudes
+mucho más altas (hasta 170°, con el péndulo pasando por arriba y girando) y las tardías
+desde 88–135°: los decrementos se midieron sobre movimientos distintos. La dispersión
+enorme del grupo temprano es justamente esa contaminación. Para que sirviera habría que
+soltar desde la **misma** amplitud antes y después — es el experimento que falta.
+
 > **Por lo tanto:** los 0/3 de `ec=0,64` y de `cg=1` **no son atribuibles a esos
 > parámetros**. Son indistinguibles de la deriva. Las dos pruebas hay que repetirlas con
 > línea base intercalada —una base cada dos tandas, no una por sesión— o con el banco
@@ -229,6 +253,9 @@ Y uno de documentación: `docs/http_api.md` decía que el homing acepta un recor
   del Resultado 2 los confunde a todos, y la campaña no tuvo líneas base intercaladas —
   ese es el defecto de diseño de esta sesión, y es el que hay que corregir primero en la
   próxima: una base cada dos tandas.
+- **La causa de la deriva no se identificó.** El reposo corto no la revierte; la
+  calibración del brazo y la alimentación quedaron descartadas con medición; el intento de
+  aislar el pivote no fue comparable. Queda abierto.
 - **`ec = 0,64` sí produjo un hallazgo estructural**, y ése no depende de la deriva: con el
   techo por debajo de 1,0 el criterio de traspaso `energy` es **inalcanzable por
   construcción**, porque `energyReady` exige que la E computada esté cerca de E\*. `ec` y el

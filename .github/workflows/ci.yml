@@ -7,8 +7,15 @@ on:
 
 jobs:
   python:
-    name: Lint & Test (Python)
+    name: Lint & Test (${{ matrix.qube }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        qube: ['Qube v1', 'Qube v2']
+    defaults:
+      run:
+        working-directory: ${{ matrix.qube }}
     steps:
       - uses: actions/checkout@v4
 
@@ -20,23 +27,21 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
-      # PySide6 arranca con el backend `offscreen` (los tests fijan QT_QPA_PLATFORM),
-      # pero igual enlaza contra estas bibliotecas al importarse.
-      - name: System libs for headless Qt
+      - name: System libs for headless Qt (v2 only)
+        if: matrix.qube == 'Qube v2'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libegl1 libgl1 libxkbcommon0 libdbus-1-3 libglib2.0-0
 
-      # `--extra app` no estaba, y eso dejaba fuera de CI los tests que parsean el
-      # `.ino` — o sea la unica barrera automatica entre la GUI y el firmware, que
-      # nunca llego a ejecutarse. El selector de modos mandando siempre `m=0` y los
-      # defaults de ganancias divergidos vivieron detras de ese skip.
       - name: Install dependencies
-        run: uv sync --extra test --extra tracking --extra app
+        run: |
+          if [ '${{ matrix.qube }}' = 'Qube v2' ]; then
+            uv sync --extra test --extra tracking --extra app
+          else
+            uv sync --extra test --extra tracking
+          fi
 
-      # Scoped to the packages cleaned in this pass. mcp/ still carries pre-existing
-      # lint debt; widen this once it is cleaned.
       - name: Ruff lint
         run: uv run ruff check src tests
 
@@ -47,8 +52,15 @@ jobs:
         run: uv run pytest -q
 
   firmware:
-    name: Build (ESP32 firmware)
+    name: Build ESP32 (${{ matrix.qube }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        qube: ['Qube v1', 'Qube v2']
+    defaults:
+      run:
+        working-directory: ${{ matrix.qube }}
     steps:
       - uses: actions/checkout@v4
 
@@ -60,8 +72,6 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
-      # Cache the toolchain + Arduino core (~500 MB); without this every run
-      # re-downloads espressif32@5.4.0.
       - name: Cache PlatformIO
         uses: actions/cache@v4
         with:
@@ -69,11 +79,9 @@ jobs:
             ~/.platformio/.cache
             ~/.platformio/packages
             ~/.platformio/platforms
-          key: pio-${{ runner.os }}-${{ hashFiles('src/firmware/platformio.ini') }}
-          restore-keys: pio-${{ runner.os }}-
+          key: pio-${{ runner.os }}-${{ matrix.qube }}-${{ hashFiles('src/firmware/platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-${{ matrix.qube }}-
 
-      # credentials.h is gitignored (real WiFi secrets). The build needs it to
-      # exist, so CI compiles against the placeholder template.
       - name: Provide placeholder credentials.h
         run: cp src/firmware/esp32_qube/credentials.h.example src/firmware/esp32_qube/credentials.h
 
