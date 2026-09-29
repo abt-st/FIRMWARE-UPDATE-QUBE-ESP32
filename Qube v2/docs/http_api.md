@@ -208,6 +208,7 @@ Envía comandos de configuración y control.
 | `lqr2n`, `lqr4n`, `lqrnd` | float | Gain scheduling del LQR, banda *near*: K2, K4 y el umbral en grados |
 | `lqr2vn`, `lqr4vn`, `lqrvnd` | float | Ídem banda *very near* |
 | `lqrdamp`                  | float  | Término de amortiguamiento cerca de la vertical |
+| `lqri`                     | float  | Ganancia integral de θ del LQR (`lqr_Ki`, default 0.05; rango útil 0.02–0.2). Cancela el offset del péndulo; con integración condicional (anti-windup). También por serial: `L13 <val>`. Publicado en `/state` como `lqr_ki` |
 | `lpm`                      | 20–150 | **Techo de PWM del LQR** (def. 70). Hasta v1.58.9 `LQR_PWM_MAX` no era el límite operativo: un `70` literal re-acotaba la salida en las cinco ramas del centering, así que subir la constante no tenía efecto. Con el techo en 70 sobre `PWM_MAX=200` la salida está saturada el 93 % del tiempo y las cuatro ganancias no pueden influir (P4/H3) |
 | `tn`                       | float  | Umbral de traspaso m5→m4 en grados (`swingupCatchDeg`, def. 155). Medido: el cruce por cero de la utilidad del traspaso cae en α ≈ 158°, o sea que 155 queda del lado inservible; `tn=162` mejora de forma reproducible |
 | `tr`                       | 0/1    | Habilita el traspaso automático m5→m4 (def. 1). `tr=0` deja al swing-up bombeando sin entregar |
