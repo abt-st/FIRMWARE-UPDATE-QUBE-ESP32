@@ -445,6 +445,88 @@ def test_firmware_input_dim_is_the_one_python_assumes(code: str):
     )
 
 
+# ── El presupuesto de vueltas de los modos RL ────────────────────────────────────────
+# `pend_wrapCount` es MONOTONICO desde el arranque, y el propio `.ino` lo documenta así:
+# un cliente lo lee antes y después y saca la diferencia. La compuerta de cordura de los
+# modos 6 y 7 lo comparaba **en absoluto** contra `RL_MAX_WRAPS`, con lo que la historia
+# de la sesión gastaba el presupuesto de una corrida que todavía no había empezado. Una
+# sola tanda de swing-up deja `pend_wraps` en ~5 sobre un techo de 8, así que a las dos
+# tandas los dos modos RL morían en el primer tick de control con `safety_action = 4` y
+# no volvían hasta reiniciar la placa. Desde afuera: «los modos RL no funcionan».
+#
+# El modo 5 nunca tuvo el defecto —`setMode(5)` guarda `swing_wrapsAtStart` y compara la
+# diferencia— y es exactamente lo que este test le exige a los modos RL.
+
+
+def _body_of(code: str, name: str) -> str:
+    """Cuerpo de una función del firmware, llaves incluidas."""
+    m = re.search(rf"^[A-Za-z_][\w:<>*&\s]*?\b{re.escape(name)}\s*\([^;{{]*\)\s*\{{", code, re.M)
+    assert m is not None, f"no se encontró `{name}()` en el firmware"
+    start = code.index("{", m.end() - 1)
+    return code[start : _match_block(code, start)]
+
+
+def _rl_wrap_gate(code: str) -> tuple[str, str]:
+    """``(operando, base)`` de la compuerta de vueltas de m6/m7.
+
+    ``operando`` es lo que se compara contra ``RL_MAX_WRAPS``. ``base`` es la variable que
+    se le resta a ``pend_wrapCount`` para obtenerlo, o ``""`` si no se resta nada — que es
+    justamente la forma defectuosa.
+    """
+    comparaciones = re.findall(r"(\w+)\s*>=\s*RL_MAX_WRAPS", code)
+    assert len(comparaciones) == 1, (
+        f"se esperaba UNA comparación contra `RL_MAX_WRAPS` y hay {len(comparaciones)}: "
+        f"{comparaciones}. Con más de una, este test deja de saber cuál es la compuerta."
+    )
+    operando = comparaciones[0]
+    if operando == "pend_wrapCount":
+        return operando, ""
+    m = re.search(rf"{re.escape(operando)}\s*=[^;]*?pend_wrapCount\s*-\s*(\w+)", code)
+    return operando, m.group(1) if m is not None else ""
+
+
+def test_rl_wrap_budget_counts_from_mode_entry(code: str):
+    operando, base = _rl_wrap_gate(code)
+    assert operando != "pend_wrapCount", (
+        "la compuerta de cordura de m6/m7 compara `pend_wrapCount` en absoluto contra "
+        "`RL_MAX_WRAPS`. Ese contador es monótono desde el arranque: la historia de la "
+        "sesión agota el presupuesto y los modos RL quedan muertos hasta rebootear. "
+        "Restar la línea base tomada al entrar al modo, como hace `swing_wrapsAtStart`."
+    )
+    assert base, (
+        f"`{operando}` no sale de `pend_wrapCount - <línea base>`. Sin la resta, el "
+        "presupuesto no es de la corrida sino de la sesión."
+    )
+    set_mode = _body_of(code, "setMode")
+    assert re.search(rf"{re.escape(base)}\s*=\s*pend_wrapCount", set_mode) is not None, (
+        f"`{base}` no se toma dentro de `setMode()`. Una línea base que no se refresca al "
+        "entrar al modo es la misma comparación absoluta escrita en dos pasos."
+    )
+
+    # La app muestra el presupuesto en el panel de salud, y no lo puede derivar de
+    # `pend_wraps`: la línea base no se publicaba. Si estos dos campos se van de /state,
+    # la fila vuelve a decir «sin presupuesto» sin que nadie lo note.
+    estado = _body_of(code, "getStateJson")
+    faltan = [c for c in ("rl_wraps_run", "rl_max_wraps") if c not in estado]
+    assert not faltan, f"`getStateJson()` dejó de publicar {faltan}: la app se queda sin el presupuesto"
+
+
+def test_the_wrap_budget_check_catches_the_absolute_comparison():
+    """El criterio, contra el código que DEBE reprobar.
+
+    Tres veredictos falsos en dos días salieron de criterios que nunca se probaron contra
+    un caso negativo. Éste se prueba: sobre la forma vieja de la compuerta, `_rl_wrap_gate`
+    tiene que devolver `pend_wrapCount` y una base vacía, que es lo que dispara el fallo.
+    """
+    viejo = """
+    if ((mode == 6 || mode == 7) &&
+        (fabsf(pendPosRaw) > LQR_PROTECT_RAW_DEG || pend_wrapCount >= RL_MAX_WRAPS)) {
+      safeStop();
+    }
+    """
+    assert _rl_wrap_gate(viejo) == ("pend_wrapCount", "")
+
+
 def test_every_http_param_is_documented(code: str):
     """La referencia de la API describe lo que el firmware acepta, y nada más.
 

@@ -1,0 +1,18 @@
+{
+  "config": "C0_base",
+  "traza": "C0_base_20260905_213004.jsonl",
+  "veredicto": "INVALIDA",
+  "razones": [
+    "cero traspasos a modo 4: la tanda no midio el balanceo"
+  ],
+  "duracion_s": 299.877,
+  "muestras": 1324,
+  "reintentos": 0,
+  "traspasos": 0,
+  "traspasos_sin_llegar": 0,
+  "alive_p50_ms": 0,
+  "alive_max_ms": 0,
+  "exitos_3s": 0,
+  "fallas": {},
+  "episodios": []
+}

@@ -1,0 +1,95 @@
+{
+  "config": "C0_base",
+  "traza": "C0_base_20260904_180136.jsonl",
+  "veredicto": "DENTRO DEL RUIDO",
+  "razones": [
+    "p50 530 ms contra banda base [530, 753]; max 799 ms contra banda base [799, 1174]  (n=2 bases)",
+    "la tanda no distingue esta condicion de no haber tocado nada"
+  ],
+  "duracion_s": 300.011,
+  "muestras": 1734,
+  "reintentos": 28,
+  "traspasos": 8,
+  "alive_p50_ms": 530.0,
+  "alive_max_ms": 799,
+  "exitos_3s": 0,
+  "fallas": {
+    "2": 4,
+    "3": 23,
+    "6": 1
+  },
+  "episodios": [
+    {
+      "t": 18.469,
+      "alive_ms": 530,
+      "fail": 3,
+      "trans_alpha": 178.95,
+      "trans_vel": 88.17,
+      "trans_energy": 1.0022,
+      "trans_reason": 4
+    },
+    {
+      "t": 35.947,
+      "alive_ms": 530,
+      "fail": 3,
+      "trans_alpha": 156.8,
+      "trans_vel": 130.04,
+      "trans_energy": 0.9645,
+      "trans_reason": 2
+    },
+    {
+      "t": 56.426,
+      "alive_ms": 530,
+      "fail": 3,
+      "trans_alpha": 165.23,
+      "trans_vel": 68.63,
+      "trans_energy": 0.9849,
+      "trans_reason": 4
+    },
+    {
+      "t": 64.728,
+      "alive_ms": 697,
+      "fail": 3,
+      "trans_alpha": -160.31,
+      "trans_vel": 18.55,
+      "trans_energy": 0.9709,
+      "trans_reason": 9
+    },
+    {
+      "t": 86.79,
+      "alive_ms": 697,
+      "fail": 3,
+      "trans_alpha": -177.19,
+      "trans_vel": 10.05,
+      "trans_energy": 0.9994,
+      "trans_reason": 13
+    },
+    {
+      "t": 103.539,
+      "alive_ms": 394,
+      "fail": 3,
+      "trans_alpha": 155.21,
+      "trans_vel": 194.16,
+      "trans_energy": 0.9649,
+      "trans_reason": 2
+    },
+    {
+      "t": 112.196,
+      "alive_ms": 394,
+      "fail": 3,
+      "trans_alpha": -173.14,
+      "trans_vel": 69.02,
+      "trans_energy": 0.9978,
+      "trans_reason": 6
+    },
+    {
+      "t": 192.003,
+      "alive_ms": 799,
+      "fail": 3,
+      "trans_alpha": 161.02,
+      "trans_vel": 4.28,
+      "trans_energy": 0.9728,
+      "trans_reason": 9
+    }
+  ]
+}

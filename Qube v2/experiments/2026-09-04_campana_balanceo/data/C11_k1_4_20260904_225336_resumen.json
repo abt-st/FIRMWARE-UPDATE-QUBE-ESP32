@@ -1,0 +1,33 @@
+{
+  "config": "C11_k1_4",
+  "traza": "C11_k1_4_20260904_225336.jsonl",
+  "poll_hz": 8.0,
+  "veredicto": "SIN POTENCIA",
+  "razones": [
+    "1 traspasos contra una banda base de [14, 26]: la tanda no es comparable",
+    "repetir la condicion antes de atribuirle nada"
+  ],
+  "duracion_s": 257.623,
+  "muestras": 1448,
+  "reintentos": 1,
+  "traspasos": 1,
+  "traspasos_sin_llegar": 0,
+  "alive_p50_ms": 574,
+  "alive_max_ms": 574,
+  "exitos_3s": 0,
+  "fallas": {
+    "3": 2
+  },
+  "episodios": [
+    {
+      "t": 6.087,
+      "alive_ms": 574,
+      "llego_arriba": true,
+      "fail": 3,
+      "trans_alpha": 165.94,
+      "trans_vel": 66.77,
+      "trans_energy": 0.9863,
+      "trans_reason": 6
+    }
+  ]
+}

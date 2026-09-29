@@ -50,8 +50,10 @@ from PySide6.QtWidgets import (
 
 from qube_app.analysis import StepMetrics, UprightStats
 from qube_app.link import (
+    COMMAND_TIMEOUT_S,
     MODE_NAMES,
     MODE_REJECT_REASONS,
+    MODES_DRIVEN_EXTERNALLY,
     MODES_REQUIRING_HOMING,
     MODES_REQUIRING_INA,
     MODES_THAT_MOVE_TO_STOPS,
@@ -262,7 +264,35 @@ class ControlPanel(QWidget):
             return
         if mode in MODES_THAT_MOVE_TO_STOPS and not self._confirm(mode):
             return
+        if mode in MODES_DRIVEN_EXTERNALLY and not self._confirm_external(mode):
+            return
         self.command.emit({"m": mode})
+
+    def _confirm_external(self, mode: int) -> bool:
+        """Avisa que este modo no se conduce solo, y que esta app no lo conduce.
+
+        El modo 6 aplica ``rlAction``, que llega por ``GET /rl_cmd?a=``. Esta app no manda
+        ese endpoint en ninguna parte —el cliente del lazo es ``qube_rl/envs/qube_real.py``—
+        así que aplicarlo desde acá deja el motor en cero hasta que el watchdog del
+        firmware devuelve la placa al modo 0. Desde afuera se ve idéntico a un modo roto,
+        y es la primera explicación de «los modos RL no funcionan».
+
+        Se manda igual si se confirma: entrar al modo 6 desde la app es lo correcto cuando
+        el entrenamiento va a tomar el enlace enseguida, y el firmware es el que decide.
+        """
+        answer = QMessageBox.warning(
+            self,
+            f"El modo {mode} no se conduce desde esta app",
+            f"El modo {mode} espera acciones por `/rl_cmd?a=`, y esta app no las manda: "
+            "quien conduce el lazo es `qube_rl/envs/qube_real.py`.\n\n"
+            f"Sin un cliente enviando acciones el motor queda en cero y, a los "
+            f"{COMMAND_TIMEOUT_S:.0f} s, el watchdog del firmware devuelve la placa al "
+            "modo 0.\n\nPara correr la política en la placa sola, usar el modo 7.\n\n"
+            "¿Aplicarlo igual?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        return answer == QMessageBox.StandardButton.Yes
 
     def _confirm_blocked(self, mode: int, reason: str) -> bool:
         """Avisa que la placa va a descartar el comando. Devuelve True si igual se manda.
@@ -657,6 +687,7 @@ class HealthPanel(QGroupBox):
             ("overruns", "loop_overruns"),
             ("ina", "INA219"),
             ("safety", "seguridad: cortes · derates"),
+            ("rl", "RL: vueltas · escala de par"),
         ):
             value = _value_label()
             self.fields[key] = value
@@ -720,7 +751,52 @@ class HealthPanel(QGroupBox):
         item.setText(f"{cuts} · {derates}" + (f"   ← {action}" if action else ""))
         _paint(item, COLOR_BAD if (cuts or action) else (COLOR_WARN if derates else None), bold=bool(cuts or action))
 
+        self._update_rl(health)
         self._show_error(health.get("last_error", ""))
+
+    def _update_rl(self, health: dict) -> None:
+        """Las dos cosas que apagan los modos 6 y 7 sin dejar rastro en pantalla.
+
+        **El presupuesto de vueltas.** La compuerta de cordura corta m6/m7 cuando el
+        péndulo acumula ``rl_max_wraps`` vueltas. Hasta v1.67.0 el firmware lo comparaba
+        contra el contador monótono del arranque, así que la historia de la sesión —una
+        tanda de swing-up deja ~5 vueltas— consumía el presupuesto de una corrida que no
+        había empezado, y a las dos tandas los modos RL quedaban muertos hasta reiniciar
+        la placa. Arreglado allá; acá se muestra, porque un presupuesto que no se ve es
+        el mismo problema con otro nombre.
+
+        **La escala de par.** ``rl_pwm_scale`` es global, sobrevive al cambio de modo y
+        sólo la reinicia un arranque. En 0 la política corre, la inferencia varía y el
+        motor no entrega nada. Ya pasó una vez, por un typo (v1.59.1).
+        """
+        item = self.fields["rl"]
+        run = health.get("rl_wraps_run")
+        techo = health.get("rl_max_wraps")
+        scale = health.get("rl_pwm_scale")
+        if run is None or techo is None:
+            # Firmware anterior a v1.67.0: no publica el presupuesto. No se inventa —
+            # `pend_wraps` a secas no es el número que evalúa la compuerta.
+            item.setText(f"— sin presupuesto en /state  ·  escala {_fmt(scale, '.2f', '—')}")
+            _paint(item, COLOR_DIM)
+            return
+        agotado = run >= techo
+        sin_par = scale is not None and scale <= 0.0
+        item.setText(f"{run}/{techo} vueltas  ·  escala {_fmt(scale, '.2f', '—')}")
+        # Sólo se pinta dentro de los modos RL: fuera de ellos ninguna de las dos
+        # condiciones apaga nada, y un panel que grita en el modo 0 se deja de mirar.
+        en_rl = health.get("mode") in (6, 7)
+        if en_rl and (agotado or sin_par):
+            _paint(item, COLOR_BAD, bold=True)
+        elif agotado or sin_par:
+            _paint(item, COLOR_WARN)
+        else:
+            _paint(item, None)
+        motivo = []
+        if agotado:
+            motivo.append("presupuesto de vueltas agotado: el firmware corta m6/m7 en el primer tick")
+        if sin_par:
+            motivo.append("escala de par en 0: la política corre y el motor no entrega nada (/rl_cmd?scale=1)")
+        item.setToolTip("\n".join(motivo))
 
     def _show_error(self, message: str | None) -> None:
         if not message:
@@ -806,7 +882,11 @@ class AnalysisPanel(QGroupBox):
             if not state.get("swing_retry_enabled", True):
                 fase.append("reintento DESACTIVADO (rt=0)")
             detalle = "  ·  " + ", ".join(fase) if fase else ""
-            self.fields["attempt"].setText(f"{_fmt(count)} de {_fmt(limit)} reintentos{detalle}")
+            # `swing_retry_max` negativo = sin límite (firmware >= v1.66.0). Mostrarlo
+            # como «de -1 reintentos» sería peor que no mostrarlo: el operador tiene que
+            # ver de un vistazo que el modo NO se va a rendir solo.
+            techo = "∞" if isinstance(limit, (int, float)) and limit < 0 else _fmt(limit)
+            self.fields["attempt"].setText(f"{_fmt(count)} de {techo} reintentos{detalle}")
         item = self.fields["attempt"]
         _paint(item, COLOR_WARN if count else None, bold=bool(count))
 
@@ -814,6 +894,8 @@ class AnalysisPanel(QGroupBox):
         item = self.fields["failure"]
         # `swing_zero_ok = 0` DESPUÉS de un intento significa que no se aquietó y el modo
         # abortó a 0: el firmware no arranca a ciegas y la app tampoco debe callarlo.
+        # Firmware >= v1.66.0 publica esto como `swing_fail_reason = 6` y NO aborta;
+        # esta rama sólo cubre a los anteriores, que caían a modo 0 sin dejar motivo.
         aborto_por_quietud = (
             not reason
             and state.get("swing_zero_enabled")

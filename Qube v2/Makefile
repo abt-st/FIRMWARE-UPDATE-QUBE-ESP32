@@ -44,8 +44,29 @@ clean:             ## Limpiar archivos temporales de Python
 app:               ## Abrir la app de escritorio (requiere: uv sync --extra app)
 	$(PYTHON) -m qube_app
 
-exe:               ## Empaquetar la app en dist/QubeApp/QubeApp.exe (PyInstaller)
-	$(UV) run pyinstaller scripts/qube_app.spec --noconfirm --distpath dist --workpath build
+exe:               ## Empaquetar la app en dist/QubeApp/QubeApp.exe (PyInstaller, OneDrive-safe)
+	@set -e; \
+	stage=$$(mktemp -d); \
+	trap 'rm -rf "$$stage"' EXIT; \
+	win_stage=$$(cygpath -w "$$stage" 2>/dev/null || echo "$$stage"); \
+	echo "==> compilando en $$win_stage (fuera de OneDrive)"; \
+	$(UV) run pyinstaller scripts/qube_app.spec --noconfirm \
+	  --distpath "$$win_stage\dist" --workpath "$$win_stage\build"; \
+	test -x "$$stage/dist/QubeApp/QubeApp.exe" \
+	  || { echo "ERROR: PyInstaller no dejo el ejecutable en el area de trabajo."; exit 1; }; \
+	echo "==> sustituyendo dist/QubeApp"; \
+	mkdir -p dist; \
+	if [ -e dist/QubeApp ]; then \
+	  mv dist/QubeApp "dist/QubeApp.viejo.$$$$" \
+	    || { echo "ERROR: no se pudo apartar dist/QubeApp. Cierra la app si esta abierta."; exit 1; }; \
+	fi; \
+	cp -r "$$stage/dist/QubeApp" dist/; \
+	rm -rf dist/QubeApp.viejo.* 2>/dev/null || \
+	  echo "AVISO: quedo dist/QubeApp.viejo.* sin borrar (OneDrive lo tenia tomado). Borralo a mano."; \
+	( cd dist && MSYS_NO_PATHCONV=1 attrib +P -U /s /d "QubeApp\*" ) >/dev/null 2>&1 || true; \
+	( cd dist && MSYS_NO_PATHCONV=1 attrib "QubeApp\QubeApp.exe" ) 2>/dev/null | grep -q " P " \
+	  || echo "AVISO: no quedo fijado como siempre-local; OneDrive puede volver a vaciarlo."; \
+	echo "==> listo: dist/QubeApp/QubeApp.exe"
 
 export-policy:     ## Export SAC model weights INTO the firmware header (MODEL=path)
 	$(PYTHON) -m qube_rl.export_rltools --model $(MODEL) \

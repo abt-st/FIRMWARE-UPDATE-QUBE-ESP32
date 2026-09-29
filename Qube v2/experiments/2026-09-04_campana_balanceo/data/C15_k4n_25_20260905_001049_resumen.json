@@ -1,0 +1,65 @@
+{
+  "config": "C15_k4n_25",
+  "traza": "C15_k4n_25_20260905_001049.jsonl",
+  "poll_hz": 8.0,
+  "veredicto": "SIN POTENCIA",
+  "razones": [
+    "4 traspasos contra una banda base de [14, 26]: la tanda no es comparable",
+    "repetir la condicion antes de atribuirle nada"
+  ],
+  "duracion_s": 300.017,
+  "muestras": 1638,
+  "reintentos": 4,
+  "traspasos": 4,
+  "traspasos_sin_llegar": 2,
+  "alive_p50_ms": 745.5,
+  "alive_max_ms": 856,
+  "exitos_3s": 0,
+  "fallas": {
+    "3": 2,
+    "4": 2,
+    "1": 1
+  },
+  "episodios": [
+    {
+      "t": 5.877,
+      "alive_ms": 1518,
+      "llego_arriba": false,
+      "fail": 4,
+      "trans_alpha": -171.56,
+      "trans_vel": 109.57,
+      "trans_energy": 0.9981,
+      "trans_reason": 4
+    },
+    {
+      "t": 13.712,
+      "alive_ms": 1518,
+      "llego_arriba": false,
+      "fail": 4,
+      "trans_alpha": -167.17,
+      "trans_vel": 74.96,
+      "trans_energy": 0.9892,
+      "trans_reason": 6
+    },
+    {
+      "t": 21.526,
+      "alive_ms": 856,
+      "llego_arriba": true,
+      "fail": 1,
+      "trans_alpha": 177.89,
+      "trans_vel": 75.37,
+      "trans_energy": 1.0013,
+      "trans_reason": 6
+    },
+    {
+      "t": 29.207,
+      "alive_ms": 635,
+      "llego_arriba": true,
+      "fail": 3,
+      "trans_alpha": -157.32,
+      "trans_vel": 21.26,
+      "trans_energy": 0.9615,
+      "trans_reason": 11
+    }
+  ]
+}

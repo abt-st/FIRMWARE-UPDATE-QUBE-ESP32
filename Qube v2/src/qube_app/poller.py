@@ -144,6 +144,15 @@ class StatePoller:
             "safety_action": st.get("safety_action"),
             "safety_cuts": st.get("safety_cuts"),
             "safety_derates": st.get("safety_derates"),
+            # Las dos cosas que apagan los modos RL sin decirlo. El presupuesto de
+            # vueltas corta el modo en el primer tick y sólo dejaba `safety_action = 4`,
+            # que dice QUE se cortó pero no cuánto faltaba; `rl_pwm_scale` en 0 no deja
+            # ni eso: la política corre y el motor no entrega par. `mode` viaja con
+            # ellas porque las dos sólo significan algo dentro de los modos 6 y 7.
+            "mode": st.get("mode"),
+            "rl_wraps_run": st.get("rl_wraps_run"),
+            "rl_max_wraps": st.get("rl_max_wraps"),
+            "rl_pwm_scale": st.get("rl_pwm_scale"),
         }
 
     # ── Escritura ─────────────────────────────────────────────────────────────

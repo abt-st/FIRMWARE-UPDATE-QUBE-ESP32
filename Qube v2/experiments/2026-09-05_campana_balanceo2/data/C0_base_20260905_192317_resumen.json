@@ -1,0 +1,185 @@
+{
+  "config": "C0_base",
+  "traza": "C0_base_20260905_192317.jsonl",
+  "veredicto": "DENTRO DEL RUIDO",
+  "razones": [
+    "p50 844 ms contra banda base [537, 844]; max 1738 ms contra banda base [1227, 2418]  (n=6 bases)",
+    "la tanda no distingue esta condicion de no haber tocado nada"
+  ],
+  "duracion_s": 299.977,
+  "muestras": 1009,
+  "reintentos": 28,
+  "traspasos": 16,
+  "traspasos_sin_llegar": 6,
+  "alive_p50_ms": 843.5,
+  "alive_max_ms": 1738,
+  "exitos_3s": 0,
+  "fallas": {
+    "3": 19,
+    "4": 6,
+    "2": 3,
+    "1": 1
+  },
+  "episodios": [
+    {
+      "t": 38.57,
+      "alive_ms": 683,
+      "llego_arriba": true,
+      "fail": 3,
+      "trans_alpha": -175.43,
+      "trans_vel": 93.27,
+      "trans_energy": 1.0009,
+      "trans_reason": 4
+    },
+    {
+      "t": 46.666,
+      "alive_ms": 1501,
+      "llego_arriba": false,
+      "fail": 4,
+      "trans_alpha": -159.96,
+      "trans_vel": 78.77,
+      "trans_energy": 0.9715,
+      "trans_reason": 2
+    },
+    {
+      "t": 57.19,
+      "alive_ms": 1004,
+      "llego_arriba": true,
+      "fail": 2,
+      "trans_alpha": 165.41,
+      "trans_vel": 149.3,
+      "trans_energy": 0.9904,
+      "trans_reason": 4
+    },
+    {
+      "t": 92.251,
+      "alive_ms": 0,
+      "llego_arriba": true,
+      "fail": 2,
+      "trans_alpha": -158.2,
+      "trans_vel": 43.18,
+      "trans_energy": 0.9648,
+      "trans_reason": 8
+    },
+    {
+      "t": 108.23,
+      "alive_ms": 1501,
+      "llego_arriba": false,
+      "fail": 4,
+      "trans_alpha": 155.04,
+      "trans_vel": 16.39,
+      "trans_energy": 0.9534,
+      "trans_reason": 11
+    },
+    {
+      "t": 126.087,
+      "alive_ms": 1502,
+      "llego_arriba": false,
+      "fail": 4,
+      "trans_alpha": 173.5,
+      "trans_vel": 154.94,
+      "trans_energy": 1.0038,
+      "trans_reason": 2
+    },
+    {
+      "t": 137.872,
+      "alive_ms": 1738,
+      "llego_arriba": true,
+      "fail": 3,
+      "trans_alpha": -158.55,
+      "trans_vel": 31.08,
+      "trans_energy": 0.9657,
+      "trans_reason": 8
+    },
+    {
+      "t": 174.236,
+      "alive_ms": 1718,
+      "llego_arriba": true,
+      "fail": 3,
+      "trans_alpha": 159.61,
+      "trans_vel": 130.85,
+      "trans_energy": 0.9737,
+      "trans_reason": 2
+    },
+    {
+      "t": 201.071,
+      "alive_ms": 1502,
+      "llego_arriba": false,
+      "fail": 4,
+      "trans_alpha": 158.73,
+      "trans_vel": 105.62,
+      "trans_energy": 0.9692,
+      "trans_reason": 2
+    },
+    {
+      "t": 223.734,
+      "alive_ms": 166,
+      "llego_arriba": true,
+      "fail": 2,
+      "trans_alpha": -162.42,
+      "trans_vel": 12.32,
+      "trans_energy": 0.9767,
+      "trans_reason": 9
+    },
+    {
+      "t": 236.853,
+      "alive_ms": 1502,
+      "llego_arriba": false,
+      "fail": 4,
+      "trans_alpha": 162.07,
+      "trans_vel": 47.71,
+      "trans_energy": 0.9764,
+      "trans_reason": 10
+    },
+    {
+      "t": 250.485,
+      "alive_ms": 664,
+      "llego_arriba": true,
+      "fail": 1,
+      "trans_alpha": -165.23,
+      "trans_vel": 112.45,
+      "trans_energy": 0.9872,
+      "trans_reason": 4
+    },
+    {
+      "t": 265.995,
+      "alive_ms": 344,
+      "llego_arriba": true,
+      "fail": 3,
+      "trans_alpha": 167.52,
+      "trans_vel": 7.87,
+      "trans_energy": 0.9882,
+      "trans_reason": 13
+    },
+    {
+      "t": 275.023,
+      "alive_ms": 1502,
+      "llego_arriba": false,
+      "fail": 4,
+      "trans_alpha": 156.45,
+      "trans_vel": 48.66,
+      "trans_energy": 0.959,
+      "trans_reason": 8
+    },
+    {
+      "t": 286.295,
+      "alive_ms": 1502,
+      "llego_arriba": true,
+      "fail": 3,
+      "trans_alpha": -158.38,
+      "trans_vel": 34.83,
+      "trans_energy": 0.9652,
+      "trans_reason": 8
+    },
+    {
+      "t": 296.647,
+      "alive_ms": 1287,
+      "llego_arriba": true,
+      "fail": 3,
+      "trans_alpha": -173.67,
+      "trans_vel": 120.67,
+      "trans_energy": 1.0012,
+      "trans_reason": 4
+    }
+  ]
+}

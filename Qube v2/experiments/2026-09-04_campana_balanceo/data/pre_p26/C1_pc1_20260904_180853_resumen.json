@@ -1,0 +1,195 @@
+{
+  "config": "C1_pc1",
+  "traza": "C1_pc1_20260904_180853.jsonl",
+  "veredicto": "DENTRO DEL RUIDO",
+  "razones": [
+    "p50 606 ms contra banda base [530, 753]; max 1217 ms contra banda base [799, 1174]  (n=2 bases)",
+    "la tanda no distingue esta condicion de no haber tocado nada"
+  ],
+  "duracion_s": 299.943,
+  "muestras": 1737,
+  "reintentos": 27,
+  "traspasos": 19,
+  "alive_p50_ms": 606,
+  "alive_max_ms": 1217,
+  "exitos_3s": 0,
+  "fallas": {
+    "6": 1,
+    "3": 21,
+    "1": 1,
+    "2": 5
+  },
+  "episodios": [
+    {
+      "t": 3.607,
+      "alive_ms": 799,
+      "fail": 3,
+      "trans_alpha": -155.39,
+      "trans_vel": 63.3,
+      "trans_energy": 0.9558,
+      "trans_reason": 2
+    },
+    {
+      "t": 32.24,
+      "alive_ms": 681,
+      "fail": 3,
+      "trans_alpha": 157.5,
+      "trans_vel": 130.07,
+      "trans_energy": 0.9669,
+      "trans_reason": 2
+    },
+    {
+      "t": 44.262,
+      "alive_ms": 681,
+      "fail": 1,
+      "trans_alpha": 156.8,
+      "trans_vel": 102.18,
+      "trans_energy": 0.9626,
+      "trans_reason": 2
+    },
+    {
+      "t": 77.084,
+      "alive_ms": 586,
+      "fail": 3,
+      "trans_alpha": 162.07,
+      "trans_vel": 73.01,
+      "trans_energy": 0.9773,
+      "trans_reason": 2
+    },
+    {
+      "t": 96.84,
+      "alive_ms": 1217,
+      "fail": 3,
+      "trans_alpha": 170.16,
+      "trans_vel": 101.25,
+      "trans_energy": 0.9956,
+      "trans_reason": 4
+    },
+    {
+      "t": 108.662,
+      "alive_ms": 1217,
+      "fail": 3,
+      "trans_alpha": 170.68,
+      "trans_vel": 26.42,
+      "trans_energy": 0.9936,
+      "trans_reason": 15
+    },
+    {
+      "t": 120.16,
+      "alive_ms": 1217,
+      "fail": 2,
+      "trans_alpha": 177.19,
+      "trans_vel": 90.49,
+      "trans_energy": 1.0018,
+      "trans_reason": 4
+    },
+    {
+      "t": 142.965,
+      "alive_ms": 430,
+      "fail": 3,
+      "trans_alpha": 175.96,
+      "trans_vel": 42.57,
+      "trans_energy": 0.9993,
+      "trans_reason": 14
+    },
+    {
+      "t": 152.338,
+      "alive_ms": 430,
+      "fail": 3,
+      "trans_alpha": -168.57,
+      "trans_vel": 106.86,
+      "trans_energy": 0.9934,
+      "trans_reason": 4
+    },
+    {
+      "t": 164.363,
+      "alive_ms": 606,
+      "fail": 3,
+      "trans_alpha": -156.45,
+      "trans_vel": 54.06,
+      "trans_energy": 0.9592,
+      "trans_reason": 8
+    },
+    {
+      "t": 176.158,
+      "alive_ms": 637,
+      "fail": 3,
+      "trans_alpha": 163.65,
+      "trans_vel": 20.68,
+      "trans_energy": 0.9799,
+      "trans_reason": 11
+    },
+    {
+      "t": 199.09,
+      "alive_ms": 637,
+      "fail": 3,
+      "trans_alpha": -174.38,
+      "trans_vel": 42.21,
+      "trans_energy": 0.9981,
+      "trans_reason": 14
+    },
+    {
+      "t": 210.097,
+      "alive_ms": 415,
+      "fail": 2,
+      "trans_alpha": 155.39,
+      "trans_vel": 26.9,
+      "trans_energy": 0.9548,
+      "trans_reason": 11
+    },
+    {
+      "t": 221.178,
+      "alive_ms": 0,
+      "fail": 2,
+      "trans_alpha": -177.01,
+      "trans_vel": 119.81,
+      "trans_energy": 1.0035,
+      "trans_reason": 4
+    },
+    {
+      "t": 232.668,
+      "alive_ms": 0,
+      "fail": 2,
+      "trans_alpha": 167.17,
+      "trans_vel": 94.41,
+      "trans_energy": 0.9901,
+      "trans_reason": 4
+    },
+    {
+      "t": 244.943,
+      "alive_ms": 175,
+      "fail": 3,
+      "trans_alpha": 162.25,
+      "trans_vel": 54.19,
+      "trans_energy": 0.977,
+      "trans_reason": 10
+    },
+    {
+      "t": 267.256,
+      "alive_ms": 555,
+      "fail": 3,
+      "trans_alpha": -155.74,
+      "trans_vel": 11.39,
+      "trans_energy": 0.9559,
+      "trans_reason": 9
+    },
+    {
+      "t": 277.929,
+      "alive_ms": 555,
+      "fail": 2,
+      "trans_alpha": -165.06,
+      "trans_vel": 133.9,
+      "trans_energy": 0.9883,
+      "trans_reason": 4
+    },
+    {
+      "t": 286.493,
+      "alive_ms": 739,
+      "fail": 3,
+      "trans_alpha": 161.37,
+      "trans_vel": 8.91,
+      "trans_energy": 0.9738,
+      "trans_reason": 9
+    }
+  ]
+}

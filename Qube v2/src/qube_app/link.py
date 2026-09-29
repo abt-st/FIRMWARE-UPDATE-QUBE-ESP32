@@ -73,9 +73,14 @@ SWING_FAIL_REASONS = {
     3: "el brazo llegó al tope",
     4: "nunca llegó a la vertical",
     5: "el recentrado no pudo volver",
+    6: "el péndulo no se aquietó para el re-cero",
 }
 
 #: Etiquetas del selector de modos. El firmware acepta 0..7 sin huecos.
+#:
+#: El 6 dice «lo conduce Python» en el rótulo mismo, y no en una nota al pie, porque la
+#: app **no** tiene con qué conducirlo: no manda ``/rl_cmd?a=`` en ninguna parte. Ver
+#: :data:`MODES_DRIVEN_EXTERNALLY`.
 MODE_NAMES = {
     0: "0 · Libre (STOP)",
     1: "1 · PWM manual",
@@ -83,9 +88,22 @@ MODE_NAMES = {
     3: "3 · Homing (topes)",
     4: "4 · LQR",
     5: "5 · Swing-up",
-    6: "6 · Deep RL (HTTP)",
+    6: "6 · Deep RL (HTTP — lo conduce Python)",
     7: "7 · Deep RL (chip)",
 }
+
+#: Modos que **no se conducen solos**: el firmware espera acciones de un cliente externo.
+#:
+#: El modo 6 aplica ``rlAction``, que llega por ``GET /rl_cmd?a=``. Nadie en esta app lo
+#: manda —el cliente del lazo RL es ``qube_rl/envs/qube_real.py``—, así que aplicarlo
+#: desde acá deja el motor en cero y, pasado :data:`COMMAND_TIMEOUT_S`, el watchdog del
+#: firmware devuelve la placa al modo 0. Se veía exactamente igual que un modo roto.
+#:
+#: El 7 no está en la lista: corre la política en el chip y no necesita a nadie.
+MODES_DRIVEN_EXTERNALLY = (6,)
+
+#: ``COMMAND_TIMEOUT_MS`` del firmware para el modo 6, en segundos. Atado al ``.ino``.
+COMMAND_TIMEOUT_S = 10.0
 
 
 class ReadOnlyError(RuntimeError):

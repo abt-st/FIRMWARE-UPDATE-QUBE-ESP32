@@ -1,3 +1,474 @@
+## [1.69.0] — 2026-09-05
+
+### Integral de θ para cancelar el offset del brazo (P4/H8)
+
+#### Problema
+
+El LQR de realimentación de estado puro no puede llevar el brazo a θ=0 si el péndulo
+tiene un α_offset ≠ 0 (medido: 1–8° entre tandas). En equilibrio `K1·θ + K2·α = 0 →
+θ = -K2/K1·α`. Con K2=22 y α=5°, el brazo se va a −55° y sigue acumulando hasta que
+`|θ| > 95°` dispara `safeStop()`.
+
+#### Causas del α_offset
+
+| Causa | Evidencia | Magnitud |
+|---|---|---|
+| Fricción seca asimétrica del pivote (P24) | Par seco 13.4× el viscoso | 1–5° |
+| Tilt de mesa / cable de alimentación | Sesgo constante de signo estable | 1–3° |
+| Error del re-cero (P22) | El modo 5 exige quietud pero no verifica vertical | ≤2° |
+
+#### Solución
+
+Se agrega un término integral de θ a la ley de control:
+
+```cpp
+u = -(K1·θ + K2·α + K3·θ̇ + K4·α̇ + Ki·∫θ)
+```
+
+con integración condicional (anti-windup): solo acumula si el PWM no está saturado
+o si el integrador ya va en sentido contrario.
+
+- `lqr_Ki = 0.05f` por defecto
+- Se resetea en cada entrada al modo 4 y al re-armar el catch
+- Publicado en `/state` como `lqr_ki`
+- Ajustable en vivo por HTTP (`?lqri=0.02…0.2`) y serial (`L13 <val>`)
+
+#### Evidencia de banco
+
+| Condición | p50 | max | éxitos >3s | vs línea base Ki=0 |
+|---|---|---|---|---|
+| C0_base Ki=0 (7 tandas combinadas) | 624 ms | 1455 ms | 0 | — |
+| **C0_base Ki=0.05** (1 tanda) | **506 ms** | **3408 ms** | **1** | **primer >3s con defaults** |
+| C0_base Ki=0.05 (tanda 10 min) | 742 ms | 1434 ms | 0 | mediana +19% |
+| C0_base Ki=0.02 (1 tanda) | 844 ms | 1738 ms | 0 | mediana +35% |
+
+Verificado por tres vías: `lqr_alive_ms` monótono, retry_count 5→0 a los 3197 ms
+(confirmación del firmware), y reloj de pared concordante.
+
+### Límite del brazo 95→100° (5° extra de recorrido)
+
+#### Problema
+
+A 95° de recorrido, el `safeStop()` corta el balanceo cuando el integrador apenas
+empezaba a jalar el brazo al centro. Con la deriva medida de 128°/s, 5° extra son
+~40 ms de vida del episodio — tiempo suficiente para que el integrador invierta la
+marcha en los casos marginales.
+
+#### Evidencia
+
+| Límite | fallas «tope» | p50 | max | vueltas péndulo |
+|---|---|---|---|---|
+| **95°** (n=2 tandas) | **18.5** | 624 ms | 3408 ms | 8.5 |
+| **100°** (n=1 tanda) | **8** | **718 ms** | 1269 ms | 8 |
+| 105° (n=1 tanda) | 10 | 346 ms | 1648 ms | **11** |
+
+100° minimiza las fallas por tope sin disparar las vueltas del péndulo.
+
+### Cambios
+
+#### Añadido
+- `float lqr_Ki = 0.05f` — ganancia integral para el error de estado estacionario del brazo
+- `float lqr_integTheta = 0.0f` — acumulador del integrador, ±500 deg·s de cota
+- `lqr_integTheta = 0.0f` en `resetLqr()`, entrada a modo 6 y modo 7
+- HTTP `/cmd?lqri=<val>` — ajuste en vivo de la ganancia integral
+- Serial `L13 <val>` — ganancia integral por terminal
+- `/state` → campo `lqr_ki` (4 decimales)
+
+#### Cambiado
+- `SERVO_HARD_LIMIT_DEG`: 95.0 → **100.0** (verificado óptimo contra 95 y 105)
+- Ley LQR: `u = -(… + Ki·∫θ)`
+- Integración condicional anti-windup tras el `constrain` del PWM
+
+#### Archivos tocados
+- `src/firmware/esp32_qube/esp32_qube.ino` — implementación completa
+- `experiments/2026-09-05_campana_balanceo2/` — campaña de validación (12 tandas)
+- `experiments/2026-09-05_campana_balanceo2/PLAN_CARE.md` — CARE solver + tension K4
+
+### Referencias
+
+- [P4] registrado en docs/REGISTRO_PROBLEMAS.md#p4
+- [P24] fricción seca del pivote 13.4× la viscosa
+- [P26] signos del centering corregidos en v1.68.0
+- [P22] re-cero del péndulo en swing-up
+- C16 (k4n 15→25, 6337 ms), C13 (k4 9→18, 3408 ms), H3_near (CARE K2=51, 266 s),
+  Ki=0.05 (3408 ms) — los cuatro balanceos >3s de la sesión
+
+### P26: los términos que empujan al centro empujaban al tope
+
+#### Problema identificado
+
+`MOTOR_DIR` vale **−1** en este banco, y el sentido medido por el homing lo confirma:
+`homing_pwm_sign = −1` en las tres corridas de `m3` del 2026-09-04, igual que en las
+cinco del 2026-08-21.
+
+Todo término que quiera mover el **brazo** hacia una posición vive en espacio de
+posición (grados del encoder) y tiene que cruzar a espacio de comando (PWM del puente)
+antes de sumarse a `pwm`. Ese cruce es el signo del motor. Seis expresiones se lo
+saltaban mientras el resto de cada lazo sí lo aplicaba, así que cada vez que el firmware
+creía devolver el brazo al centro lo empujaba **contra el tope**.
+
+El registro tenía cuatro documentadas ([P26], 2026-08-21). Son seis: las dos
+comparaciones `stop_dir == pwm_dir` del modo 4 construyen `stop_dir` en espacio de
+posición y lo comparan contra el signo de `pwm`, que ya salió de multiplicar por
+`MOTOR_DIR`. Con el signo cruzado la pregunta se invierte entera: el limitador
+estrangulaba el PWM que iba **al centro** y dejaba pasar el techo completo hacia el
+tope. Y en la ley de energía del modo 5 (`pl=1`) el `centerBias` se sumaba **fuera** del
+producto por `MOTOR_DIR`.
+
+#### Evidencia de banco que motivó la corrección
+
+Campaña `experiments/2026-09-04_campana_balanceo/`, seis tandas de 5 minutos:
+
+| | |
+|---|---|
+| Fallas por «el brazo llegó al tope» | **23 de 28** en la línea base |
+| Episodios de modo 4 que terminaron con el péndulo caído | **0** |
+| `pc` (recentrado del bombeo) 0 → 1,0 | sin efecto distinguible del ruido |
+
+El brazo llega al tope antes de que el péndulo se caiga, que es exactamente lo que este
+defecto predice. Es la tercera corroboración independiente, después de la del
+2026-08-21.
+
+#### Cambios aplicados
+
+**1. Un solo helper para el signo del brazo**
+
+Se prefiere el sentido **medido** en el homing sobre el `#define`: sobrevive a un
+recableado, que es justo lo que invalida a `MOTOR_DIR`. Sin homing hecho cae a
+`MOTOR_DIR`, nunca a 0 — un 0 anularía el término en silencio.
+
+```cpp
+static inline float armPwmSign() {
+  return homing_ok ? homing_pwmSign : (float)MOTOR_DIR;
+}
+```
+
+**2. Las seis expresiones**
+
+| dónde | antes | ahora |
+|---|---|---|
+| m4, centering del LQR | `-centering_gain * theta` | `… * armPwmSign()` |
+| m4, forzar centro a >70° | `(theta > 0) ? -1 : 1` | `(…) * armPwmSign()` |
+| m4, `stop_dir` cerca de la vertical | `(theta > 0) ? 1 : -1` | `(…) * armPwmSign()` |
+| m4, `stop_dir` en la región transicional | ídem | `(…) * armPwmSign()` |
+| m5, freno de fin de carrera a >90° | `(pos > 0) ? -1 : 1` | `(…) * armPwmSign()` |
+| m7, freno del híbrido | ídem | `(…) * armPwmSign()` |
+| m5, `centerBias` de la ley de energía | sumado fuera del producto | `+ centerBias * armPwmSign()` |
+
+#### Notas
+
+- **Ninguna sintonía anterior de los modos 4, 5 y 7 es transferible.** Todas se hicieron
+  con estos seis signos invertidos. Hay que re-caracterizar.
+- El recentrado de P25 y el `H_GOTO_CENTER` del homing ya cerraban con `homing_pwmSign`
+  y no se tocan.
+- La corrección estaba pendiente a propósito desde 2026-08-21 —cambia m4, m5 y m7 a la
+  vez— y se aplicó con el banco delante y una campaña midiendo antes y después.
+
+## [1.67.0] — 2026-09-02
+
+### El presupuesto de vueltas de los modos RL era el de la sesión, no el de la corrida
+
+La compuerta de cordura de los modos 6 y 7 (Etapa 3) corta el modo cuando el péndulo
+acumula `RL_MAX_WRAPS = 8` vueltas, porque pasado ese punto el contador del PCNT satura
+y α deja de ser un ángulo ([P17]). Comparaba `pend_wrapCount` **en absoluto**.
+
+`pend_wrapCount` es monotónico desde el arranque, y el propio `.ino` lo documenta así: es
+un contador que un cliente lee antes y después para sacar la diferencia. Nunca se
+reinicia. Así que el presupuesto no era de la corrida sino de la **historia de la
+sesión**: una sola tanda de swing-up deja `pend_wraps` en ~5 —está medido en la campaña
+de P15, v1.58.3— y con el reintento ilimitado de v1.66.0 sube más rápido todavía. A las
+dos tandas, `pend_wrapCount >= 8` para siempre, y **toda entrada a m6 o m7 moría en el
+primer tick de control** con `safety_action = 4`, sin recuperación posible salvo
+reiniciar la placa.
+
+El modo 5 nunca tuvo el defecto: `setMode(5)` guarda `swing_wrapsAtStart` y compara la
+diferencia. Los modos RL no tomaban línea base. Ahora `setMode()` guarda
+`rl_wrapsAtStart` al entrar al 6 y al 7, y la compuerta evalúa la resta.
+
+> **La barrera es nueva y se probó contra el caso que debe reprobar.**
+> `test_rl_wrap_budget_counts_from_mode_entry` exige que lo comparado contra
+> `RL_MAX_WRAPS` salga de `pend_wrapCount - <línea base>` y que la base se tome dentro de
+> `setMode()`; `test_the_wrap_budget_check_catches_the_absolute_comparison` corre el mismo
+> criterio sobre la forma vieja y exige que lo detecte. Tres veredictos falsos en dos días
+> salieron de criterios que sólo se probaron contra el caso que debía aprobar.
+
+### El presupuesto se publica: `rl_wraps_run` y `rl_max_wraps`
+
+Desde afuera, un corte por vueltas dejaba `safety_action = 4`, que dice **que** se cortó
+pero no cuánto faltaba, y `pend_wraps` no alcanzaba para reconstruirlo porque la línea
+base no se publicaba. Ahora `/state` trae las dos mitades y la app las muestra en una fila
+propia del panel de salud, junto con `rl_pwm_scale`.
+
+`rl_pwm_scale` está ahí porque es la **otra** forma de que un modo RL se vea muerto sin
+serlo: es global, sobrevive al cambio de modo y sólo la reinicia un arranque. En 0 la
+política corre, la inferencia varía y el motor no entrega nada. Ya pasó una vez, por un
+typo (v1.59.1). No se reinicia al entrar al modo —se fija por HTTP *antes* de entrar, y
+pisarla rompería toda campaña— pero ahora el firmware lo dice por serial al entrar y la
+app lo pinta en rojo dentro de m6/m7.
+
+### El combo de la app ofrecía un acceso que la app no podía sostener
+
+El modo 6 aplica `rlAction`, que llega por `GET /rl_cmd?a=`. **Esta app no manda ese
+endpoint en ninguna parte** —el cliente del lazo es `qube_rl/envs/qube_real.py`—, así que
+elegir «6 · Deep RL (HTTP)» y apretar «Aplicar modo» dejaba el motor en cero hasta que el
+watchdog del firmware devolvía la placa al modo 0, diez segundos después. Indistinguible
+de un modo roto, y es la primera explicación de «los modos RL no funcionan».
+
+El rótulo ahora lo dice (`6 · Deep RL (HTTP — lo conduce Python)`) y aplicarlo pide
+confirmación, con el mismo criterio que las compuertas de homing e INA219: la app **no**
+es la autoridad —entrar al 6 desde acá es lo correcto cuando el entrenamiento va a tomar
+el enlace enseguida— pero el comando no puede volver a salir sin que nadie lo diga. El
+modo 7 no lleva aviso: corre la política en el chip y no necesita a nadie.
+
+### El entrenador tampoco miraba si la placa le había aceptado el modo
+
+`QubeRealEnv._set_mode()` mandaba `/cmd?m=` y **descartaba la respuesta**, que es el
+`/state` completo: trae el modo que quedó aplicado y el `mode_reject` que explica un
+rechazo. Desde v1.60.0 el firmware rechaza el modo 6 sin homing, y acá el homing es
+opt-in (`homing_on_start=False` por omisión). O sea que el camino por defecto era pedir
+m6, que la placa lo descartara, y entrenar contra un banco en modo 0 con el motor muerto
+mientras `/rl_state` seguía devolviendo observaciones plausibles.
+
+No era invisible del todo —el `md` de la barrera de P19 lo atrapaba en el primer
+`step()`— pero lo reportaba como observación rancia, tres llamadas más tarde y con otro
+nombre. Ahora falla donde ocurre y dice cuál de las dos compuertas se cerró.
+
+Conservador a propósito: sólo lanza si la placa **dice** que aplicó otro modo. Una
+respuesta sin esos campos, o que no sea JSON, se deja pasar. El env no puede saber más
+que la placa.
+
+### Estado de verificación
+
+**Compila** (`pio run -e esp32dev`, SUCCESS, RAM 35,8 % / Flash 79,1 %) y los 264 tests
+pasan. **Sin verificar en placa.** Lo que hay que comprobar cuando se flashee: que tras
+una tanda de swing-up con `pend_wraps > 8` el modo 7 arranque y se sostenga, que
+`rl_wraps_run` vuelva a 0 al entrar al modo, y que el corte siga disparando cuando el
+péndulo sí acumula 8 vueltas dentro de la corrida.
+
+Esto **no** dice que la política de m7 sirva. Su criterio sigue en FAIL en los tres
+puntos. Lo que cambia es que ahora se la puede volver a evaluar sin reiniciar la placa
+entre intentos, que es lo que hacía falta para que «no balancea» significara algo.
+
+---
+
+## [1.66.0] — 2026-08-30
+
+### Pedir el modo 5 es pedir «bombea hasta que yo diga basta»
+
+El reintento automático del swing-up (P25, v1.63.0) traía un presupuesto de **3**
+reintentos consecutivos. Al cuarto fallo el firmware llamaba a `safeStop()` y el banco
+quedaba en modo 0 esperando a que alguien volviera a armar el modo a mano. Eso
+contradice lo que significa activar el swing-up: si falla, se vuelve al centro y se
+intenta de nuevo — un contador no es quien decide que ya está bueno.
+
+Desde esta versión el presupuesto es **ilimitado por defecto** (`swing_retry_max = -1`).
+`?rtn=N` con `N ≥ 0` sigue acotando a N para los barridos que necesitan un número fijo
+de intentos por tanda, y `?rtn=-1` vuelve a ilimitado. El contador pasó a `uint16_t`
+porque con presupuesto abierto es la cuenta de intentos de la tanda, no un residuo.
+
+### Dos caminos más que perdían el modo sin gastar reintento
+
+Con el presupuesto abierto quedaban igual **tres** salidas a modo 0 que no pasaban por
+el reintento. Auditadas una por una:
+
+| Camino | Antes | Ahora |
+|---|---|---|
+| Timeout de quietud del re-cero (P22, 20 s) | modo 0, sin motivo publicado | reintento, `swing_fail_reason = 6` |
+| Recentrado calado / timeout lejos del centro | modo 0, `swing_fail_reason = 5` | **igual: sigue deteniendo el banco** |
+| Presupuesto agotado | modo 0 | ya no existe con `rtn = -1` |
+
+El del re-cero era el peor de los tres: lo *normal* es llegar ahí con el péndulo
+oscilando después de una caída, y el motor está suelto durante la espera, así que
+reintentar no cuesta nada. Además caía sin dejar `swing_fail_reason`, así que desde
+`/state` era indistinguible de un paro cualquiera — la app lo reconstruía por un rodeo
+(`swing_zero_ok = 0` después de un intento) que ahora ya no hace falta.
+
+El del recentrado se deja como está **a propósito**: es la única de las seis fallas que
+es mecánica. Si el brazo no puede volver al centro, reintentar es empujar contra el tope
+cada 1,2 s indefinidamente. Es el piso duro que hace que «ilimitado» siga siendo seguro.
+
+### Validación de banco (2026-08-30, 5 min, presente en el banco)
+
+`experiments/2026-08-30_reintento_ilimitado/`. Homing, `m5`, y `/state` a 5 Hz durante
+300 s sin tocar nada:
+
+- **24 reintentos, ningún modo 0.** Los únicos modos vistos en toda la traza son 4 y 5.
+  Con el firmware anterior la tanda habría terminado en el reintento 3, a los 42 s.
+- Ciclo intento→intento: mediana **11,4 s** (mín. 8,6 · máx. 18,9).
+
+Lo que la misma traza dice del swing-up, que **no** era lo que se estaba midiendo y por
+eso se anota como observación y no como resultado:
+
+- **20 de 24 intentos llegaron a traspasar a modo 4.** Levantar el péndulo no es el
+  problema.
+- **Ninguno sobrevivió**: mediana de 0,79 s en modo 4, máximo 1,76 s, `lqr_alive_ms`
+  máximo 1321 ms. Nunca se alcanzaron los 3 s que rearman el presupuesto.
+- **El 62 % de las fallas (15/24) son «el brazo llegó al tope»**, contra un 33 % de
+  vuelta del péndulo y un único caso de caída limpia. El LQR que no engancha satura
+  hacia un lado y deriva el servo a los 95° antes de que el péndulo se caiga: es la
+  misma deriva del servo ya conocida, y es lo que domina la estadística de fallas.
+- **El 54 % del tiempo de tanda se va esperando quietud** para el re-cero (162 s de
+  300), contra un 35 % bombeando. Si alguna vez estorba el rendimiento de una campaña,
+  ahí está el tiempo, no en el bombeo.
+
+Nada de esto se ajustó: la tanda corrió con los defaults (`tn = 155`, `sp = 60`,
+`ke = 0,65`) a propósito, para que sea línea base y no un resultado mezclado con un
+cambio de parámetros.
+
+## [1.65.0] — 2026-08-30
+
+### El firmware anunciaba una red que no existía
+
+`WiFi.softAP()` devuelve un `bool` que **nunca se comprobaba**, y el banner de arranque
+imprimía la red incondicionalmente:
+
+```
+AP: QUBE-ESP32
+IP: 192.168.4.1
+```
+
+Las dos líneas son constantes. `WiFi.softAPIP()` devuelve 192.168.4.1 porque es la IP del
+`netif`, no porque haya un AP en el aire. Así que ante «no me puedo conectar al QUBE» la
+placa decía exactamente lo mismo estuviera la radio arriba o abajo, y no había forma de
+saber de qué lado estaba el fallo. Lo mismo en `wifi_info` y en `i`. `WiFi.mode()` tampoco
+se comprobaba.
+
+Ahora se comprueban los dos retornos, se reintenta una vez con la radio reiniciada, y el
+resultado queda en tres sitios: el banner (`[EN EL AIRE]` / `[!! NO ARRANCO: la red NO
+existe !!]`), los dos volcados por serial, y el campo **`ap_ok`** de `/state`. Si `ap_ok`
+vale `0` la red no existe, por más que estés leyendo `/state` por otro camino.
+
+Cuando —y sólo cuando— el AP no arranca, se vuelca además lo que quedó **realmente** en el
+driver (`esp_wifi_get_mode` / `esp_wifi_get_channel` / `esp_wifi_get_max_tx_power` y el heap
+libre), que es lo que hace falta para distinguir un fallo de configuración de uno de memoria.
+En marcha normal no imprime nada nuevo.
+
+### Para qué sirvió: el fallo del 2026-08-30 no era de la placa
+
+Síntoma: `QUBE-ESP32` ausente del barrido del PC y `netsh wlan connect` respondiendo «la red
+no está disponible», con la placa arrancando normal. Instrumentando el arranque, todo el lado
+de la ESP32 salió nominal —`softAP` OK, modo AP, canal 6, WPA2, beacon 100 ms, 19,50 dBm,
+167 kB de heap— y un barrido hecho desde la propia placa encontró **21 redes vecinas, la más
+fuerte a −50 dBm**: antena y receptor sanos. El AP siguió invisible en los canales 1, 6 y 11
+y también a 6,75 dBm.
+
+El fallo era del PC: **la caché de barrido de Windows estaba congelada**. Dos barridos
+separados 25 s —con un `WlanScan()` forzado por la API nativa de por medio— devolvieron los
+49 niveles de señal **idénticos byte a byte**, y la lista no contenía «Guaifai», la red que
+la ESP32 veía a −50 dBm desde el mismo escritorio. Una lista de barrido real nunca se repite
+exacta.
+
+**Confirmado el mismo día:** el adaptador (Realtek 8821AE del Lenovo Y520-15IKBN) corría con
+el controlador **genérico de Microsoft**, no el de Realtek —no había ningún driver Realtek en
+el almacén de controladores— y tenía 13 actualizaciones de controlador pendientes en Windows
+Update que nunca se habían aplicado, incluidas las de tres dispositivos del chipset Intel en
+estado de error. Tras reiniciar `WlanSvc` + la interfaz e instalarlas, la lista de barrido se
+descongeló, `QUBE-ESP32` apareció con su BSSID `28:05:A5:6F:A7:25` y `/state` respondió con
+`ap_ok=1`. El firmware no tuvo nada que ver.
+
+La regla que queda: **contrastar el barrido del PC contra un barrido hecho desde la propia
+placa antes de culpar a la ESP32.** Son dos receptores en el mismo escritorio; si discrepan,
+el que miente es el que no ve la red del otro.
+
+> Los comandos de banco que se usaron para llegar aquí (`wifi_scan`, `wifi_sta`,
+> `wifi_ap<canal>`) fueron temporales y **no** quedaron en el firmware: sólo se conserva
+> `ap_ok`. Están en el historial de esta entrada si hay que reconstruirlos.
+
+## [1.64.0] — 2026-08-26
+
+### `PEND_INERTIA` no era inexacta: era imposible
+
+Las tres constantes del péndulo quedaron identificadas en banco con balanza y regla. La
+inercia estaba mal por **1,64×**, y el error se venía arrastrando desde el 2026-07-30.
+
+| | antes | ahora | |
+|---|---|---|---|
+| `PEND_MASS` | 0,025 | **0,024** kg | medida |
+| `PEND_LENGTH` | 0,065 | **0,061** m | pivote → centro de masa, medido por balanceo |
+| `PEND_INERTIA` | 7,75e−5 | **1,2705e−4** kg·m² | ×1,64 |
+
+#### El argumento no depende de ningún modelo
+
+La geometría real no era la que se suponía: la varilla de 128,7 mm se sujeta con un
+prisionero **a 10 mm del borde**, así que el eje no está en el extremo — quedan 10 mm arriba
+y 118,7 mm abajo. El centro de masa, medido por balanceo **desde el eje**, cae a 60–62 mm.
+
+Con eso, el teorema de ejes paralelos exige `I = I_cm + m·l² ≥ m·l²`:
+
+```
+I mínimo posible = m·l² = 8,93e−5 kg·m²   (8,64e−5 incluso con l = 60 mm)
+PEND_INERTIA     =        7,75e−5 kg·m²
+```
+
+**El valor que estaba compilado quedaba por debajo del mínimo físico.** Ningún cuerpo real
+con esa masa y ese centro de masa puede tener esa inercia. No hace falta ningún modelo del
+péndulo para afirmarlo.
+
+#### El valor nuevo: dos rutas independientes al 1,8 %
+
+| ruta | `I` | `f_n` |
+|---|---|---|
+| geometría (varilla + masa equivalente en punta, ajustada al CM medido) | 1,282e−4 | 1,684 Hz |
+| dinámica (`I = mgl/ω_n²`, con la `f_n` = 1,70 Hz medida el 2026-08-13) | 1,259e−4 | 1,700 Hz |
+| **adoptado (promedio)** | **1,2705e−4** | **1,692 Hz** |
+| antes | 7,75e−5 | 2,283 Hz |
+
+La incerteza del balanceo (60–62 mm) mueve `I` apenas **±2,9 %**, contra el 64 % que se
+corrige. Que la medición sea un rango y no un número no debilita el resultado.
+
+#### Y el simulador ya estaba bien
+
+`qube_rl/envs/qube_dynamics.py` usa `Mp = 0,024` y `Lp = 0,129` —los mismos números que se
+midieron ahora— y su `_init_const` implica `ω_n² = 1,5·g/Lp = 114,07` (**1,700 Hz**), contra
+los 113,04 (1,692 Hz) de esta identificación.
+
+**Firmware y gemelo venían discrepando 1,80× en `ω_n²`, y ninguno de los dos lo declaraba.**
+Es un defecto de sim2real por derecho propio. El simulador no se tocó: era el que estaba bien.
+
+#### De dónde salió el valor viejo
+
+El comentario que acompañaba a la constante decía: *«T = 0,46 s a ~47° de amplitud →
+wn = 14,34 rad/s (2,28 Hz)»*. Repetida la medición a esa misma amplitud (47,6°):
+
+| condición | período | frecuencia |
+|---|---|---|
+| brazo **retenido** (`m2 s=0`) | 0,697 s | 1,44 Hz |
+| brazo **libre**, amplitudes chicas | ~0,40 s | ~2,49 Hz |
+| medición de 2026-07-30 | 0,46 s | 2,17 → 2,28 Hz corregido |
+
+Los 0,46 s son el **modo acoplado brazo+péndulo**, no el péndulo: la medición original se
+tomó sin sujetar el brazo. Con el brazo libre el sistema tiene dos grados de libertad y lo
+que se mide no es `f_n`.
+
+#### Qué cambia en el comportamiento
+
+`E/E*` se reduce a `ω²/(4·ω_n²) + (1 − cos α)/2` — depende **sólo** de `ω_n²`, no de `m`, `l`
+e `I` por separado, así que la masa y el largo se cancelan y el único error que importaba era
+el de la combinación. Esa escala queda corregida en **1,820×**.
+
+Toca a tres cosas a la vez: el criterio de traspaso `energy` (`swing_trans_reason = 8`), el
+techo del bombeo `ec` / `swing_energy_ceiling`, y el `swing_trans_energy` que se publica en
+`/state`. **Las campañas anteriores midieron `E/E*` contra la escala vieja**: sus valores no
+son comparables con los de aquí en adelante.
+
+#### Lo que NO se verificó
+
+**No se probó en banco.** El cambio se aplicó al final de una sesión ya derivada
+(`experiments/2026-08-26_ke_sweep/`, Resultado 2: la línea base pasó de 1/1 a 0/3 traspasos
+en 25 minutos), donde una comparación antes/después no significaría nada. Compila
+(`pio run -e esp32dev`: RAM 35,8 %, Flash 79,0 %) y **no se flasheó**. Falta una sesión con el
+banco descansado y línea base intercalada.
+
+**`I` sigue apoyada en un modelo.** `m`, `l` y `mgl` son medidos; `I` sale de un modelo de
+varilla con masa equivalente en la punta, avalado por coincidir al 1,8 % con la `f_n` medida,
+pero no es una medición directa de inercia. La prueba independiente es la de masa añadida:
+una masa conocida a un radio conocido y re-medir la frecuencia separa `I` de `mgl` sin
+suponer nada.
+
+**Esto no arregla [P26](docs/REGISTRO_PROBLEMAS.md#p26).** El brazo se va a seguir yendo al
+tope; son problemas distintos. Y [P5](docs/REGISTRO_PROBLEMAS.md#p5) figura como `RESUELTO`
+apuntando justamente a `PEND_INERTIA`: esa ficha queda para revisar.
+
 ## [app-0.3.0] — 2026-08-26
 
 ### «Aplicar modo» no hacía nada y la app no tenía nada que decir

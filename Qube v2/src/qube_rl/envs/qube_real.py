@@ -283,12 +283,52 @@ class QubeRealEnv(gym.Env):
             timeout=self.http_timeout,
         )
 
+    #: ``mode_reject`` de ``/state``: por qué el último ``?m=`` no tuvo efecto. Espejo de
+    #: ``qube_app/link.py``; atado al ``setMode()`` del ``.ino``.
+    _MODE_REJECT: ClassVar[dict[int, str]] = {
+        1: "modo fuera de rango (el firmware acepta 0-7)",
+        2: "falta el homing: correr con homing_on_start=True, o soltar la compuerta con /cmd?hr=0",
+        3: "INA219 caido: sin brownout ni limite de corriente. Soltar con /cmd?sf=0 si se sabe lo que se hace",
+    }
+
     def _set_mode(self, mode: int) -> None:
-        """Switch ESP32 mode via ``/cmd?m=<mode>``."""
-        self._session.get(
+        """Switch ESP32 mode via ``/cmd?m=<mode>`` and VERIFY the board took it.
+
+        ``/cmd`` answers with the full ``/state``, so the truth is right there in the
+        response: ``mode`` is the mode that ended up applied and ``mode_reject`` says why
+        a rejected one was refused. This method used to discard both.
+
+        That mattered. Since firmware v1.60.0 ``setMode()`` refuses mode 6 when no homing
+        has run (``hr=1``, on by default), and homing here is opt-in (``homing_on_start``
+        is False). So the default path was: ask for mode 6, get refused, and train against
+        a board sitting in mode 0 with the motor dead — while ``/rl_state`` kept returning
+        perfectly plausible observations. The episode only failed later, at the first
+        ``step()``, through the ``md`` check of the P19 freshness guard. Failing HERE names
+        the actual cause instead of reporting a stale observation three calls downstream.
+
+        Conservative on purpose: it raises only when the board explicitly says it applied
+        a different mode. A response that is not JSON, or one without these fields (a
+        firmware older than v1.60.0), is left alone — this env cannot know more than the
+        board tells it.
+        """
+        resp = self._session.get(
             f"{self._base_url}/cmd",
             params={"m": str(mode)},
             timeout=self.http_timeout,
+        )
+        try:
+            state = resp.json()
+        except ValueError:
+            return
+        applied = state.get("mode")
+        if applied is None or int(applied) == mode:
+            return
+        reason = self._MODE_REJECT.get(int(state.get("mode_reject") or 0), "")
+        raise RuntimeError(
+            f"ESP32 refused mode {mode}: it is in mode {applied}."
+            + (f" Reason: {reason}." if reason else "")
+            + " The board applies nothing and the motor stays dead, but /rl_state keeps"
+            " answering, so training would run against a frozen rig."
         )
 
     # ------------------------------------------------------------------

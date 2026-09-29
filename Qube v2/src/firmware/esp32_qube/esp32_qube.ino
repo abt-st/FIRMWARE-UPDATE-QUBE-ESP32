@@ -481,6 +481,14 @@ float lqr_K2_very_near = 55.0f;  // K2 muy cerca de vertical
 float lqr_K4_very_near = 20.0f;  // K4 muy cerca de vertical
 float lqr_very_near_deg = 5.0f;  // Umbral para gains very near
 float lqr_damping_gain = 0.3f;   // Ganancia de disipación de energía
+// Integral de theta para cancelar error de estado estacionario del brazo (P4/H8).
+// El LQR sin integral no puede llevar θ a 0 si hay α_offset ≠ 0: u = -(K1·θ + K2·α + Ki·∫θ).
+// Con Ki=0.05, el integrador cancela ~5°/s de offset de α. Se acumula durante el balanceo
+// y se resetea al entrar al modo 4. Anti-windup por integración condicional.
+// Verificado en banco 2026-09-05 (HTTP lqri=0.05): C0_base con Ki=0.05 dio LOGRADO
+// contra 0 éxitos >3s en 7 tandas de C0_base con Ki=0.
+float lqr_Ki = 0.05f;
+float lqr_integTheta = 0.0f;
 // Mode-7 hybrid RL→LQR handoff — runtime-tunable via serial (b/j/y) for bench tuning.
 float hybrid_enter_deg = 165.0f; // |alpha|>=this (deg from hanging) → enter LQR catch
 float hybrid_exit_deg  = 130.0f; // |alpha|<this → drop back to RL swing-up
@@ -524,17 +532,32 @@ unsigned long lqr_aliveMs = 0;
 //
 // `?rt=0` restaura el comportamiento anterior exacto (caer a modo 0), para poder medir
 // el A/B sin reflashear.
+//
+// v1.66.0: el presupuesto pasa a ser ILIMITADO por defecto. Un presupuesto finito
+// contradice lo que significa pedir el modo 5: si el modo se pierde solo al cuarto
+// fallo, hay que volver a armarlo a mano y el banco queda parado esperando a alguien.
+// Pedir m5 es pedir «bombea hasta que yo diga basta», y quien dice basta es un comando
+// de modo, no un contador. `?rtn=N` sigue acotando a N para los barridos que necesitan
+// un numero fijo de intentos por tanda; `?rtn=-1` vuelve a ilimitado.
+//
+// Lo que NO se toca: el reintento sigue sin ser el ultimo recurso. El recentrado calado
+// (SWING_FAIL_RECENTER) detiene el banco pase lo que pase — es la unica de las seis
+// fallas que es MECANICA: el brazo no puede volver al centro, y reintentar ahi es
+// empujar contra el tope cada 1,2 s para siempre.
 bool          swingRetryEnabled   = true;
-uint8_t       swingRetryMax       = 3;     // `?rtn=` — reintentos AUTOMATICOS consecutivos
-uint8_t       swing_retryCount    = 0;     // consumidos; lo reinicia un comando de modo explicito
+const int16_t SWING_RETRY_UNLIMITED = -1;
+int16_t       swingRetryMax       = SWING_RETRY_UNLIMITED;  // `?rtn=` — <0 = sin limite
+uint16_t      swing_retryCount    = 0;     // consumidos; lo reinicia un comando de modo explicito
 // Motivo del ultimo intento abortado, publicado en /state.
 //   0 = ninguno · 1 = el pendulo se cayo · 2 = dio una vuelta · 3 = el brazo llego al tope
 //   4 = nunca llego a la vertical · 5 = el recentrado no pudo volver
+//   6 = el pendulo no se aquieto para el re-cero
 const uint8_t SWING_FAIL_DROP     = 1;
 const uint8_t SWING_FAIL_TURN     = 2;
 const uint8_t SWING_FAIL_STOP     = 3;
 const uint8_t SWING_FAIL_ARRIVE   = 4;
 const uint8_t SWING_FAIL_RECENTER = 5;
+const uint8_t SWING_FAIL_QUIET    = 6;
 uint8_t       swing_failReason    = 0;
 // Fase de recentrado del modo 5: 0 = inactiva, 1 = volviendo al centro.
 uint8_t       swing_recenterPhase = 0;
@@ -683,6 +706,15 @@ float pendPosRawPrev = 0.0f;  // Para detectar spinning
 // pero perdia eventos — el fallback del LQR acota y JUSTO DESPUES llama a setMode(5),
 // con lo que el contador borraba el wrap que acababa de registrar.
 uint16_t pend_wrapCount = 0;
+// Linea base de `pend_wrapCount` al entrar a los modos 6 y 7, por lo mismo que el modo 5
+// tiene `swing_wrapsAtStart`: el contador de arriba es MONOTONICO desde el arranque, asi
+// que la compuerta de cordura de los modos RL no lo puede comparar en absoluto.
+// Comparandolo asi, `RL_MAX_WRAPS` se agotaba con la HISTORIA de la sesion —una sola
+// tanda de swing-up deja `pend_wraps` en ~5, y con el reintento ilimitado de v1.66.0 mas
+// todavia— y a partir de ahi TODA entrada a m6 o m7 moria en el primer tick de control
+// con `safety_action = 4`, sin recuperacion posible salvo reiniciar la placa. El
+// presupuesto tiene que contarse desde la entrada al modo, no desde el boot.
+uint16_t rl_wrapsAtStart = 0;
 unsigned long spinCooldownMs = 0;  // Timestamp para cooldown post-spin
 const unsigned long SPIN_COOLDOWN_MS = 1000;  // Duración del cooldown post-spin (ms)
 // ── Filtro de Kalman (LQG) para LQR ─────────────────────────────────────────
@@ -864,23 +896,43 @@ const int PWM_MAX = 200;
 const float SOFT_SAT_K_DEG = 200.0f;
 
 // Parametros del pendulo para calculo de energia (Quanser swing-up)
-// ⚠ PEND_MASS y PEND_LENGTH siguen SIN identificar (heredan el "- ajustar"
-// original). No importa para lo unico que usan estas constantes hoy — `E/E*` en la
-// transicion del swing-up — porque el cociente se reduce a:
+// IDENTIFICADOS EN BANCO el 2026-08-26 con balanza y regla. Antes eran heredados
+// ("- ajustar") y el momento de inercia estaba MAL POR 1.64x. Lo unico que usan
+// estas constantes hoy es `E/E*` en la transicion del swing-up, que se reduce a:
 //
 //     E/E* = alpha_dot^2 / (4 * wn^2) + (1 - cos alpha) / 2 ,   wn^2 = mgl/I
 //
-// o sea que depende SOLO de wn, no de m, L e I por separado. Si alguna vez se usan
-// para torque o para el gemelo, hay que identificarlas de verdad.
-const float PEND_MASS = 0.025f;      // Masa del pendulo (kg) - SIN identificar
-const float PEND_LENGTH = 0.065f;    // Distancia pivot-centro de masa (m) - SIN identificar
-// I ajustado el 2026-07-30 para que mgl/I reproduzca la frecuencia natural MEDIDA en
-// banco por oscilacion libre: T = 0.46 s a ~47 deg de amplitud -> wn = 14.34 rad/s
-// (2.28 Hz) corrigiendo el ~5% de amplitud finita. Antes valia 2e-5, que implicaba
-// wn = 28.2 rad/s (4.49 Hz): el doble, equivalente a una barra de 1.8 cm. Con ese
-// valor el termino cinetico de E/E* se subestimaba ~3.9x y el criterio de energia
-// nunca podia cumplirse. Ver experiments/2026-07-30_pendulum_id/.
-const float PEND_INERTIA = 7.75e-5f; // Momento de inercia (kg*m^2) - de wn medido
+// o sea que depende SOLO de wn, no de m, L e I por separado. Aun asi las tres se
+// dejan con su valor medido: el que estaba era imposible (ver abajo) y `ec` /
+// `swing_energy_ceiling` se leen contra esta misma escala.
+//
+// Geometria real: varilla de 128.7 mm sujeta por un prisionero a 10 mm del borde,
+// asi que el eje NO esta en el extremo — quedan 10 mm arriba y 118.7 mm abajo.
+// Centro de masa medido por balanceo, DESDE EL EJE: 60-62 mm (se adopta 61).
+const float PEND_MASS = 0.024f;      // Masa medida (kg). Antes 0.025 (+4.0%)
+const float PEND_LENGTH = 0.061f;    // Pivote->centro de masa MEDIDO (m). Antes 0.065
+// El valor anterior (7.75e-5) era FISICAMENTE IMPOSIBLE, y eso no depende de ningun
+// modelo: el teorema de ejes paralelos exige I >= m*l^2 = 8.93e-5 con la masa y el
+// centro de masa medidos (8.64e-5 incluso en el extremo de l = 60 mm). Ningun cuerpo
+// real con esta masa y este centro de masa puede tener esa inercia.
+//
+// El valor nuevo es el promedio de dos rutas independientes que concuerdan al 1.8%:
+//   - geometria (varilla + masa equivalente en la punta, ajustada al CM medido): 1.282e-4
+//   - dinamica  (I = mgl / wn^2 con la f_n = 1.70 Hz medida el 2026-08-13):      1.259e-4
+// La incerteza del balanceo (60-62 mm) mueve I solo +-2.9%.
+//
+// Y coincide con el simulador, que ya usaba Mp = 0.024 y Lp = 0.129 con varilla
+// uniforme: `qube_dynamics._init_const` implica wn^2 = 1.5*g/Lp = 114.07 (1.700 Hz),
+// contra los 113.04 (1.692 Hz) de aqui. Firmware y gemelo venian discrepando 1.80x
+// en wn^2 y ninguno de los dos lo declaraba.
+//
+// De donde salio el valor viejo: el comentario que reemplaza esta linea decia
+// "T = 0.46 s a ~47 deg de amplitud -> wn = 14.34 rad/s (2.28 Hz)". El 2026-08-26,
+// a esa misma amplitud pero con el BRAZO RETENIDO (m2 s=0), el periodo medido fue
+// T = 0.697 s (1.44 Hz); con el brazo LIBRE la caida libre da ~2.49 Hz. Los 0.46 s
+// son el modo acoplado brazo+pendulo, no el pendulo: la medicion de 2026-07-30 se
+// tomo sin sujetar el brazo. Ver experiments/2026-08-26_ke_sweep/.
+const float PEND_INERTIA = 1.2705e-4f; // Inercia respecto al PIVOTE (kg*m^2). Antes 7.75e-5
 const float GRAVITY = 9.81f;         // Gravedad (m/s^2)
 // ⚠ ke_gain NO ESTA CALIBRADO. Hasta la auditoria de 2026-07-28 vivia dentro de
 // una rama inalcanzable (la velocidad del pendulo era identicamente cero, ver
@@ -991,7 +1043,7 @@ const float SERVO_BRAKE_DEG      = 90.0f;
 // a 12 deg del tope mecanico). Mas riesgo sin beneficio.
 // Referencia por si se retoma: topes mecanicos en +-134.8 (medidos con >30 homings),
 // arrastre tras el corte 27 deg a PWM 50.
-const float SERVO_HARD_LIMIT_DEG = 95.0f;
+const float SERVO_HARD_LIMIT_DEG = 100.0f;
 // PWM del freno activo de los modos 5 y 7 en la banda SERVO_BRAKE..HARD_LIMIT.
 const int   SERVO_BRAKE_PWM      = 70;
 // Ganancia del centrado asistido del modo 6 por encima de SERVO_CLAMP_DEG (PWM/deg).
@@ -1063,6 +1115,17 @@ const unsigned long HOMING_QUIET_TIMEOUT_MS = 20000;
 // perfectamente bueno. La ventana +-20 deg alrededor de 270 tolera desgaste y
 // dilatacion pero sigue atrapando el caso que importa: acople suelto o encoder
 // que no cuenta, donde el calado dispara al toque y el rango da casi cero.
+// 2026-09-07: se bajo el minimo a 256 porque el banco media 259 y el homing
+// abortaba. Fue un error y se revierte. La causa no era mecanica: el recorrido
+// sale corto cuando la ADQUISICION carga el lazo. Con el DAQ detenido o a 50 Hz
+// mide 270.2-270.5 (la referencia de julio); a 100 Hz bajo carga da 262.4 y a
+// 500 Hz da 259. Con `loop_dt_max_us` en 22000-28000 contra 2000 nominales, la
+// deteccion de calado dispara antes de que el brazo toque el tope.
+//
+// La ventana hace justo lo que debe: 259 TIENE que fallar, porque ese cero seria
+// malo. Aflojarla solo consigue que una calibracion corrupta pase en silencio,
+// que es lo que paso con la corrida de 261.7 deg. Regla de banco: homing con el
+// DAQ detenido o a 50 Hz, nunca a 500.
 const float HOMING_RANGE_MIN_DEG   = 262.0f;
 const float HOMING_RANGE_MAX_DEG   = 278.0f;
 const float HOMING_QUIET_DEG       = 0.5f;    // Movimiento del pendulo que rearma la espera
@@ -1111,6 +1174,22 @@ unsigned long homing_quietMs = 0;
 // convencion de MOTOR_DIR / encoderDir, que cambia con el recableado.
 float homing_pwmSign = 1.0f;
 void homingEnterPhase(uint8_t phase, float rawPos);
+
+// ── P26: el signo con el que se empuja el BRAZO ──────────────────────────────
+// Todo termino que quiera mover el brazo hacia una posicion vive en espacio de
+// POSICION (grados del encoder) y tiene que cruzar a espacio de COMANDO (PWM del
+// puente) antes de sumarse a `pwm`. Ese cruce es este signo, y hasta v1.67.0 seis
+// expresiones se lo saltaban mientras el resto de cada lazo si lo aplicaba: con
+// MOTOR_DIR = -1 —el valor de este banco— cada vez que el firmware creia devolver
+// el brazo al centro lo empujaba contra el tope.
+//
+// Se prefiere el sentido MEDIDO en el homing sobre el `#define`: sobrevive a un
+// recableado, que es justo lo que invalida a MOTOR_DIR. Sin homing todavia hecho
+// no hay medicion y se cae a MOTOR_DIR — nunca a 0, que anularia el termino en
+// silencio.
+static inline float armPwmSign() {
+  return homing_ok ? homing_pwmSign : (float)MOTOR_DIR;
+}
 
 // ── Umbrales LQR ─────────────────────────────────────────────────────────────
 const float LQR_SERVO_LIMIT_DEG = 90.0f;                 // Saturación del ángulo del servo en el lazo
@@ -1349,6 +1428,8 @@ const char* AP_PASS = "qube1234";
 // solapan en 2,4 GHz; 6 es el histórico de este firmware. En AP+STA el canal no se
 // elige: se copia del router por escaneo (ver setup()), porque la radio es una sola.
 const uint8_t AP_CHANNEL = 6;
+// Estado REAL del SoftAP: lo que devolvio WiFi.softAP(), no lo que suponemos.
+bool apOk = false;
 // Rol de radio. Por defecto SoftAP PURO: el PC se asocia a QUBE-ESP32 y llega a
 // 192.168.4.1. La coexistencia AP+STA sobre una radio única fue la causa MEDIDA de
 // los picos de latencia de ~100 ms (CHANGELOG v1.50.0, verificada en tres flasheos
@@ -1581,6 +1662,7 @@ void resetLqr() {
   lqr_prevAlpha = getPendulumPositionDeg();
   lqr_filteredVelTheta = 0.0f;
   lqr_filteredVelAlpha = 0.0f;
+  lqr_integTheta = 0.0f;
   kalmanReset();
   // Invalida el cronometro de supervivencia: el modo 4 lo re-siembra al terminar el
   // catch. `lqr_aliveMs` NO se toca a proposito — es el resultado del intento previo
@@ -1862,16 +1944,32 @@ bool setMode(int newMode) {
     // milisegundos y despues vale 0.75 (o 1.5 con el boost por calado), siempre.
     // Tercer mando del swing-up con este defecto, despues de `bt` y del bug F1.
   }
+  if (mode == 6 || mode == 7) {
+    // Presupuesto de vueltas de ESTA corrida. Sin esta linea la compuerta de cordura
+    // comparaba el contador monotonico del arranque y cortaba el modo en el primer tick.
+    rl_wrapsAtStart = pend_wrapCount;
+    // `rl_pwm_scale` es global y sobrevive al cambio de modo Y a la salida del modo: solo
+    // lo reinicia un arranque. Con la escala en 0 la politica corre, la inferencia varia y
+    // el motor no entrega NADA, sin ninguna señal que lo denuncie — es exactamente la
+    // firma de "el modo esta muerto". Ya paso una vez (v1.59.1, el typo `qq`). No se
+    // reinicia aca a proposito, porque se fija por HTTP ANTES de entrar al modo y pisarlo
+    // romperia toda campaña; lo que se hace es decirlo.
+    if (rl_pwm_scale <= 0.0f) {
+      Serial.printf("[RL] AVISO: modo %d con rl_pwm_scale=0 — par nulo. `/rl_cmd?scale=1`\n", newMode);
+    }
+  }
   if (mode == 6) {
     rlAction = 0.0f;
     lqr_prevTheta = getPositionDeg();
     lqr_prevAlpha = getPendulumPositionDeg();
     lqr_filteredVelTheta = 0.0f;
     lqr_filteredVelAlpha = 0.0f;
+    lqr_integTheta = 0.0f;
     rl_vf_init = false;  // re-init the sim-convention velocity filter (shared with mode 7)
     rl_obs_th = rl_obs_al = rl_obs_thd = rl_obs_ald = 0.0f;
   }
   if (mode == 7) {
+    lqr_integTheta = 0.0f;
     // Reset RL inference buffer
     rl_obs_idx = 0;
     rl_last_action = 0.0f;
@@ -1913,8 +2011,8 @@ bool requestSwingRetry(uint8_t reason) {
     safeStop();
     return false;
   }
-  if (swing_retryCount >= swingRetryMax) {
-    Serial.printf("[SWING] intento fallido (motivo=%u, brazo=%.1f): %u/%u reintentos agotados\n",
+  if (swingRetryMax >= 0 && swing_retryCount >= (uint16_t)swingRetryMax) {
+    Serial.printf("[SWING] intento fallido (motivo=%u, brazo=%.1f): %u/%d reintentos agotados\n",
                   reason, armPos, swing_retryCount, swingRetryMax);
     safeStop();
     return false;
@@ -1925,9 +2023,17 @@ bool requestSwingRetry(uint8_t reason) {
   // acumulada lo deja fuera de [-180,180] (P13/P14). No redefine el cero.
   wrapPendulumTurns();
 
+  // No satura a proposito: con el presupuesto ilimitado el contador ES la cuenta de
+  // intentos de la tanda, y una tanda que llegue a 65535 reintentos tiene un problema
+  // mucho mas grave que el desbordamiento del contador.
   swing_retryCount++;
-  Serial.printf("[SWING] intento fallido (motivo=%u, brazo=%.1f): reintento %u/%u — al centro y a bombear\n",
-                reason, armPos, swing_retryCount, swingRetryMax);
+  if (swingRetryMax >= 0) {
+    Serial.printf("[SWING] intento fallido (motivo=%u, brazo=%.1f): reintento %u/%d — al centro y a bombear\n",
+                  reason, armPos, swing_retryCount, swingRetryMax);
+  } else {
+    Serial.printf("[SWING] intento fallido (motivo=%u, brazo=%.1f): reintento %u (sin limite) — al centro y a bombear\n",
+                  reason, armPos, swing_retryCount);
+  }
 
   if (!setMode(5)) {
     // setMode(5) puede rechazar por falta de homing o INA219 caido. Si eso pasa no hay
@@ -2508,6 +2614,13 @@ String getStateJson() {
   json += "\"rl_obs_seq\":" + String(rl_obs_seq) + ",";
   json += "\"rl_obs_age\":" + String(rl_obs_seq == 0 ? 999999UL : (millis() - rl_obs_stampMs)) + ",";
   json += "\"rl_obs_mode\":" + String(rl_obs_mode) + ",";
+  // El presupuesto de vueltas de los modos RL, tal como lo evalua la compuerta de
+  // cordura. `pend_wraps` solo (monotonico desde el arranque) no alcanza: un cliente que
+  // quiera saber cuanto le queda al modo tiene que restar la linea base, y la linea base
+  // no se publicaba. Sin esto, la unica forma de ver por que se corto m6/m7 era el
+  // `safety_action = 4`, que dice QUE se corto pero no CUANTO faltaba.
+  json += "\"rl_wraps_run\":" + String((uint16_t)(pend_wrapCount - rl_wrapsAtStart)) + ",";
+  json += "\"rl_max_wraps\":" + String(RL_MAX_WRAPS) + ",";
   json += "\"homing_fail\":" + String(homing_failCode) + ",";
   json += "\"homing_stop_pos\":" + String(homing_stopPosRaw, 3) + ",";
   json += "\"homing_stop_neg\":" + String(homing_stopNegRaw, 3) + ",";
@@ -2532,6 +2645,16 @@ String getStateJson() {
   // P23: `ke_gain` no se publicaba en ninguna parte, asi que un barrido de `?ke=` no
   // tenia forma de verificar contra que valor estaba midiendo — y estaba midiendo
   // KE_GAIN_BASE contra si mismo. `ke_override` < 0 significa "manda la adaptativa".
+  // Escala de energia del pendulo, publicada desde v1.64.0. `E/E*` se reduce a
+  // `wd^2/(4*wn2) + (1-cos a)/2`, o sea que depende SOLO de esta combinacion — ni de
+  // la masa ni del largo por separado. Sin publicarla, una campaña no puede saber
+  // contra que escala midio, que es justo lo que hizo incomparables a las anteriores:
+  // hasta v1.63.0 valia 205.7 (f_n 2.28 Hz) por una inercia que resulto imposible.
+  // Es tambien la unica forma de verificar que un flasheo OTA efectivamente entro.
+  // `ap_ok` = retorno real de WiFi.softAP(). Si es 0 la red no existe, por mas que
+  // estes leyendo /state por otro camino.
+  json += "\"ap_ok\":" + String(apOk ? 1 : 0) + ",";
+  json += "\"pend_wn2\":" + String(PEND_MASS * GRAVITY * PEND_LENGTH / PEND_INERTIA, 2) + ",";
   json += "\"ke_gain\":" + String(ke_gain, 3) + ",";
   json += "\"ke_override\":" + String(ke_gain_override, 3) + ",";
   json += "\"swing_ceiling_hits\":" + String(swing_ceilingHits) + ",";
@@ -2548,7 +2671,7 @@ String getStateJson() {
   // exactamente la diferencia que el reintento introduce en las tasas de exito.
   json += "\"swing_retry_enabled\":" + String(swingRetryEnabled ? 1 : 0) + ",";
   json += "\"swing_retry_count\":" + String(swing_retryCount) + ",";
-  json += "\"swing_retry_max\":" + String(swingRetryMax) + ",";
+  json += "\"swing_retry_max\":" + String(swingRetryMax) + ",";  // <0 = sin limite
   json += "\"swing_fail_reason\":" + String(swing_failReason) + ",";
   json += "\"swing_recenter_phase\":" + String(swing_recenterPhase) + ",";
   json += "\"swing_trans_ms_ago\":" + String(swing_transMs ? (millis() - swing_transMs) : 0) + ",";
@@ -2564,6 +2687,7 @@ String getStateJson() {
   // verificar contra que techo esta midiendo la saturacion en vez de suponerlo — que es
   // como se descubrio que la prueba ingenua contra el tope daba 0% siempre.
   json += "\"lqr_pwm_max\":" + String(lqrPwmMax) + ",";
+  json += "\"lqr_ki\":" + String(lqr_Ki, 4) + ",";  // Ganancia integral (P4/H8)
   // Las DOS velocidades tal como las consume la ley de control, y el error de angulo con
   // el signo con que entra. No son telemetria: son la unica forma de saber el signo de
   // realimentacion sin deducirlo del codigo.
@@ -2896,6 +3020,7 @@ void handleCmd(AsyncWebServerRequest *request) {
   if (request->hasParam("lqr4vn")) { lqr_K4_very_near = request->getParam("lqr4vn")->value().toFloat(); resetLqr(); }
   if (request->hasParam("lqrvnd")) { lqr_very_near_deg = request->getParam("lqrvnd")->value().toFloat(); resetLqr(); }
   if (request->hasParam("lqrdamp")) { lqr_damping_gain = request->getParam("lqrdamp")->value().toFloat(); resetLqr(); }
+  if (request->hasParam("lqri")) { lqr_Ki = request->getParam("lqri")->value().toFloat(); resetLqr(); }
   // H2/H6: las dos variables de la ventana del catch. NO llaman a resetLqr() — no son
   // ganancias y no hay estado de filtro que invalidar; ademas resetLqr() reinicia el
   // cronometro de supervivencia, que es justo lo que se esta midiendo.
@@ -2998,11 +3123,13 @@ void handleCmd(AsyncWebServerRequest *request) {
   // `rt=0` restaura el comportamiento previo a v1.63 (el intento fallido cae a modo 0).
   // `rtn=0` deja el reintento habilitado pero sin presupuesto, que es lo mismo — se
   // acepta igual para poder barrer el numero de reintentos desde 0 sin tocar `rt`.
+  // `rtn=-1` (el default desde v1.66.0) es ilimitado: el modo 5 sigue reintentando
+  // hasta que llegue un comando de modo.
   if (request->hasParam("rt")) {
     swingRetryEnabled = (request->getParam("rt")->value().toInt() != 0);
   }
   if (request->hasParam("rtn")) {
-    swingRetryMax = (uint8_t)constrain(request->getParam("rtn")->value().toInt(), 0, 20);
+    swingRetryMax = (int16_t)constrain(request->getParam("rtn")->value().toInt(), -1, 999);
     swing_retryCount = 0;
   }
   if (request->hasParam("ec")) {
@@ -3180,7 +3307,8 @@ void saveWifiCredentials(const char* ssid, const char* pass) {
 void printWifiInfo() {
   Serial.println("=== WiFi Configuration ===");
   Serial.print("AP SSID: ");
-  Serial.println(AP_SSID);
+  Serial.print(AP_SSID);
+  Serial.println(apOk ? " [en el aire]" : " [NO ARRANCO]");
   Serial.print("AP IP:   ");
   Serial.println(WiFi.softAPIP());
   Serial.print("STA SSID: ");
@@ -3199,7 +3327,8 @@ void printWifiInfo() {
 void printNetworkInfo() {
   Serial.println("=== RED WiFi ===");
   Serial.print("AP SSID: ");
-  Serial.println(AP_SSID);
+  Serial.print(AP_SSID);
+  Serial.println(apOk ? " [en el aire]" : " [NO ARRANCO]");
   Serial.print("AP IP:   ");
   Serial.println(WiFi.softAPIP());
   if (WiFi.status() == WL_CONNECTED) {
@@ -3506,10 +3635,14 @@ void processSerialCommand() {
           // L12 <+1|-1> — signo de la velocidad del pendulo en el swing-up.
           // Si el bombeo del modo 5 frena en vez de excitar, invertir aca.
           case 12: swing_vel_sign = (val >= 0.0f) ? 1.0f : -1.0f; break;
+          // L13 <val> — ganancia integral del LQR (lqr_Ki). 0 = sin integral.
+          // Valores típicos: 0.01-0.1. Mayor valor = corrección más rápida del
+          // offset del brazo pero riesgo de oscilación o windup.
+          case 13: lqr_Ki = val; resetLqr(); break;
           default: applied = false; break;
         }
         if (!applied) {
-          Serial.printf("[ERR] L%d no existe (validos 1..12)\n", n);
+          Serial.printf("[ERR] L%d no existe (validos 1..13)\n", n, val);
           break;
         }
         Serial.printf("[LQR] g%d=%.3f\n", n, val);
@@ -3908,7 +4041,9 @@ void setup() {
   // Load WiFi credentials from NVS
   loadWifiCredentials();
 
-  WiFi.mode(ENABLE_STA ? WIFI_AP_STA : WIFI_AP);
+  if (!WiFi.mode(ENABLE_STA ? WIFI_AP_STA : WIFI_AP)) {
+    Serial.println("[WiFi] ERROR: WiFi.mode() fallo (esp_wifi_init/start no arranco)");
+  }
   WiFi.onEvent(onWifiEvent);
   // Coexistencia AP+STA: el ESP32 tiene UNA sola radio, por lo que el SoftAP
   // debe operar en el MISMO canal que el router STA. Si se fuerza un canal
@@ -3925,7 +4060,34 @@ void setup() {
     }
     WiFi.scanDelete();
   }
-  WiFi.softAP(AP_SSID, AP_PASS, apChannel, false, 4);  // canal = STA, SSID visible, max 4
+  // El retorno de softAP() NO es decorativo. Si falla, `WiFi.softAPIP()` sigue
+  // devolviendo 192.168.4.1 —es la IP del netif, no prueba de que el AP este en el
+  // aire— y el banner de arranque anunciaba la red igual. El 2026-08-30 la placa
+  // arranco imprimiendo "AP: QUBE-ESP32 / IP: 192.168.4.1" con el SSID AUSENTE del
+  // barrido del PC y el firmware no tenia forma de decir de que lado estaba el fallo.
+  // Ahora se comprueba, se reintenta una vez y el resultado se publica en `ap_ok`.
+  apOk = WiFi.softAP(AP_SSID, AP_PASS, apChannel, false, 4);  // canal = STA, SSID visible, max 4
+  if (!apOk) {
+    Serial.println("[WiFi] ERROR: softAP() fallo; reintentando con la radio reiniciada");
+    WiFi.mode(WIFI_OFF);
+    delay(200);
+    WiFi.mode(ENABLE_STA ? WIFI_AP_STA : WIFI_AP);
+    apOk = WiFi.softAP(AP_SSID, AP_PASS, apChannel, false, 4);
+  }
+  if (!apOk) {
+    // Solo cuando hay algo que diagnosticar: leer del driver lo que quedo REALMENTE
+    // configurado, no lo que pedimos. En marcha normal esto no imprime nada.
+    wifi_mode_t md = WIFI_MODE_NULL;
+    esp_wifi_get_mode(&md);
+    uint8_t pc = 0;
+    wifi_second_chan_t ps = WIFI_SECOND_CHAN_NONE;
+    esp_wifi_get_channel(&pc, &ps);
+    int8_t pwr = 0;
+    esp_wifi_get_max_tx_power(&pwr);
+    Serial.printf("[WiFi] modo=%d canal=%u txpwr=%d(%.2f dBm) heap=%u\n",
+                  (int)md, (unsigned)pc, (int)pwr, pwr * 0.25f,
+                  (unsigned)ESP.getFreeHeap());
+  }
   // Beacon del AP. Rango válido 100–60000 ms.
   //  · AP+STA (radio única): el beacon cada ~100 ms competía con el tráfico STA y era
   //    la causa medida de los picos de ~100 ms; subirlo a 300 ms le da más tiempo de
@@ -4068,7 +4230,8 @@ void setup() {
 
   Serial.println("=== QUBE ESP32 + L298N + INA219 ===");
   Serial.print("AP: ");
-  Serial.println(AP_SSID);
+  Serial.print(AP_SSID);
+  Serial.println(apOk ? "  [EN EL AIRE]" : "  [!! NO ARRANCO: la red NO existe !!]");
   Serial.print("IP: ");
   Serial.println(WiFi.softAPIP());
   if (WiFi.status() == WL_CONNECTED) {
@@ -4275,11 +4438,19 @@ void loop() {
     // entregando acciones perfectamente plausibles, y no hay ninguna señal que lo
     // denuncie. Cortar por vueltas es la unica defensa mientras falte el acumulador
     // de desbordamiento del PCNT.
+    // El presupuesto de vueltas se cuenta DESDE LA ENTRADA AL MODO (`rl_wrapsAtStart`),
+    // igual que el del modo 5. Comparar `pend_wrapCount` en absoluto hacia que la
+    // historia de la sesion consumiera el presupuesto de una corrida que todavia no
+    // habia empezado, y a las ~2 tandas de swing-up los modos 6 y 7 quedaban muertos
+    // hasta reiniciar la placa. La resta es sobre uint16_t sin signo: sigue siendo
+    // correcta cuando el contador da la vuelta.
+    const uint16_t rl_wrapsThisRun = (uint16_t)(pend_wrapCount - rl_wrapsAtStart);
     if ((mode == 6 || mode == 7) &&
-        (fabsf(pendPosRaw) > LQR_PROTECT_RAW_DEG || pend_wrapCount >= RL_MAX_WRAPS)) {
+        (fabsf(pendPosRaw) > LQR_PROTECT_RAW_DEG || rl_wrapsThisRun >= RL_MAX_WRAPS)) {
       safety_lastAction = 4;
       safety_cutCount++;
-      Serial.printf("[SAFE] modo %d cortado: pend_raw=%.0f wraps=%u\n", mode, pendPosRaw, pend_wrapCount);
+      Serial.printf("[SAFE] modo %d cortado: pend_raw=%.0f wraps=%u/%u (total %u)\n",
+                    mode, pendPosRaw, rl_wrapsThisRun, RL_MAX_WRAPS, pend_wrapCount);
       safeStop();
     }
 
@@ -4526,9 +4697,9 @@ void loop() {
         k4_eff *= vel_scale;
       }
 
-      // LQR: u = -(K1*theta + K2*alpha + K3*theta_dot + K4*alpha_dot)
+      // LQR: u = -(K1*theta + K2*alpha + K3*theta_dot + K4*alpha_dot + Ki*integTheta)
       // alpha=0 es la posición vertical (invertido)
-      float u = -(lqr_K1 * theta + k2_eff * alpha + lqr_K3 * velTheta_ctrl + k4_eff * velAlpha_ctrl);
+      float u = -(lqr_K1 * theta + k2_eff * alpha + lqr_K3 * velTheta_ctrl + k4_eff * velAlpha_ctrl + lqr_Ki * lqr_integTheta);
       // Espejo para /state: exactamente lo que acaba de entrar a la ley, con su signo.
       lqr_dbgVelTheta = velTheta_ctrl;
       lqr_dbgVelAlpha = velAlpha_ctrl;
@@ -4542,6 +4713,17 @@ void loop() {
       }
 
       pwm = constrain((int)(MOTOR_DIR * u), -lqrPwmMax, lqrPwmMax);
+
+      // ── Integrador anti-windup ─────────────────────────────────────────────
+      // Actualizar lqr_integTheta con integración condicional: si el PWM está
+      // saturado y el integrador empuja en la misma dirección, no se acumula.
+      // Esto evita windup cuando el centering o el límite de PWM recortan la salida.
+      float integInc = theta * dt;
+      if (abs(pwm) < lqrPwmMax || lqr_integTheta * integInc <= 0.0f) {
+        lqr_integTheta += integInc;
+      }
+      // Cota de seguridad: ±500 deg·s (~10s a 50° de error)
+      lqr_integTheta = constrain(lqr_integTheta, -500.0f, 500.0f);
 
       // Servo centering en LQR: mantener el servo cerca del centro para
       // maximizar el rango de actuación y reducir oscilación del servo.
@@ -4571,7 +4753,7 @@ void loop() {
           float centering_gain = 0.5f * ramp;
           if (absTheta > 40.0f) centering_gain = 1.0f * ramp;
           else if (absTheta > 20.0f) centering_gain = 0.75f * ramp;
-          float centering = -centering_gain * theta;
+          float centering = -centering_gain * theta * armPwmSign();  // P26
           centering = constrain(centering, -25.0f, 25.0f);
           pwm += (int)centering;
         }
@@ -4600,13 +4782,13 @@ void loop() {
         if (absTheta > 70.0f && !pendulumNearVertical) {
           // FORZAR centro solo cuando el péndulo NO está arriba.
           // Cuando el péndulo está en la vertical, dejar al LQR decidir.
-          float center_dir = (theta > 0) ? -1.0f : 1.0f;
+          float center_dir = ((theta > 0) ? -1.0f : 1.0f) * armPwmSign();  // P26
           pwm = (int)(center_dir * (float)lqrPwmMax);
           servoPwmLimit = lqrPwmMax;
         } else if (absTheta > 70.0f && pendulumNearVertical) {
           // Péndulo arriba + servo lejos: limitar PWM que se ALEJA del centro,
           // pero permitir PWM que va AL centro. No reemplazar el output del LQR.
-          float stop_dir = (theta > 0) ? 1.0f : -1.0f;
+          float stop_dir = ((theta > 0) ? 1.0f : -1.0f) * armPwmSign();  // P26
           float pwm_dir = (pwm > 0) ? 1.0f : ((pwm < 0) ? -1.0f : 0.0f);
           if (pwm_dir == stop_dir) {
             // PWM va contra stop: limitar fuertemente
@@ -4617,7 +4799,7 @@ void loop() {
           }
         } else if (absTheta > 50.0f) {
           // Región transicional: limitar PWM que se aleja
-          float stop_dir = (theta > 0) ? 1.0f : -1.0f;
+          float stop_dir = ((theta > 0) ? 1.0f : -1.0f) * armPwmSign();  // P26
           float pwm_dir = (pwm > 0) ? 1.0f : ((pwm < 0) ? -1.0f : 0.0f);
           if (pwm_dir == stop_dir) {
             servoPwmLimit = (int)((float)lqrPwmMax * (1.0f - (absTheta - 50.0f) / 20.0f));
@@ -4874,7 +5056,18 @@ void loop() {
           swing_zeroPhase = 0;
           swing_zeroOk = false;
           Serial.println("[SWING] FALLA: el pendulo no se aquieto; no se arranca a ciegas");
-          setMode(0);
+          // v1.66.0: segundo camino que caia a modo 0 sin pasar por el reintento (el
+          // primero fue el corte por vueltas, P25). Que el pendulo no se aquiete en 20 s
+          // es un intento fallido como los otros cinco, no una falla del banco: lo
+          // normal es que venga de una caida que lo dejo oscilando. Recentrar y volver a
+          // esperar es exactamente lo que corresponde, y con el motor suelto durante la
+          // espera el reintento no cuesta nada. Sin esto, el modo 5 se seguia perdiendo
+          // solo por mas ilimitado que fuera el presupuesto.
+          setMotorDirect(0);
+          swing_holdArm    = false;
+          swing_holdActive = false;
+          requestSwingRetry(SWING_FAIL_QUIET);
+          return;
         }
         return;
       }
@@ -4883,7 +5076,7 @@ void loop() {
       // ── Fin de carrera del modo 5: freno activo hacia el centro ────────────
       {
         if (fabsf(pos) > SERVO_BRAKE_DEG) {
-          float brake_dir = (pos > 0) ? -1.0f : 1.0f;
+          float brake_dir = ((pos > 0) ? -1.0f : 1.0f) * armPwmSign();  // P26
           setMotor((int)(brake_dir * SERVO_BRAKE_PWM));
           return;
         }
@@ -5106,7 +5299,10 @@ void loop() {
             swing_posMean += (pos - swing_posMean) * SWING_POSMEAN_ALPHA;
             const float centerBias = -swingupCenterGain * swing_posMean;
 
-            pwm = (int)(MOTOR_DIR * swingupPumpSign * swingupEnergyGain * E_def * dir + centerBias);
+            // P26: `centerBias` se sumaba FUERA del producto por MOTOR_DIR. Es un
+            // termino de posicion y necesita su propio cruce de signo.
+            pwm = (int)(MOTOR_DIR * swingupPumpSign * swingupEnergyGain * E_def * dir
+                        + centerBias * armPwmSign());
             pwm = constrain(pwm, -swingupPwmMax, swingupPwmMax);
           } else {
             // Péndulo oscilando: resonant pumping
@@ -5211,7 +5407,7 @@ void loop() {
 
       // ── Fin de carrera del modo 7: freno activo hacia el centro ────────────
       if (fabsf(pos) > SERVO_BRAKE_DEG) {
-        float brake_dir = (pos > 0) ? -1.0f : 1.0f;
+        float brake_dir = ((pos > 0) ? -1.0f : 1.0f) * armPwmSign();  // P26
         setMotor((int)(brake_dir * SERVO_BRAKE_PWM));
         rl_vf_init = false;  // re-init velocity filter when control resumes
         return;

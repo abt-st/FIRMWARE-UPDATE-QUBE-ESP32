@@ -141,7 +141,10 @@ def upload(ip: str, bin_path: Path | None = None) -> bool:
             resp = requests.post(
                 url,
                 files={"file": ("firmware.bin", f, "application/octet-stream")},
-                timeout=60,
+                # 60 s no alcanzaban el 2026-09-07: con el SoftAP lento (RTT de
+                # /state ~890 ms) el POST de 1 MB se cortaba por lectura sin haber
+                # llegado a aplicar nada. El limite util es la paciencia, no la red.
+                timeout=300,
             )
         data = resp.json()
         if data.get("ok"):

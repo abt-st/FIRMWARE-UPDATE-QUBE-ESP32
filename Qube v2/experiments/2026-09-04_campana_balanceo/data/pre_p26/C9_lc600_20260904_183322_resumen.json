@@ -1,0 +1,122 @@
+{
+  "config": "C9_lc600",
+  "traza": "C9_lc600_20260904_183322.jsonl",
+  "veredicto": "NO SIRVE",
+  "razones": [
+    "p50 447 ms contra banda base [530, 753]; max 1502 ms contra banda base [799, 1174]  (n=2 bases)"
+  ],
+  "duracion_s": 299.898,
+  "muestras": 1785,
+  "reintentos": 25,
+  "traspasos": 11,
+  "alive_p50_ms": 447,
+  "alive_max_ms": 1502,
+  "exitos_3s": 0,
+  "fallas": {
+    "3": 21,
+    "6": 1,
+    "2": 3,
+    "4": 1
+  },
+  "episodios": [
+    {
+      "t": 4.35,
+      "alive_ms": 674,
+      "fail": 3,
+      "trans_alpha": 165.76,
+      "trans_vel": 13.02,
+      "trans_energy": 0.9847,
+      "trans_reason": 15
+    },
+    {
+      "t": 52.974,
+      "alive_ms": 674,
+      "fail": 3,
+      "trans_alpha": 178.24,
+      "trans_vel": 109.7,
+      "trans_energy": 1.0033,
+      "trans_reason": 4
+    },
+    {
+      "t": 72.879,
+      "alive_ms": 674,
+      "fail": 3,
+      "trans_alpha": 161.02,
+      "trans_vel": 99.93,
+      "trans_energy": 0.9757,
+      "trans_reason": 2
+    },
+    {
+      "t": 85.691,
+      "alive_ms": 674,
+      "fail": 2,
+      "trans_alpha": 171.74,
+      "trans_vel": 16.4,
+      "trans_energy": 0.9949,
+      "trans_reason": 13
+    },
+    {
+      "t": 123.856,
+      "alive_ms": 410,
+      "fail": 2,
+      "trans_alpha": 175.61,
+      "trans_vel": 13.86,
+      "trans_energy": 0.9986,
+      "trans_reason": 13
+    },
+    {
+      "t": 159.641,
+      "alive_ms": 410,
+      "fail": 3,
+      "trans_alpha": -161.89,
+      "trans_vel": 3.87,
+      "trans_energy": 0.9752,
+      "trans_reason": 11
+    },
+    {
+      "t": 177.632,
+      "alive_ms": 446,
+      "fail": 3,
+      "trans_alpha": -155.74,
+      "trans_vel": 340.91,
+      "trans_energy": 0.9897,
+      "trans_reason": 2
+    },
+    {
+      "t": 188.261,
+      "alive_ms": 446,
+      "fail": 3,
+      "trans_alpha": 174.2,
+      "trans_vel": 21.98,
+      "trans_energy": 0.9976,
+      "trans_reason": 15
+    },
+    {
+      "t": 220.281,
+      "alive_ms": 446,
+      "fail": 3,
+      "trans_alpha": -162.25,
+      "trans_vel": 44.42,
+      "trans_energy": 0.9768,
+      "trans_reason": 8
+    },
+    {
+      "t": 284.133,
+      "alive_ms": 447,
+      "fail": 3,
+      "trans_alpha": -158.38,
+      "trans_vel": 41.09,
+      "trans_energy": 0.9653,
+      "trans_reason": 8
+    },
+    {
+      "t": 294.296,
+      "alive_ms": 1502,
+      "fail": 4,
+      "trans_alpha": -162.25,
+      "trans_vel": 8.14,
+      "trans_energy": 0.9762,
+      "trans_reason": 9
+    }
+  ]
+}

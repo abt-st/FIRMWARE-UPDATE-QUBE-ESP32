@@ -1,1 +1,7 @@
 *.code-workspace
+
+# Trámites administrativos de tesis (no versionar)
+_tesis_tramites/
+
+# Trabajos en proceso (notas locales, no versionar)
+trabajos_en_proceso/

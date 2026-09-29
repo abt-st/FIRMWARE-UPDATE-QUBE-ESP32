@@ -1,6 +1,6 @@
 # QUBE ESP32
 
-[![License: CC BY 4.0](https://img.shields.io/badge/License-CC_BY_4.0-lightgrey.svg)](LICENSE)
+[![License: CC BY-NC-ND 4.0](https://img.shields.io/badge/License-CC_BY--NC--ND_4.0-lightgrey.svg)](LICENSE)
 [![Platform: ESP32](https://img.shields.io/badge/Platform-ESP32-000000.svg)](https://www.espressif.com/en/products/socs/esp32)
 [![Firmware: PlatformIO](https://img.shields.io/badge/Firmware-PlatformIO-FF6F00.svg)](https://platformio.org/)
 [![Python: 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB.svg)](https://www.python.org/)
@@ -576,4 +576,6 @@ QUBE ESP32 soporta dos paradigmas de control complementarios:
 
 ## Licencia
 
-CC BY 4.0 — ver [LICENSE](LICENSE) para detalles.
+CC BY-NC-ND 4.0 (Atribución-NoComercial-SinDerivadas 4.0 Internacional) — ver [LICENSE](LICENSE) para detalles.
+
+Se permite usar la obra reconociendo al autor. No se permite generar obras derivadas ni el uso con fines comerciales.

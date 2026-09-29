@@ -491,6 +491,89 @@ def test_unknown_state_never_blocks(app, monkeypatch):
     assert panel.blocked_reason(4) == ""
 
 
+def test_mode_6_warns_that_this_app_does_not_drive_it(app, monkeypatch):
+    """El modo 6 espera acciones por ``/rl_cmd?a=`` y esta app no manda ninguna.
+
+    Aplicarlo desde acá deja el motor en cero hasta que el watchdog del firmware devuelve
+    la placa al modo 0, diez segundos después. Se ve idéntico a un modo roto, y fue la
+    primera explicación de «los modos RL no funcionan»: el combo ofrecía un acceso que la
+    app no podía sostener. El 7 corre la política en el chip y no lleva aviso.
+    """
+    from qube_app.ui import panels
+
+    panel = ControlPanel()
+    sent: list[dict] = []
+    panel.command.connect(sent.append)
+    panel.update_state({"homing_ok": True, "homing_required": True, "ina_ok": True, "mode": 0})
+
+    monkeypatch.setattr(panels.QMessageBox, "warning", lambda *_a, **_k: panels.QMessageBox.StandardButton.Cancel)
+    panel.mode.setCurrentIndex(panel.mode.findData(6))
+    _button(panel, "Aplicar modo").click()
+    assert sent == [], "cancelar el aviso del modo 6 no debe enviar nada"
+
+    monkeypatch.setattr(panels.QMessageBox, "warning", lambda *_a, **_k: panels.QMessageBox.StandardButton.Yes)
+    _button(panel, "Aplicar modo").click()
+    assert sent == [{"m": 6}], "confirmado, el comando sale: la placa es la que decide"
+
+    def _no_deberia(*_a, **_k):
+        raise AssertionError("el modo 7 se conduce solo: no corresponde advertir")
+
+    monkeypatch.setattr(panels.QMessageBox, "warning", _no_deberia)
+    panel.mode.setCurrentIndex(panel.mode.findData(7))
+    _button(panel, "Aplicar modo").click()
+    assert sent[-1] == {"m": 7}
+
+
+def test_command_timeout_matches_the_firmware():
+    """El aviso del modo 6 promete un número. Si el firmware lo cambia, la app miente."""
+    from qube_app.link import COMMAND_TIMEOUT_S
+
+    source = FIRMWARE_INO.read_text(encoding="utf-8", errors="replace")
+    match = re.search(r"const\s+unsigned\s+long\s+COMMAND_TIMEOUT_MS\s*=\s*(\d+)", source)
+    assert match, "no se encontró `COMMAND_TIMEOUT_MS` en el firmware"
+    assert float(match.group(1)) / 1000.0 == COMMAND_TIMEOUT_S
+
+
+def test_health_panel_reports_what_kills_the_rl_modes(app):
+    """Las dos cosas que apagan m6/m7 sin dejar rastro, ahora con una fila propia.
+
+    El presupuesto de vueltas cortaba el modo en el primer tick dejando sólo
+    `safety_action = 4`, que dice QUE se cortó pero no cuánto faltaba; `rl_pwm_scale` en 0
+    no deja ni eso. Las dos se veían igual: «el modo RL no funciona».
+    """
+    from qube_app.ui.panels import HealthPanel
+    from qube_app.ui.theme import COLOR_BAD
+
+    panel = HealthPanel()
+    base = {"rtt_ms": 5.0, "age_s": 0.1}
+
+    # Firmware anterior al presupuesto publicado: se dice, no se inventa un número.
+    panel.update_health(base)
+    assert "sin presupuesto" in panel.fields["rl"].text()
+
+    panel.update_health({**base, "mode": 7, "rl_wraps_run": 2, "rl_max_wraps": 8, "rl_pwm_scale": 1.0})
+    assert panel.fields["rl"].text().startswith("2/8 vueltas")
+    assert COLOR_BAD not in panel.fields["rl"].styleSheet()
+
+    panel.update_health({**base, "mode": 7, "rl_wraps_run": 8, "rl_max_wraps": 8, "rl_pwm_scale": 1.0})
+    assert COLOR_BAD in panel.fields["rl"].styleSheet(), "presupuesto agotado dentro del modo RL"
+    assert "vueltas" in panel.fields["rl"].toolTip()
+
+    panel.update_health({**base, "mode": 6, "rl_wraps_run": 0, "rl_max_wraps": 8, "rl_pwm_scale": 0.0})
+    assert COLOR_BAD in panel.fields["rl"].styleSheet(), "escala de par en 0 = par nulo y sin aviso"
+    assert "scale" in panel.fields["rl"].toolTip()
+
+
+def test_fake_board_publishes_the_rl_budget_the_firmware_defines():
+    """El techo simulado es el del ``.ino``. Un `--fake` con otro techo enseña a leer mal."""
+    from qube_app.fake import FakeBoard
+
+    source = FIRMWARE_INO.read_text(encoding="utf-8", errors="replace")
+    match = re.search(r"const\s+uint16_t\s+RL_MAX_WRAPS\s*=\s*(\d+)", source)
+    assert match, "no se encontró `RL_MAX_WRAPS` en el firmware"
+    assert FakeBoard().state()["rl_max_wraps"] == int(match.group(1))
+
+
 def test_fake_board_enforces_the_same_gates():
     """La placa simulada rechaza lo mismo que la real.
 

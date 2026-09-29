@@ -1,0 +1,54 @@
+{
+  "config": "C16_k4n_25_solo",
+  "traza": "C16_k4n_25_solo_20260905_165951.jsonl",
+  "veredicto": "SIN POTENCIA",
+  "razones": [
+    "3 traspasos contra una banda base de [14, 15]: la tanda no es comparable",
+    "repetir la condicion antes de atribuirle nada"
+  ],
+  "duracion_s": 299.88,
+  "muestras": 1696,
+  "reintentos": 7,
+  "traspasos": 3,
+  "traspasos_sin_llegar": 0,
+  "alive_p50_ms": 1279,
+  "alive_max_ms": 1325,
+  "exitos_3s": 0,
+  "fallas": {
+    "3": 3,
+    "1": 3,
+    "6": 2
+  },
+  "episodios": [
+    {
+      "t": 3.934,
+      "alive_ms": 1279,
+      "llego_arriba": true,
+      "fail": 1,
+      "trans_alpha": -178.42,
+      "trans_vel": 12.44,
+      "trans_energy": 0.9999,
+      "trans_reason": 15
+    },
+    {
+      "t": 45.384,
+      "alive_ms": 1325,
+      "llego_arriba": true,
+      "fail": 3,
+      "trans_alpha": 160.31,
+      "trans_vel": 26.14,
+      "trans_energy": 0.971,
+      "trans_reason": 11
+    },
+    {
+      "t": 74.5,
+      "alive_ms": 836,
+      "llego_arriba": true,
+      "fail": 1,
+      "trans_alpha": -171.74,
+      "trans_vel": 75.88,
+      "trans_energy": 0.9965,
+      "trans_reason": 4
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+{
+  "config": "C3_lc0",
+  "traza": "C3_lc0_20260904_181411.jsonl",
+  "veredicto": "NO SIRVE",
+  "razones": [
+    "p50 246 ms contra banda base [530, 753]; max 290 ms contra banda base [799, 1174]  (n=2 bases)"
+  ],
+  "duracion_s": 299.939,
+  "muestras": 1699,
+  "reintentos": 26,
+  "traspasos": 13,
+  "alive_p50_ms": 246,
+  "alive_max_ms": 290,
+  "exitos_3s": 0,
+  "fallas": {
+    "3": 14,
+    "1": 9,
+    "2": 4
+  },
+  "episodios": [
+    {
+      "t": 6.06,
+      "alive_ms": 257,
+      "fail": 1,
+      "trans_alpha": -170.16,
+      "trans_vel": 42.65,
+      "trans_energy": 0.9932,
+      "trans_reason": 12
+    },
+    {
+      "t": 16.025,
+      "alive_ms": 230,
+      "fail": 2,
+      "trans_alpha": -155.74,
+      "trans_vel": 30.86,
+      "trans_energy": 0.9561,
+      "trans_reason": 10
+    },
+    {
+      "t": 40.973,
+      "alive_ms": 228,
+      "fail": 1,
+      "trans_alpha": 157.15,
+      "trans_vel": 89.01,
+      "trans_energy": 0.9631,
+      "trans_reason": 2
+    },
+    {
+      "t": 64.631,
+      "alive_ms": 238,
+      "fail": 1,
+      "trans_alpha": -159.08,
+      "trans_vel": 138.53,
+      "trans_energy": 0.9726,
+      "trans_reason": 2
+    },
+    {
+      "t": 94.073,
+      "alive_ms": 269,
+      "fail": 1,
+      "trans_alpha": 166.64,
+      "trans_vel": 134.65,
+      "trans_energy": 0.9918,
+      "trans_reason": 4
+    },
+    {
+      "t": 132.315,
+      "alive_ms": 221,
+      "fail": 2,
+      "trans_alpha": 166.64,
+      "trans_vel": 27.86,
+      "trans_energy": 0.9867,
+      "trans_reason": 15
+    },
+    {
+      "t": 141.421,
+      "alive_ms": 188,
+      "fail": 3,
+      "trans_alpha": 157.68,
+      "trans_vel": 5.79,
+      "trans_energy": 0.9625,
+      "trans_reason": 11
+    },
+    {
+      "t": 151.544,
+      "alive_ms": 250,
+      "fail": 1,
+      "trans_alpha": 161.02,
+      "trans_vel": 6.78,
+      "trans_energy": 0.9728,
+      "trans_reason": 11
+    },
+    {
+      "t": 175.229,
+      "alive_ms": 283,
+      "fail": 1,
+      "trans_alpha": -177.89,
+      "trans_vel": 36.68,
+      "trans_energy": 1.0001,
+      "trans_reason": 12
+    },
+    {
+      "t": 201.073,
+      "alive_ms": 222,
+      "fail": 2,
+      "trans_alpha": -172.79,
+      "trans_vel": 54.2,
+      "trans_energy": 0.9969,
+      "trans_reason": 12
+    },
+    {
+      "t": 222.296,
+      "alive_ms": 290,
+      "fail": 2,
+      "trans_alpha": -172.62,
+      "trans_vel": 137.89,
+      "trans_energy": 1.0014,
+      "trans_reason": 4
+    },
+    {
+      "t": 260.028,
+      "alive_ms": 246,
+      "fail": 1,
+      "trans_alpha": 157.15,
+      "trans_vel": 21.77,
+      "trans_energy": 0.9609,
+      "trans_reason": 11
+    },
+    {
+      "t": 280.835,
+      "alive_ms": 247,
+      "fail": 1,
+      "trans_alpha": 163.65,
+      "trans_vel": 9.77,
+      "trans_energy": 0.9798,
+      "trans_reason": 11
+    }
+  ]
+}

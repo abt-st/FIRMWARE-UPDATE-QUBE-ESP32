@@ -21,7 +21,7 @@ Estados: `ABIERTO` · `EN CURSO` · `RESUELTO` · `MITIGADO` · `NO ES DEFECTO` 
 | [P1](#p1) | `forcedTransition` anula los otros 3 criterios de swing-up | alta | `RESUELTO` |
 | [P2](#p2) | ~~El swing-up no alcanza la energía~~ → **sobra energía; el problema es la captura** | alta | `REFORMULADO` |
 | [P3](#p3) | Homing se cala en un punto duro y acepta el cero corrido | alta | `RESUELTO` |
-| [P4](#p4) | El LQR pierde el péndulo en **~90 ms incluso con entrega perfecta**, y **es un relé a cualquier autoridad**: saturado el 98% del tiempo con el techo al doble | **alta** | `EN CURSO` — 55 corridas el 2026-08-05. **H1, H2, H7 y H3-como-causa descartadas** con medición. `tn=162` mejora la entrega; `lpm` no hace nada. **Queda H5, las ganancias**: el CARE pide otra escala entera (K2 148,7 contra 22). **Es el bloqueante del proyecto** |
+| [P4](#p4) | El LQR pierde el péndulo en **~90 ms incluso con entrega perfecta**. Lo de «relé a cualquier autoridad» se midió **con los signos de [P26] rotos**: corregidos, la saturación baja a **28,6 %** | **alta** | `EN CURSO` — 55 corridas el 2026-08-05, 13 tandas más el 2026-09-04. **H1, H2, H7 y H3-como-causa descartadas** con medición. `lpm` no hace nada (re-confirmado con P26 corregido). **Queda H5, las ganancias**, ahora medible fuera del régimen de relé. **Es el bloqueante del proyecto** |
 | [P5](#p5) | Magnitud de α̇ dudosa → `E/E*` no confiable | alta | `RESUELTO` |
 | [P6](#p6) | ~~m2 PID: sobrepaso 68–77%~~ → **39–42%**; la cifra estaba inflada por la métrica | baja | `RESUELTO` (2026-08-04) — `kd=0,45` es el default desde v1.58.0 y se re-verificó en v1.58.5: **1,2%** de sobrepaso, 0 hunting |
 | [P7](#p7) | `sample_hz` inflado en modos multi-tramo (instrumentación) | baja | `RESUELTO` |
@@ -42,9 +42,10 @@ Estados: `ABIERTO` · `EN CURSO` · `RESUELTO` · `MITIGADO` · `NO ES DEFECTO` 
 | [P21](#p21) | **La inferencia en chip (m7) rompe el lazo de 500 Hz**: ~21% de los ticks atrasan >10 ms, unas 100× más lento de lo esperable | **alta** | `ABIERTO` |
 | [P24](#p24) | **El pivote del péndulo desarrolló fricción seca dominante: soltado desde 19° baja al reposo sin oscilar, y se queda quieto a 4,75° durante 4,25 s** | **alta** | `ABIERTO` (2026-08-05) — par seco **13,4×** el viscoso; predice detención en <1 ciclo, que es lo observado. Encoder descartado por barrido manual. **Es mecánico**, y probablemente la causa de fondo de [P4](#p4) y de la degradación por uso |
 | [P25](#p25) | **Un intento de balanceo fallido terminaba el trabajo**: el m5→m4 que no engancha deriva el brazo al tope y `safeStop()` lo manda a modo 0, con el banco quieto hasta que el operador vuelve a pedir m5 a mano | media | `EN CURSO` (2026-08-21) — corregido en v1.63.0: el intento fallido se detecta antes del tope, el brazo vuelve al centro y se re-bombea, hasta 3 veces. **Compila; no se ha corrido en el hierro**, así que no pasa a `RESUELTO` |
-| [P26](#p26) | **Los cuatro términos de «empujar al centro» del firmware no multiplican por `MOTOR_DIR`**, y el resto de cada lazo sí: con `MOTOR_DIR = −1` empujan **hacia el tope**, no hacia el centro | **alta** | `ABIERTO` (2026-08-21) — **CONFIRMADO en banco el mismo día**: `homing_pwm_sign = −1`. La corrección está pendiente a propósito (cambia m4/m5/m7 a la vez y es candidato a causa de fondo de [P4](#p4)) |
+| [P26](#p26) | **Los términos de «empujar al centro» del firmware no multiplican por `MOTOR_DIR`**, y el resto de cada lazo sí: con `MOTOR_DIR = −1` empujan **hacia el tope**, no hacia el centro | **alta** | `CORREGIDO` en v1.68.0 (2026-09-04) — eran **seis** expresiones, no cuatro. Falta **re-caracterizar m4/m5/m7**: ninguna sintonía anterior es transferible |
 | [P27](#p27) | **La `f_n` del péndulo depende de si el brazo está suelto** (2,13 Hz libre contra 1,41 Hz retenido, cociente 0,665): un número de `f_n` sin la condición de contorno no significa nada, y por ahí se cuela la contradicción 1,70 / 2,28 Hz | media | `ABIERTO` (2026-08-21) — brazo libre **2,134 Hz** (32 medios ciclos) contra **1,700 Hz** con brazo fijo: cociente 1,255. **De paso queda refutada** la idea de que el swing-up bombea fuera de resonancia: sigue la frecuencia propia dentro del 0–3 % entre 40° y 145° |
 | [P28](#p28) | **Cada petición a `/state` o `/cmd` le cuesta al lazo de 500 Hz una resincronización** (>10 ms de control perdido): 0,97 overruns por petición contra 0,00 en `/rl_state` y `/daq` | **alta** | `ABIERTO` (2026-08-21) — medido y acotado, **causa sin identificar**. Descartadas con medición: el tamaño de la respuesta y la construcción del `String`. Toca a [P20](#p20) y **contamina toda campaña que sondee `/state` mientras mide** |
+| [P29](#p29) | **La compuerta de cordura de los modos RL gastaba el presupuesto de vueltas de la SESIÓN, no el de la corrida**: comparaba el contador monotónico del arranque, así que a las ~2 tandas de swing-up m6 y m7 morían en el primer tick de control hasta reiniciar la placa | **alta** | `EN CURSO` (2026-09-02) — corregido en v1.67.0 con línea base al entrar al modo, más barrera de regresión probada contra el caso que debe reprobar. **Compila y los tests pasan; sin verificar en banco**, así que no pasa a `RESUELTO` |
 | [P23](#p23) | **`?ke=` es API publicada que el propio lazo pisa**: la rama adaptativa lo sobrescribe con `KE_GAIN_BASE` en el primer tick con \|α\| > 5°. Tercero después de `bt` y F1 | media | `RESUELTO` (2026-08-06) — `ke_gain_override` separa el mando manual de la rama adaptativa, sobrevive a `setMode(5)`, y `ke_gain`/`ke_override` se publican en `/state`. Sigue siendo cierto que **no** es lo que limita la energía del bombeo: eso es [P11](#p11) |
 
 ---
@@ -313,6 +314,22 @@ lo esquiva con más fuerza, pero es un síntoma físico real.
 **Severidad:** **alta** — el "puede no ser defecto" de la primera redacción quedó
 descartado: ~90 corridas medidas y el mejor resultado absoluto es **114 ms**. Es el
 bloqueante del proyecto.
+
+> **2026-09-04: la saturación se midió con los signos rotos.** Con [P26](#p26) corregido
+> (v1.68.0) y una captura de `/daq` a 500 Hz —75 100 muestras, 0 perdidas,
+> `experiments/2026-09-04_campana_balanceo/`— el modo 4 está contra su techo **efectivo por
+> muestra** el **28,6 %** del tiempo (21,5 % con el péndulo arriba), con `|pwm|` mediano de
+> 42 sobre un techo de 70. El registro traía **43,6–100 %, mediana 70,4 %**, y de ahí salió
+> la frase «el LQR es un relé a cualquier autoridad». Esa medición se hizo cuando el
+> *centering* sumaba hasta ±25 PWM **en el sentido equivocado**, empujando el total contra
+> el techo. **El lazo ya no es un relé**, lo que deja a H5 como la hipótesis viva y por
+> primera vez medible en un régimen no saturado.
+>
+> Lo que limita ahora es el **recorrido del brazo**, sin ambigüedad: de los 17 balanceos
+> que pasaron 1000 ms, **14 terminan con el brazo en el tope y sólo 3 con el péndulo
+> caído**, y el brazo deriva a **−128 °/s**, que con ±95° de recorrido son los ~1,5 s que
+> duran los balanceos. **No** es un cero de α corrido: α no se sienta en un valor fijo,
+> oscila con desviación de 11 a 24°.
 
 **Estado:** `EN CURSO` (2026-08-05). H1, H2, H7 y H3-como-causa **descartadas** con
 medición y criterio pre-registrado. `tn=162` mejora la entrega de forma reproducible;
@@ -1749,9 +1766,19 @@ Lo que hay que mirar cuando se corrija P26:
 ## P26 {#p26}
 ### Los términos de «empujar al centro» no multiplican por `MOTOR_DIR`: empujan al tope
 
-**Severidad: alta.** **Estado:** `ABIERTO` (2026-08-21) — **hipótesis CONFIRMADA en banco**, corrección
-pendiente. Salió a la luz al escribir [P25](#p25), buscando con qué signo debía cerrar el
+**Severidad: alta.** **Estado:** `CORREGIDO` en v1.68.0 (2026-09-04). Confirmado en banco el
+2026-08-21, corroborado por tercera vez el 2026-09-04, y corregido ese mismo día con el banco
+delante. Salió a la luz al escribir [P25](#p25), buscando con qué signo debía cerrar el
 recentrado.
+
+> **Eran seis expresiones, no cuatro.** La tabla de abajo listaba las cuatro que se veían como
+> «empujar al centro». Faltaban las dos comparaciones `stop_dir == pwm_dir` del modo 4: construyen
+> `stop_dir` en espacio de **posición** y lo comparan contra el signo de `pwm`, que ya salió de
+> multiplicar por `MOTOR_DIR`. Con el signo cruzado la pregunta se invierte entera y el limitador
+> **estrangulaba el PWM que iba al centro** mientras dejaba pasar el techo completo hacia el tope.
+> Y en la ley de energía del modo 5 (`pl=1`) el `centerBias` se sumaba **fuera** del producto por
+> `MOTOR_DIR`. Las siete quedaron cruzando el signo por un solo helper, `armPwmSign()`, que
+> prefiere el sentido **medido** en el homing sobre el `#define`.
 
 **El argumento, entero.** `MOTOR_DIR` vale `−1` en el firmware actual. Los lazos de posición
 del brazo lo aplican; los términos que empujan al centro, no:
@@ -1800,9 +1827,27 @@ queda cerrado: las cuatro expresiones de la tabla empujan **hacia el tope**.
 detección de caída del péndulo que v1.63.0 agregó al modo 4. El brazo llega al tope antes de
 que el péndulo se caiga, que es justo lo que este defecto predice.
 
-**Si se confirma**, la corrección es multiplicar los cuatro términos por `MOTOR_DIR` —mejor,
-por `homing_pwmSign`, que sobrevive a un recableado— y **re-caracterizar los modos 4, 5 y 7**:
-ninguna sintonía hecha con estos signos es transferible.
+**Confirmado por tercera vez y corregido el 2026-09-04** (`experiments/2026-09-04_campana_balanceo/`).
+Seis tandas de 5 minutos con v1.67.0: **23 de 28 intentos murieron en el tope del brazo y ninguno
+con el péndulo caído**, que es literalmente lo que este defecto predice. `homing_pwm_sign` volvió a
+medir −1 en las tres corridas de homing del día.
+
+La corrección multiplica las siete expresiones por `armPwmSign()`. Medido antes y después, con dos
+líneas base de 300 s de cada lado:
+
+| | v1.67.0 | v1.68.0 |
+|---|---|---|
+| Traspasos a m4 en 300 s | 8 y 14 | **17 y 18** |
+| Mejor balanceo | 799 y 1174 ms | **1327 y 1455 ms** |
+| Supervivencia p50 | 380 y 452 ms | 187 y 360 ms |
+| Intentos ≥ 3 s | 0 | 0 |
+
+Duplicó los traspasos y subió el mejor balanceo unos 300 ms. **No** subió la mediana: con el doble
+de traspasos entran muchos marginales que antes no ocurrían. Y **sigue sin sostener 3 s**, así que
+P26 no era toda la causa de fondo de [P4](#p4).
+
+**Queda pendiente re-caracterizar los modos 4, 5 y 7**: ninguna sintonía hecha con estos signos es
+transferible.
 
 ---
 
@@ -1941,6 +1986,64 @@ declarar causa. Hace falta medir dentro.
 **Cómo seguir.** Instrumentar `getStateJson()` por dentro con `micros()` por tramo y publicar
 el peor, o bisecar: reemplazar las lecturas de hardware por los globales cacheados —el patrón
 que `getRlStateJson()` ya usa— y volver a medir. Es una tarde con el banco y cierra el asunto.
+
+---
+
+## P29 {#p29}
+### Los modos RL se apagaban solos después de dos tandas de swing-up
+
+**Severidad: alta.** **Estado:** `EN CURSO` (2026-09-02) — corregido en v1.67.0, **sin verificar en banco**.
+**Es de contabilidad, no de control.**
+
+**Síntoma.** Se pide `m6` o `m7` y `/state` reporta `mode: 0` de vuelta casi al instante, con
+`safety_action = 4`. No importa el ángulo del péndulo ni si el brazo está centrado. Reiniciar
+la placa lo cura; volver a hacer swing-up lo trae de vuelta.
+
+**Causa.** La compuerta de cordura de la Etapa 3 corta los modos 6 y 7 cuando el péndulo
+acumula `RL_MAX_WRAPS = 8` vueltas, porque a las 16 el PCNT satura y α deja de ser un ángulo
+([P17](#p17)). La condición era:
+
+```c
+pend_wrapCount >= RL_MAX_WRAPS
+```
+
+`pend_wrapCount` es **monotónico desde el arranque**, y el `.ino` lo documenta así a propósito:
+es un contador que un cliente lee antes y después para sacar la diferencia. Nunca se reinicia.
+Comparado en absoluto, lo que se estaba evaluando no era el riesgo de la corrida sino la
+historia de la sesión.
+
+| dato | valor |
+|---|---|
+| techo (`RL_MAX_WRAPS`) | 8 |
+| `pend_wraps` tras **una** tanda de swing-up | ~5 (medido en la campaña de [P15](#p15)) |
+
+Con el reintento ilimitado de v1.66.0 el contador sube más rápido todavía. A las dos tandas el
+presupuesto queda agotado **para siempre**, y toda entrada a m6 o m7 muere en el primer tick.
+
+**Por qué el modo 5 nunca lo tuvo.** `setMode(5)` guarda `swing_wrapsAtStart` y compara la
+diferencia contra `SWINGUP_MAX_TURNS`. La forma correcta ya estaba escrita en el mismo archivo;
+los modos RL simplemente no tomaban línea base.
+
+**Corrección (v1.67.0).** `setMode()` guarda `rl_wrapsAtStart` al entrar al 6 y al 7, y la
+compuerta evalúa `pend_wrapCount - rl_wrapsAtStart`. `/state` publica `rl_wraps_run` y
+`rl_max_wraps`, que es lo que faltaba para poder ver el presupuesto desde afuera: hasta ahora un
+corte dejaba `safety_action = 4`, que dice **que** se cortó pero no cuánto faltaba, y `pend_wraps`
+solo no alcanzaba porque la línea base no se publicaba.
+
+**Barrera.** `test_rl_wrap_budget_counts_from_mode_entry` exige que lo comparado contra
+`RL_MAX_WRAPS` salga de una resta y que la línea base se tome dentro de `setMode()`. Y
+`test_the_wrap_budget_check_catches_the_absolute_comparison` corre el mismo criterio sobre la
+forma vieja y exige que la detecte: el criterio se probó contra el caso que debe **reprobar**,
+que es donde este proyecto lleva tres veredictos falsos.
+
+**Qué NO dice esto.** No dice que la política de m7 sirva —su criterio sigue en FAIL en los tres
+puntos— ni que ésta fuera la única causa de las campañas RL fallidas. Dice que había un modo de
+falla que apagaba los dos modos sin dejar más rastro que un código de seguridad, y que las
+campañas que reiniciaban la placa entre tandas y las que no **no midieron lo mismo**.
+
+**Cómo seguir.** Al flashear: con `pend_wraps > 8` acumulado, entrar a m7 y comprobar que
+arranca y se sostiene, que `rl_wraps_run` vuelve a 0 al entrar al modo, y que el corte sí
+dispara cuando el péndulo acumula 8 vueltas **dentro** de la corrida.
 
 ---
 

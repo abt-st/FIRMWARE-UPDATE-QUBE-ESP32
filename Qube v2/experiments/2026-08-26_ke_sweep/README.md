@@ -197,7 +197,83 @@ trazas: 1–2 recortes de vuelta entera por corrida, y `ceiling_hits` de 23 a 38
 una `ω_n` que las mediciones de hoy no respaldan. El experimento que lo cerraría es fijar
 `ec` compensado por 1,80 (≈ 0,64) y ver si desaparecen las vueltas.
 
-## Resultado 6 — el enlace se degrada por CARGA, no por tiempo
+## Resultado 6 — la planta identificada: `PEND_INERTIA` era imposible, no sólo inexacta
+
+Medido el mismo día con balanza y regla, **sin banco ni placa**:
+
+| | medido | firmware (antes) | |
+|---|---|---|---|
+| masa `m` | 0,024 kg | 0,025 | +4,2 % |
+| largo total `L` | 128,7 mm | — | — |
+| pivote → centro de masa `l` | **60–62 mm** (se adopta 61) | 65 mm | +6,6 % |
+| inercia `I` respecto al pivote | **1,2705·10⁻⁴** | **7,75·10⁻⁵** | **1,64× chico** |
+
+**Geometría real**: la varilla se sujeta con un prisionero a **10 mm del borde**, así que el
+eje no está en el extremo — quedan 10 mm arriba y 118,7 mm abajo. El centro de masa se midió
+por balanceo **desde el eje**, que es la referencia que entra en `mgl`.
+
+### El argumento que no depende de ningún modelo
+
+El teorema de ejes paralelos exige `I = I_cm + m·l² ≥ m·l²`. Con la masa y el centro de masa
+medidos:
+
+```
+I mínimo posible = m·l² = 8,93·10⁻⁵ kg·m²   (8,64·10⁻⁵ incluso con l = 60 mm)
+PEND_INERTIA     =        7,75·10⁻⁵ kg·m²
+```
+
+**El valor que tenía el firmware está por debajo del mínimo físico.** Ningún cuerpo real con
+esa masa y ese centro de masa puede tener esa inercia. No hace falta ningún modelo del
+péndulo para afirmarlo — sólo una balanza y una regla.
+
+### Dos rutas independientes, y el gemelo
+
+| ruta | `I` | `f_n` |
+|---|---|---|
+| geometría (varilla + masa equivalente en punta, ajustada al CM medido) | 1,282·10⁻⁴ | 1,684 Hz |
+| dinámica (`I = mgl/ω_n²` con la f_n = 1,70 Hz medida el 2026-08-13) | 1,259·10⁻⁴ | 1,700 Hz |
+| **adoptado (promedio)** | **1,2705·10⁻⁴** | **1,692 Hz** |
+| firmware (antes) | 7,75·10⁻⁵ | 2,283 Hz |
+
+Concuerdan al **1,8 %**, y la incerteza del balanceo (60–62 mm) mueve `I` apenas **±2,9 %** —
+contra el 64 % que se está corrigiendo.
+
+**Y el simulador ya estaba bien.** `qube_dynamics` usa `Mp = 0,024` y `Lp = 0,129` —los mismos
+números medidos hoy— y su `_init_const` implica `ω_n² = 1,5·g/Lp = 114,07` (**1,700 Hz**),
+contra 113,04 (1,692 Hz) de la identificación. **Firmware y gemelo venían discrepando 1,80× en
+ω_n² y ninguno de los dos lo declaraba.** Eso es un defecto de sim2real por sí mismo.
+
+### De dónde salió el valor viejo
+
+El comentario que acompañaba a `PEND_INERTIA` decía: *«T = 0,46 s a ~47° de amplitud →
+wn = 14,34 rad/s (2,28 Hz)»*. El 2026-08-26, a **esa misma amplitud** (47,6°):
+
+| condición | período | frecuencia |
+|---|---|---|
+| brazo **retenido** (`m2 s=0`) | 0,697 s | 1,44 Hz |
+| brazo **libre**, amplitudes chicas | ~0,40 s | ~2,49 Hz |
+| medición de 2026-07-30 | 0,46 s | 2,17 → 2,28 Hz corregido |
+
+Los 0,46 s son el **modo acoplado brazo+péndulo**, no el péndulo: la medición original se tomó
+sin sujetar el brazo. Es la misma trampa que el Resultado 4 documenta desde el otro lado.
+
+### Efecto
+
+`E/E*`, el techo `ec` y el criterio de traspaso `energy` quedan reescalados por **1,820×** —
+el mismo 1,8 que el Resultado 5 había deducido por aritmética sobre las trazas, ahora con la
+causa identificada.
+
+**Lo que esto NO arregla:** P26 sigue abierto y el brazo se va a seguir yendo al tope. Y el
+cambio **no está verificado en banco**: se aplicó al final de una sesión ya derivada, donde
+una comparación antes/después no significaría nada.
+
+**Lo que queda apoyado en modelo:** `m`, `l` y `mgl` son medidos. `I` sale de un modelo
+(varilla + masa equivalente) avalado por coincidir al 1,8 % con la f_n medida, pero **no es
+una medición directa de inercia**. La prueba independiente sigue siendo la de masa añadida:
+pegar una masa conocida a un radio conocido y re-medir la frecuencia separa `I` de `mgl` sin
+suponer nada.
+
+## Resultado 7 — el enlace se degrada por CARGA, no por tiempo
 
 RTT de `/rl_state` (el endpoint barato: 0,00 overruns por petición, contra 0,97 de
 `/state`):
@@ -265,6 +341,13 @@ Y uno de documentación: `docs/http_api.md` decía que el homing acepta un recor
   `homing_pwm_sign = −1`, pero eso no es una prueba causal.
 - **El escalado de `ec` no se probó.** El Resultado 4 es aritmética sobre trazas, no un
   experimento.
-- **`f_n` no quedó determinada.** Se acotó a 1,15–1,60 Hz por caída libre y ≈1,7 Hz por
-  bombeo, con la dispersión que se declara arriba. Mientras el pivote esté como está
-  (P24), no hay un número que defender.
+- **`f_n` no quedó determinada *por caída libre*.** Se acotó a 1,15–1,60 Hz por decaimiento
+  y ≈1,7 Hz por bombeo, con la dispersión que se declara arriba. Mientras el pivote esté
+  como está (P24), la vía dinámica no da un número defendible por sí sola — lo que sí lo
+  da es la geometría del Resultado 6, que no depende del pivote.
+- **La corrección de las constantes está aplicada pero NO verificada en banco.** Se hizo al
+  final de una sesión ya derivada (Resultado 2), donde una comparación antes/después no
+  significaría nada. El firmware compila (`pio run -e esp32dev`, RAM 35,8 %, Flash 79,0 %)
+  y no se flasheó. **Falta una sesión con el banco descansado** que mida, con línea base
+  intercalada, si el traspaso por `energy` mejora con la escala corregida.
+- **`I` sigue apoyada en un modelo.** Ver el cierre del Resultado 6.

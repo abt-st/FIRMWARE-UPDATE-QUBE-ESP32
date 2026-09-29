@@ -28,6 +28,7 @@ DAQ del chip a 500 Hz (`/daq`), no del muestreo HTTP.
 | `captura_reintento.py` | Captura las tandas de reintento. |
 | `captura_caida_libre.py` | Bombea y corta a la amplitud pedida. |
 | `analisis_frecuencia.py` | Reproduce la tabla de frecuencias de abajo. |
+| `grafica_frecuencia.py` | Genera `fig_frecuencia_natural.png` a partir de las dos caídas libres. |
 
 ## Resultado 1 — el reintento funciona, y tres defectos que se vieron y corrigieron
 

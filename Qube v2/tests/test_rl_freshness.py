@@ -176,3 +176,49 @@ def test_the_episode_counters_reset_between_episodes(env):
     assert env._steps_this_episode == 0
     assert env._last_obs_seq is None
     assert env._repeated_obs == 0
+
+
+# ── La compuerta de modo: pedir m6 y que la placa diga que no ───────────────────
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("no es JSON")
+        return self._payload
+
+
+def _capture_set_mode(env, payload):
+    """Deja que `_set_mode` corra de verdad contra una respuesta de `/cmd` inventada."""
+    env._session.get = lambda *_a, **_k: _FakeResponse(payload)
+
+
+def test_a_refused_mode_raises_instead_of_training_against_a_dead_board(env):
+    """`/cmd?m=6` sin homing no cambia el modo, y hasta ahora nadie miraba la respuesta.
+
+    Desde firmware v1.60.0 `setMode()` rechaza el modo 6 si no se hizo homing, y acá el
+    homing es opt-in. El camino por defecto era: pedir m6, que la placa lo descarte, y
+    entrenar contra un banco en modo 0 con el motor muerto mientras `/rl_state` seguía
+    devolviendo observaciones perfectamente plausibles. El episodio recién fallaba en el
+    primer `step()`, por el `md` de P19, tres llamadas más tarde y con otro nombre.
+    """
+    _capture_set_mode(env, {"mode": 0, "mode_reject": 2})
+    with pytest.raises(RuntimeError, match="refused mode 6"):
+        QubeRealEnv._set_mode(env, 6)
+
+
+def test_an_accepted_mode_is_silent(env):
+    """El criterio, contra el caso que debe aprobar: sin esto, un test que nunca reprueba."""
+    _capture_set_mode(env, {"mode": 6, "mode_reject": 0})
+    QubeRealEnv._set_mode(env, 6)
+
+
+def test_a_board_that_does_not_report_its_mode_is_left_alone(env):
+    """No saber no es saber que no: un firmware viejo no puede volverse un error duro."""
+    _capture_set_mode(env, {"ok": True})
+    QubeRealEnv._set_mode(env, 6)
+    _capture_set_mode(env, None)
+    QubeRealEnv._set_mode(env, 6)

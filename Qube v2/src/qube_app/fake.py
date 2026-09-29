@@ -111,6 +111,13 @@ class FakeBoard:
         self.safety_action = 0
         self.safety_cuts = 0
         self.safety_derates = 0
+        # Presupuesto de vueltas de los modos RL y escala de par. La placa simulada no
+        # gira el péndulo ni toca la escala, así que son los valores de una corrida
+        # recién entrada: presupuesto entero y par completo. Se publican igual porque la
+        # fila de salud que los muestra tiene que poder ejercitarse con `--fake`.
+        self.rl_wraps_run = 0
+        self.rl_max_wraps = 8
+        self.rl_pwm_scale = 1.0
         if not self.homing_ok and self.mode in self.GATED_BY_HOMING:
             # Una placa sin homing en modo 5 es un estado que el firmware no puede
             # producir. Simularlo enseñaría a leer mal la interfaz.
@@ -219,12 +226,15 @@ class FakeBoard:
             "safety_action": self.safety_action,
             "safety_cuts": self.safety_cuts,
             "safety_derates": self.safety_derates,
+            "rl_wraps_run": self.rl_wraps_run,
+            "rl_max_wraps": self.rl_max_wraps,
+            "rl_pwm_scale": self.rl_pwm_scale,
             # Reintento del swing-up (v1.63.0). Sin fallas en la simulación: la placa
             # simulada no se cae, y anunciar una falla que no ocurrió sería peor que
             # no anunciar nada.
             "swing_retry_enabled": True,
             "swing_retry_count": 0,
-            "swing_retry_max": 3,
+            "swing_retry_max": -1,
             "swing_fail_reason": 0,
             "swing_recenter_phase": 0,
             "swing_zero_enabled": True,

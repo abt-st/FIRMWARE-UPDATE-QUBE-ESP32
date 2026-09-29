@@ -1,0 +1,41 @@
+{
+  "config": "H3_near",
+  "traza": "H3_near_20260905_181250.jsonl",
+  "veredicto": "LOGRADO",
+  "razones": [
+    "1 intento(s) aguantaron >= 3000 ms"
+  ],
+  "duracion_s": 299.97,
+  "muestras": 1631,
+  "reintentos": 3,
+  "traspasos": 2,
+  "traspasos_sin_llegar": 0,
+  "alive_p50_ms": 133543.0,
+  "alive_max_ms": 266772,
+  "exitos_3s": 1,
+  "fallas": {
+    "3": 5
+  },
+  "episodios": [
+    {
+      "t": 4.323,
+      "alive_ms": 314,
+      "llego_arriba": true,
+      "fail": 3,
+      "trans_alpha": 175.61,
+      "trans_vel": 97.5,
+      "trans_energy": 1.0013,
+      "trans_reason": 4
+    },
+    {
+      "t": 32.982,
+      "alive_ms": 266772,
+      "llego_arriba": true,
+      "fail": 3,
+      "trans_alpha": 157.68,
+      "trans_vel": 87.3,
+      "trans_energy": 0.9647,
+      "trans_reason": 2
+    }
+  ]
+}

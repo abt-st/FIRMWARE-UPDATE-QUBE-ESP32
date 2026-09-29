@@ -1,0 +1,87 @@
+[
+  {
+    "sello": "20260904_184436",
+    "duracion_s": 300.078,
+    "muestras": 1728,
+    "reintentos": 27,
+    "traspasos": 18,
+    "traspasos_sin_llegar": 3,
+    "alive_p50_ms": 360,
+    "alive_max_ms": 1327,
+    "exitos_3s": 0,
+    "fallas": {
+      "3": 21,
+      "4": 3,
+      "2": 2,
+      "1": 1
+    }
+  },
+  {
+    "sello": "20260904_184957",
+    "duracion_s": 299.932,
+    "muestras": 1774,
+    "reintentos": 28,
+    "traspasos": 17,
+    "traspasos_sin_llegar": 2,
+    "alive_p50_ms": 187,
+    "alive_max_ms": 1455,
+    "exitos_3s": 0,
+    "fallas": {
+      "3": 23,
+      "4": 2,
+      "1": 1,
+      "2": 3
+    }
+  },
+  {
+    "sello": "20260904_230229",
+    "duracion_s": 299.894,
+    "muestras": 1719,
+    "reintentos": 27,
+    "traspasos": 25,
+    "traspasos_sin_llegar": 3,
+    "alive_p50_ms": 348.5,
+    "alive_max_ms": 1297,
+    "exitos_3s": 0,
+    "fallas": {
+      "3": 11,
+      "2": 10,
+      "4": 3,
+      "1": 4
+    }
+  },
+  {
+    "sello": "20260904_231216",
+    "duracion_s": 300.046,
+    "muestras": 1673,
+    "reintentos": 29,
+    "traspasos": 26,
+    "traspasos_sin_llegar": 3,
+    "alive_p50_ms": 499,
+    "alive_max_ms": 1484,
+    "exitos_3s": 0,
+    "fallas": {
+      "1": 7,
+      "2": 7,
+      "3": 13,
+      "4": 3
+    }
+  },
+  {
+    "sello": "20260905_001612",
+    "duracion_s": 299.915,
+    "muestras": 1643,
+    "reintentos": 28,
+    "traspasos": 14,
+    "traspasos_sin_llegar": 4,
+    "alive_p50_ms": 545.0,
+    "alive_max_ms": 1285,
+    "exitos_3s": 0,
+    "fallas": {
+      "3": 19,
+      "4": 4,
+      "2": 5,
+      "1": 1
+    }
+  }
+]

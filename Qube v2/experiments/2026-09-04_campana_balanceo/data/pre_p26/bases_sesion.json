@@ -1,0 +1,32 @@
+[
+  {
+    "sello": "20260904_180136",
+    "duracion_s": 300.011,
+    "muestras": 1734,
+    "reintentos": 28,
+    "traspasos": 8,
+    "alive_p50_ms": 530.0,
+    "alive_max_ms": 799,
+    "exitos_3s": 0,
+    "fallas": {
+      "2": 4,
+      "3": 23,
+      "6": 1
+    }
+  },
+  {
+    "sello": "20260904_182603",
+    "duracion_s": 299.926,
+    "muestras": 1785,
+    "reintentos": 26,
+    "traspasos": 14,
+    "alive_p50_ms": 753.0,
+    "alive_max_ms": 1174,
+    "exitos_3s": 0,
+    "fallas": {
+      "3": 23,
+      "2": 3,
+      "6": 1
+    }
+  }
+]

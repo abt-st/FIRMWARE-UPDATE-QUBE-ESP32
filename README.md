@@ -1,6 +1,6 @@
 # QUBE ESP32 — Plataforma de control de péndulo invertido rotatorio
 
-[![License: CC BY 4.0](https://img.shields.io/badge/License-CC_BY_4.0-lightgrey.svg)](LICENSE)
+[![License: CC BY-NC-ND 4.0](https://img.shields.io/badge/License-CC_BY--NC--ND_4.0-lightgrey.svg)](LICENSE)
 [![CI](https://github.com/abt-st/FIRMWARE-UPDATE-QUBE-ESP32/actions/workflows/ci.yml/badge.svg)](https://github.com/abt-st/FIRMWARE-UPDATE-QUBE-ESP32/actions/workflows/ci.yml)
 
 Plataforma educativa de control de péndulo rotatorio invertido basada en **ESP32 + L298N + INA219 + 2×LM2596 + 2×CD40106BE**. Alternativa open-source al Quanser QUBE-Servo por **~$70 USD** (frente a $2,500–$3,500 USD del original).

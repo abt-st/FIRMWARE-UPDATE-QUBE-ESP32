@@ -1046,18 +1046,18 @@ $$
 
 ### 11.5 Troubleshooting de Sintonización
 
-| Síntoma                     | Causa probable         | Solución                          |
-| ---------------------------- | ---------------------- | ---------------------------------- |
-| Oscilación sostenida        | $K_p$ demasiado alto | Reducir$K_p$ o aumentar $K_d$  |
-| Overshoot > 30%              | $K_d$ insuficiente   | Aumentar$K_d$ en 50%             |
-| Error estacionario > 2°     | $K_i = 0$ o muy bajo | Aumentar$K_i$ gradualmente       |
-| Motor vibrando en reposo     | Ruido en derivada      | Aumentar$\alpha$ (más filtrado) |
-| Lazo diverge                 | Polaridad incorrecta   | Cambiar `MOTOR_DIR`              |
-| Integral crece sin control   | Windup                 | Verificar$I_{max}$ y condiciones |
-| Péndulo no balancea         | $K_2$ muy bajo       | Aumentar `lqr_K2`                |
-| Péndulo oscila en LQR       | $K_4$ insuficiente   | Aumentar `lqr_K4`                |
-| Swing-up no alcanza vertical | $k_e$ muy bajo       | Aumentar `ke_gain`               |
-| Transición LQR falla        | Threshold muy bajo     | Aumentar `balance_threshold`     |
+| Síntoma                     | Causa probable                                             | Solución                          |
+| ---------------------------- | ---------------------------------------------------------- | ---------------------------------- |
+| Oscilación sostenida        | $K_p$ demasiado alto | Reducir$K_p$ o aumentar $K_d$ |                                    |
+| Overshoot > 30%              | $K_d$ insuficiente   | Aumentar$K_d$ en 50%            |                                    |
+| Error estacionario > 2°     | $K_i = 0$ o muy bajo | Aumentar$K_i$ gradualmente      |                                    |
+| Motor vibrando en reposo     | Ruido en derivada                                          | Aumentar$\alpha$ (más filtrado) |
+| Lazo diverge                 | Polaridad incorrecta                                       | Cambiar`MOTOR_DIR`               |
+| Integral crece sin control   | Windup                                                     | Verificar$I_{max}$ y condiciones |
+| Péndulo no balancea         | $K_2$ muy bajo                                           | Aumentar`lqr_K2`                 |
+| Péndulo oscila en LQR       | $K_4$ insuficiente                                       | Aumentar`lqr_K4`                 |
+| Swing-up no alcanza vertical | $k_e$ muy bajo                                           | Aumentar`ke_gain`                |
+| Transición LQR falla        | Threshold muy bajo                                         | Aumentar`balance_threshold`      |
 
 ---
 
@@ -1098,15 +1098,15 @@ $$
 
 ### 12.4 Modos de Operación
 
-| Modo                | Código | Descripción                           |
-| ------------------- | ------- | -------------------------------------- |
-| STOP                | m0      | Motor deshabilitado                    |
-| PWM Manual          | m1      | PWM fijo (sin lazo)                    |
-| PID Posición Servo | m2      | Control de posición del brazo         |
-| LQR                 | m4      | Control óptimo péndulo invertido     |
-| Swing-Up            | m5      | Bombeo de energía + transición a LQR |
+| Modo                | Código | Descripción                            |
+| ------------------- | ------- | --------------------------------------- |
+| STOP                | m0      | Motor deshabilitado                     |
+| PWM Manual          | m1      | PWM fijo (sin lazo)                     |
+| PID Posición Servo | m2      | Control de posición del brazo          |
+| LQR                 | m4      | Control óptimo péndulo invertido      |
+| Swing-Up            | m5      | Bombeo de energía + transición a LQR  |
 | Deep RL (HTTP)      | m6      | Acción de agente SAC externo vía HTTP |
-| Deep RL (on-device) | m7      | Inferencia de red neuronal en el ESP32 |
+| Deep RL (on-device) | m7      | Inferencia de red neuronal en el ESP32  |
 
 > El modo 3 (PID de péndulo) fue descartado: el péndulo es un eslabón pasivo
 > (sistema subactuado), por lo que un PID de posición directa sobre él no es

@@ -77,9 +77,13 @@ Retorna JSON con el estado completo del sistema (servo + péndulo + INA219 + Kal
 | `safety_action`     | int    | Última intervención de la capa de seguridad: `0` nada · `1` derate por tensión · `2` corte por tensión · `3` corte por corriente · `4` corte por cordura del péndulo en m6/m7 ([P17]: `\|α\|` crudo o vueltas fuera de rango). Se limpia al tick siguiente |
 | `safety_cuts`       | int    | Cortes acumulados desde el arranque |
 | `safety_derates`    | int    | Derates acumulados. Van aparte porque `safety_action` se limpia solo y `safety_cuts` no cuenta escalados: sin este contador un derate por tensión es **invisible**, que es lo que escondió el fallo de homing del 2026-08-06 |
+| `ap_ok`             | int    | `1` si `WiFi.softAP()` devolvió éxito, `0` si el AP **no arrancó**. Hasta v1.64.0 no existía y el banner anunciaba la red igual: `WiFi.softAPIP()` devuelve 192.168.4.1 porque es la IP del `netif`, no porque haya un AP en el aire. Si vale `0`, la red `QUBE-ESP32` no existe por más que estés leyendo `/state` por otro camino |
+| `pend_wn2`          | float  | `m·g·l/I` del péndulo (rad²/s²). Fija la escala de `E/E*`, del techo `ec` y de `swing_trans_energy`, que dependen **sólo** de esta combinación. Publicarlo es la única forma de que una campaña sepa contra qué escala midió —y de verificar que un flasheo OTA entró—. `205.69` = escala vieja (≤ v1.63.0, inercia imposible); `113.04` = escala identificada en v1.64.0 |
 | `ke_gain`           | float  | Ganancia de energía del swing-up **vigente** (ver `/cmd?ke=`) |
 | `ke_override`       | float  | Override manual de `ke_gain`; `< 0` = manda la rama adaptativa |
 | `pend_wraps`        | int    | Veces que se acotó la lectura del péndulo restando vueltas enteras. **Monotónico** (sólo se reinicia al arrancar): leerlo antes y después y sacar la diferencia. Un valor >0 en una corrida indica que el péndulo giró |
+| `rl_wraps_run`      | int    | Vueltas del péndulo acumuladas **desde que se entró al modo 6 o 7**, que es lo que evalúa la compuerta de cordura. `pend_wraps` no sirve para esto: es monotónico desde el arranque, y hasta v1.67.0 la compuerta lo comparaba en absoluto, con lo que la historia de la sesión agotaba el presupuesto y los modos RL morían en el primer tick hasta rebootear |
+| `rl_max_wraps`      | int    | Techo de `rl_wraps_run`. Al alcanzarlo el firmware corta el modo con `safety_action = 4` |
 | `swing_trans_reason`| int    | Bitmask del criterio que disparó el traspaso m5→m4: `1`=near+slow, `2`=peak, `4`=forced, `8`=energy. `0` = no hubo traspaso en el intento en curso. Pueden coincidir varios |
 | `swing_trans_alpha` | float  | `pendPos` **en el instante** del traspaso (muestrear el modo desde el cliente llega tarde y da otro ángulo) |
 | `swing_trans_vel`   | float  | \|α̇\| en el traspaso (°/s) |
@@ -87,11 +91,11 @@ Retorna JSON con el estado completo del sistema (servo + péndulo + INA219 + Kal
 | `swing_trans_ms_ago`| int    | ms desde el traspaso; `0` = no hubo. `setMode(5)` limpia el latch |
 | `swing_zero_enabled`| 0/1    | Fase de quietud + re-cero del péndulo al entrar al modo 5 activa (ver `/cmd?sz=`) |
 | `swing_zero_phase`  | int    | `1` = esperando quietud antes de bombear; `0` = bombeando |
-| `swing_zero_ok`     | 0/1    | El último intento logró re-establecer el cero. `0` **después** de un intento significa que no se aquietó y el modo abortó a 0 — no se arranca a ciegas |
+| `swing_zero_ok`     | 0/1    | El último intento logró re-establecer el cero. `0` **después** de un intento significa que no se aquietó: desde v1.66.0 eso ya no aborta a modo 0, se cuenta como intento fallido (`swing_fail_reason=6`) y se reintenta |
 | `swing_retry_enabled`| 0/1   | Reintento automático del swing-up tras un intento de balanceo fallido (ver `/cmd?rt=`) |
 | `swing_retry_count` | int    | Reintentos automáticos **consecutivos** ya consumidos. Lo reinicia cualquier modo pedido a mano y un balanceo que sobreviva 3 s. Sin este campo no se puede distinguir «enganchó al primer intento» de «enganchó al tercero», que es justo la diferencia que el reintento introduce en las tasas de éxito |
-| `swing_retry_max`   | int    | Presupuesto vigente de reintentos consecutivos (def. 3, ver `/cmd?rtn=`) |
-| `swing_fail_reason` | int    | Motivo del último intento abortado: `1` el péndulo se cayó · `2` dio una vuelta · `3` el brazo llegó al tope · `4` nunca llegó a la vertical · `5` el recentrado no pudo volver. `0` = ninguno desde el arranque |
+| `swing_retry_max`   | int    | Presupuesto vigente de reintentos consecutivos. **Negativo = sin límite**, que es el default desde v1.66.0 (ver `/cmd?rtn=`) |
+| `swing_fail_reason` | int    | Motivo del último intento abortado: `1` el péndulo se cayó · `2` dio una vuelta · `3` el brazo llegó al tope · `4` nunca llegó a la vertical · `5` el recentrado no pudo volver · `6` el péndulo no se aquietó para el re-cero. `0` = ninguno desde el arranque. Sólo el `5` detiene el banco; los otros cinco reintentan |
 | `swing_recenter_phase`| int  | `1` = el brazo está volviendo al centro antes de re-bombear; `0` = fase inactiva |
 | `lqr_catch_ms`      | int    | Duración vigente del catch del modo 4 (ver `/cmd?lc=`) |
 | `lqr_centering_grace`| 0/1   | Periodo de gracia del centering vigente (ver `/cmd?cg=`) |
@@ -208,7 +212,7 @@ Envía comandos de configuración y control.
 | `tn`                       | float  | Umbral de traspaso m5→m4 en grados (`swingupCatchDeg`, def. 155). Medido: el cruce por cero de la utilidad del traspaso cae en α ≈ 158°, o sea que 155 queda del lado inservible; `tn=162` mejora de forma reproducible |
 | `tr`                       | 0/1    | Habilita el traspaso automático m5→m4 (def. 1). `tr=0` deja al swing-up bombeando sin entregar |
 | `rt`                       | 0/1    | **Reintento automático del swing-up** tras un intento de balanceo fallido (def. **1**, activo). Con `rt=0` un intento fallido cae a modo 0 como antes de v1.63.0, que es el comportamiento contra el que se mide el A/B |
-| `rtn`                      | 0–20   | Presupuesto de reintentos automáticos **consecutivos** (def. 3). Escribirlo pone el contador en 0. `rtn=0` deja el reintento habilitado pero sin presupuesto |
+| `rtn`                      | −1–999 | Presupuesto de reintentos automáticos **consecutivos** (def. **−1 = sin límite** desde v1.66.0: pedir m5 es pedir «bombea hasta que yo diga basta»). Escribirlo pone el contador en 0. `rtn=0` deja el reintento habilitado pero sin presupuesto; `rtn=N>0` acota a N, que es lo que necesitan los barridos con un número fijo de intentos por tanda |
 | `pl`                       | 0/1    | Ley de bombeo: 0 = resonante (histórica), 1 = energía (Åström-Furuta) |
 | `pg`, `pn`, `pc`, `pr` | float  | Parámetros de la ley de bombeo: ganancia, ruido/umbral, recentrado y tope de la referencia de posición |
 | `he`                       | 90–179 | Modo 7 híbrido: \|α\| en grados para **entrar** al LQR. Con `he=179` el traspaso prácticamente no dispara y la política balancea sola — la única prueba honesta de una política de 50 Hz sobre el hardware |
