@@ -1073,12 +1073,14 @@ const float RL_CENTERING_KP      = 2.0f;
 // Se sube SOLO la busqueda. El toque sigue en 55: arranca a 5 deg del tope real, o
 // sea ya pasado el punto duro, y es el que fija la medicion — asi que la suavidad
 // donde importa se conserva.
-const int   HOMING_PWM_SEEK        = 70;      // Primer acercamiento al tope
+// Ajustable en caliente (/cmd?hsp=&htp=&hsl=) para barrer velocidades sin reflashear;
+// los valores por defecto son los que quedan en el firmware.
+int         HOMING_PWM_SEEK        = 70;      // Primer acercamiento al tope
 // El toque estuvo en 40 y se calaba ~10 deg ANTES del tope: en la corrida del
 // 2026-07-30 el brazo ya habia llegado a raw=-107.9 durante SEEK y el toque
 // lento se detuvo en -97.6. A esa velocidad la friccion sola frena el brazo y
 // el detector lo lee como tope. 55 mantiene el toque suave y llega al final.
-const int   HOMING_PWM_TOUCH       = 55;      // Segundo toque, lento (el que vale)
+int         HOMING_PWM_TOUCH       = 55;      // Segundo toque, lento (el que vale)
 // Frenado de aproximacion (2026-08-03). El impacto contra el tope lo fija la
 // velocidad de llegada, y esa la fija HOMING_PWM_SEEK. Bajar el seek entero es
 // exactamente lo que se probo en v1.53.2 y causo P3: a 55 el brazo no siempre vence
@@ -1086,7 +1088,7 @@ const int   HOMING_PWM_TOUCH       = 55;      // Segundo toque, lento (el que va
 // de 16 deg. Por eso el seek sigue en 70 y solo se baja a HOMING_PWM_TOUCH en los
 // ultimos grados. El umbral tiene que ser MENOR que los ~16 deg que separan el punto
 // duro del tope (119 vs 135), o se estaria bajando la potencia justo donde P3 muerde.
-const float HOMING_SEEK_SLOW_DEG   = 8.0f;    // Ultimos grados del seek, ya frenado
+float       HOMING_SEEK_SLOW_DEG   = 8.0f;    // Ultimos grados del seek, ya frenado
 const float HOMING_RANGE_NOM_DEG   = 270.0f;  // Recorrido nominal si no hay medicion previa
 const int   HOMING_PWM_MIN         = 45;      // Piso para vencer friccion estatica
 const float HOMING_BACKOFF_DEG     = 5.0f;    // Retroceso entre toques
@@ -1167,6 +1169,15 @@ bool  homing_prevValid      = false;
 float homing_rangeDeg = 0.0f;
 float homing_centerRaw = 0.0f;
 float homing_prevPendRaw = 0.0f;
+// Velocidad de llegada a cada tope (deg/s), pico en las ultimas ventanas antes del
+// calado. Es la metrica del impacto: se compara entre configuraciones con esto y no a ojo.
+float homing_viSeekPos = 0.0f, homing_viTouchPos = 0.0f;
+float homing_viSeekNeg = 0.0f, homing_viTouchNeg = 0.0f;
+const int HOMING_VEL_WIN_N = 10;             // ventanas de 30 ms => 300 ms de historia
+float homing_velWin[HOMING_VEL_WIN_N];
+int   homing_velIdx = 0;
+float homing_velRefRaw = 0.0f;
+unsigned long homing_velRefMs = 0;
 float homing_prevArmRaw = 0.0f;   // idem para el brazo: tambien queda con inercia
 unsigned long homing_quietMs = 0;
 // Sentido aprendido en el propio homing: +1 si un PWM positivo hace crecer la
@@ -1419,6 +1430,22 @@ unsigned long lastCommandMs = 0;
 unsigned long loopMaxPeriodUs = 0;
 unsigned long loopOverruns = 0;
 const unsigned long LOOP_RESYNC_PERIODS = 5;  // >10 ms de atraso => re-sincronizar
+
+// Histograma del periodo del lazo (v1.70.0). loop_dt_max_us es UN numero: no dice si
+// fue un tick suelto o cien. Los limites (us) coinciden con el criterio del punto 1 de
+// trabajos_en_proceso/PUNTOS_DEBILES_CONGRESO.md: 4000 = 2x el nominal es un limite
+// de bin, asi que "max < 4000" equivale a "los bins 4..7 estan vacios". Se alimenta
+// con el MISMO periodUs que loopMaxPeriodUs (atraso respecto del calendario nominal +
+// un periodo), o sea que un tick re-sincronizado cae en el bin de su atraso real.
+// Se lee por /daq (0 overruns por peticion, P28) y se reinicia con /cmd?rj=1.
+const uint8_t LOOP_HIST_BINS = 8;
+const uint32_t LOOP_HIST_EDGES_US[LOOP_HIST_BINS - 1] = {2100, 2500, 3000, 4000, 6000, 10000, 20000};
+volatile uint32_t loopHist[LOOP_HIST_BINS] = {0};
+inline void loopHistAdd(uint32_t periodUs) {
+  uint8_t b = 0;
+  while (b < LOOP_HIST_BINS - 1 && periodUs >= LOOP_HIST_EDGES_US[b]) b++;
+  loopHist[b]++;
+}
 
 // ── WiFi Configuration (stored in NVS/Preferences) ──────────────────────────
 Preferences preferences;
@@ -1903,6 +1930,7 @@ bool setMode(int newMode) {
     homing_stopNegRaw = 0.0f;
     homing_rangeDeg = 0.0f;
     homing_centerRaw = 0.0f;
+    homing_viSeekPos = homing_viTouchPos = homing_viSeekNeg = homing_viTouchNeg = 0.0f;
     homing_pwmSign = 1.0f;
     homing_prevPendRaw = getPendulumPositionDeg();
     homing_prevArmRaw = getRawPositionDeg();
@@ -2077,6 +2105,9 @@ void homingEnterPhase(uint8_t phase, float rawPos) {
   // falso en la posicion de partida.
   homing_lastMoveRaw = rawPos;
   homing_lastMoveMs = millis();
+  for (int i = 0; i < HOMING_VEL_WIN_N; i++) homing_velWin[i] = 0.0f;
+  homing_velRefRaw = rawPos;
+  homing_velRefMs = millis();
 }
 
 void homingFail(uint8_t code) {
@@ -2105,6 +2136,13 @@ void runHoming(float rawPos, float pendPos) {
     homing_lastMoveMs = nowMs;
   }
   const bool stalled = (nowMs - homing_lastMoveMs) > HOMING_STALL_MS;
+
+  if (nowMs - homing_velRefMs >= 30) {
+    homing_velWin[homing_velIdx] = fabsf(rawPos - homing_velRefRaw) * 1000.0f / (float)(nowMs - homing_velRefMs);
+    homing_velIdx = (homing_velIdx + 1) % HOMING_VEL_WIN_N;
+    homing_velRefRaw = rawPos;
+    homing_velRefMs = nowMs;
+  }
 
   switch (homing_phase) {
     case H_WAIT_QUIET: {
@@ -2172,6 +2210,10 @@ void runHoming(float rawPos, float pendPos) {
       const bool moved = fabsf(rawPos - homing_refRaw) > HOMING_TOUCH_MIN_DEG;
       if (stalled && (fast || moved)) {
         setMotorDirect(0);
+        float vi = 0.0f;
+        for (int i = 0; i < HOMING_VEL_WIN_N; i++) vi = fmaxf(vi, homing_velWin[i]);
+        if (positive) { if (fast) homing_viSeekPos = vi; else homing_viTouchPos = vi; }
+        else          { if (fast) homing_viSeekNeg = vi; else homing_viTouchNeg = vi; }
         if (fast) {
           homingEnterPhase(positive ? H_BACKOFF_POS : H_BACKOFF_NEG, rawPos);
         } else if (positive) {
@@ -2429,8 +2471,24 @@ String getDaqStatusJson() {
   json += "\"sample_bytes\":" + String((int)sizeof(DaqSample)) + ",";
   json += "\"available\":" + String(avail) + ",";
   json += "\"produced\":" + String(daqHead) + ",";
-  json += "\"dropped\":" + String(daqDropped);
-  json += "}";
+  json += "\"dropped\":" + String(daqDropped) + ",";
+  // Salud del lazo, aca y no solo en /state: /daq no le cuesta overruns al lazo (P28),
+  // asi que leerlo no perturba lo que mide. loop_hist_edges_us son los limites
+  // superiores (exclusivos) de los primeros N-1 bins; el ultimo bin es abierto.
+  json += "\"loop_dt_max_us\":" + String(loopMaxPeriodUs) + ",";
+  json += "\"loop_overruns\":" + String(loopOverruns) + ",";
+  json += "\"loop_dt_nom_us\":" + String(CONTROL_PERIOD_US) + ",";
+  json += "\"loop_hist_edges_us\":[";
+  for (uint8_t i = 0; i < LOOP_HIST_BINS - 1; i++) {
+    if (i) json += ",";
+    json += String(LOOP_HIST_EDGES_US[i]);
+  }
+  json += "],\"loop_hist\":[";
+  for (uint8_t i = 0; i < LOOP_HIST_BINS; i++) {
+    if (i) json += ",";
+    json += String(loopHist[i]);
+  }
+  json += "]}";
   return json;
 }
 
@@ -2625,6 +2683,10 @@ String getStateJson() {
   json += "\"homing_stop_pos\":" + String(homing_stopPosRaw, 3) + ",";
   json += "\"homing_stop_neg\":" + String(homing_stopNegRaw, 3) + ",";
   json += "\"homing_range\":" + String(homing_rangeDeg, 3) + ",";
+  json += "\"homing_vi\":[" + String(homing_viSeekPos, 1) + "," + String(homing_viTouchPos, 1) + "," +
+          String(homing_viSeekNeg, 1) + "," + String(homing_viTouchNeg, 1) + "],";
+  json += "\"homing_pwm\":[" + String(HOMING_PWM_SEEK) + "," + String(HOMING_PWM_TOUCH) + "," +
+          String(HOMING_SEEK_SLOW_DEG, 1) + "],";
   json += "\"homing_center\":" + String(homing_centerRaw, 3) + ",";
   // Sentido MEDIDO del motor contra el encoder del brazo, aprendido en el toque
   // negativo del homing: +1 = un PWM positivo hace crecer `pos`. Se publica desde
@@ -3075,6 +3137,9 @@ void handleCmd(AsyncWebServerRequest *request) {
     currentLimitMa = constrain(request->getParam("ilim")->value().toFloat(), 0.0f, 5000.0f);
     safety_overcurrentCount = 0;
   }
+  if (request->hasParam("hsp")) HOMING_PWM_SEEK = constrain(request->getParam("hsp")->value().toInt(), HOMING_PWM_MIN, 100);
+  if (request->hasParam("htp")) HOMING_PWM_TOUCH = constrain(request->getParam("htp")->value().toInt(), HOMING_PWM_MIN, 100);
+  if (request->hasParam("hsl")) HOMING_SEEK_SLOW_DEG = constrain(request->getParam("hsl")->value().toFloat(), 0.0f, 15.0f);
   if (request->hasParam("hr")) {
     homingRequired = (request->getParam("hr")->value().toInt() != 0);
   }
@@ -3209,6 +3274,7 @@ void handleCmd(AsyncWebServerRequest *request) {
   if (request->hasParam("rj")) {
     loopMaxPeriodUs = 0;
     loopOverruns = 0;
+    for (uint8_t i = 0; i < LOOP_HIST_BINS; i++) loopHist[i] = 0;
     // Los contadores de P21 se reinician junto con los del lazo: se comparan entre si
     // dentro de la MISMA ventana, si no la correlacion no significa nada.
     rl_fwd_us_last = rl_fwd_us_max = 0;
@@ -4384,6 +4450,7 @@ void loop() {
     // codigo sin una sola medicion detras (F9).
     const unsigned long periodUs = nowUs - lastControlUs + CONTROL_PERIOD_US;
     if (periodUs > loopMaxPeriodUs) loopMaxPeriodUs = periodUs;
+    loopHistAdd(periodUs);
 
     // Recuperacion de atraso: `lastControlUs += CONTROL_PERIOD_US` solo avanza un
     // periodo por vuelta, asi que tras un bloqueo el acumulador queda atras y el

@@ -104,6 +104,8 @@ Retorna JSON con el estado completo del sistema (servo + péndulo + INA219 + Kal
 | `loop_overruns`     | int    | Veces que el atraso superó 5 períodos y hubo que re-sincronizar |
 | `loop_dt_nom_us`    | int    | Período nominal del lazo (2000 µs = 500 Hz) |
 | `daq_running`       | bool   | Adquisición por bloques activa (ver `/daq`) |
+| `homing_vi`         | float[4] | Velocidad de llegada a cada tope (°/s, pico en los últimos 300 ms): seek+, toque+, seek−, toque−. Es la métrica del impacto del homing |
+| `homing_pwm`        | num[3] | `[HOMING_PWM_SEEK, HOMING_PWM_TOUCH, HOMING_SEEK_SLOW_DEG]` vigentes (ver `/cmd?hsp=&htp=&hsl=`) |
 | `daq_available`     | int    | Muestras esperando en el buffer circular |
 | `daq_dropped`       | int    | Muestras perdidas por buffer lleno desde el último `start`. **Distinto de 0 invalida la continuidad de la serie** |
 | `serial_telemetry`  | bool   | Línea de telemetría por Serial activa (`/cmd?sv=`) |
@@ -225,6 +227,8 @@ Envía comandos de configuración y control.
 | `kf`                       | 0/1    | Toggle filtro de Kalman (LQG) |
 | `ke`                       | float  | Ganancia de energía del swing-up. **≥ 0 fija un override manual** que la rama adaptativa respeta; **< 0 lo suelta** y devuelve el control a `KE_GAIN_BASE`/`BOOST`. El override sobrevive a `m=5` a propósito (⚠ ver nota) |
 | `rj`                       | 1      | Reset de las métricas de salud del lazo (`loop_dt_max_us`, `loop_overruns`) |
+| `hsp`, `htp`  | int | PWM de búsqueda (default 70) y de toque (default 55) del homing, entre `HOMING_PWM_MIN` y 100. Permiten barrer velocidades sin reflashear; se pierden al reiniciar. Vigentes en `/state` → `homing_pwm` |
+| `hsl`  | float | Grados finales del seek en que se baja a la velocidad de toque (default 8, rango 0–15). Vigente en `/state` → `homing_pwm[2]` |
 | `cpr`                      | float  | CPR encoder servo          |
 | `cprp`                     | float  | CPR encoder péndulo        |
 | `ed`                       | −1, 1 | Dirección encoder servo    |
